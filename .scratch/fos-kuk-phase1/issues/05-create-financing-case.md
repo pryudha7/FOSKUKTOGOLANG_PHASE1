@@ -7,7 +7,7 @@
 **Status:** ready-for-agent
 
 - [ ] Every `AC-FR-APP-001-*` acceptance criterion in SoT §13 passes
-- [ ] Every `AC-FR-CASE-001-*`, `AC-FR-CASE-002-*`, `AC-FR-CASE-004-*`, `AC-FR-CASE-005-*`, `AC-FR-CASE-007-*` acceptance criterion in SoT §13 passes
+- [ ] Every `AC-FR-CASE-001-*`, `AC-FR-CASE-002-*`, `AC-FR-CASE-004-*`, `AC-FR-CASE-007-*` acceptance criterion in SoT §13 passes, and `AC-FR-CASE-005-01` to `-05` (`-06` is the History Details accordion, TBD-035)
 - [ ] The `AC-FR-CASE-008-*` and `AC-FR-ASSIGN-001-*` criteria for mode Assignment and the first assignment pass (mode Case and To do: ticket 32)
 - [ ] Case IDs come from a per-prefix sequence (LF-n), atomic and unique
 - [ ] Customer Code is SMSME + two-digit year (creator's timezone) + Case ID number padded to eight digits
@@ -36,6 +36,16 @@
 - Assignment status values are stored as the SoT words: `baru`, `sudah dibuka`, `sudah selesai dikerjakan`; types `worklist`, `work queue`.
 - BMV CUSTOMER_TYPE (Perorangan, Badan Usaha) is seeded by migration as in §9.6; BRANCH and the rest come from the separate BMV import.
 - Case View is served at `<desktop>/case/<caseId>/assignment/<assignmentId>`. Until ticket 32 decides TBD-035a, any authenticated desktop operator can read a case's frame; opening an assignment is restricted.
+
+**After review (agreed):**
+
+- The Authors access group is refused case creation even with role AO or SAO ("termasuk Authors, ditolak", FR-APP-001).
+- An Authors operator opening someone else's assignment changes nothing; only the worklist owner's first opening sets `sudah dibuka`, `first_opened_at` and `worked_by_user_id`.
+- Database: `stage_name` limited to the §8.1 stages (DB-RULE-029); at most one unfinished assignment per case among Pre-Screening Submission, Document Underlying Upload and Pre Screening (DB-RULE-015).
+- `work.product_code` gets its FK to `product_management` when that table (§9.26) is created.
+- ERR-005 only when the Case ID sequence fails; other failures are a bare 500.
+- The Status badge shows `case_status` as stored ("New"); the assignment avatar shows the logged-in operator's initial; the attachments toggle sits at the page's top right.
+- AC-FR-APP-001-05's display part ("UI menampilkan pukul 01:00, 1 Januari 2027") waits for a screen that shows absolute times; Case View shows relative times. The "Case … cannot be opened." text for 403/404 is interim (no SoT screen).
 
 **Not in this ticket:** the History Details accordion (TBD-035, not to be implemented), the Details page (FR-CASE-010), attachments list content (Case Document arrives in ticket 07; AC-FR-CASE-006 then), Phone Verification child cases (TBD-024, so AC-FR-CASE-001-03 and AC-FR-CASE-002-01's PV row have no creation path yet), mode Case and To do (ticket 32), the form body and Next (tickets 30, 31).
 

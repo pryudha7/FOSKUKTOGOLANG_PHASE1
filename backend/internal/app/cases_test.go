@@ -134,6 +134,19 @@ func TestOnlyAOAndSAOCreateCases(t *testing.T) {
 	}
 }
 
+// FR-APP-001 "termasuk Authors, ditolak" (agreed): the Authors access group
+// is refused even when the role is AO.
+func TestAuthorsAccessGroupIsRefusedEvenWithRoleAO(t *testing.T) {
+	h := caseHarness(t)
+	h.SeedMapping(t, apptest.Mapping{Role: "AO", AccessGroup: "Authors", WorkGroup: "AO"})
+	c := branchOfficer(t, h, "AO001", "AO")
+	assertError(t, c.CreateCase(t, "Loan Financing"), http.StatusForbidden, "ERR-022",
+		"Anda tidak memiliki akses untuk membuat pengajuan pembiayaan.")
+	if got := c.Me(t).Body["caseTypes"]; len(got.([]any)) != 0 {
+		t.Fatalf("caseTypes = %v, want none for Authors", got)
+	}
+}
+
 // Only the parent case type offered by FR-NAV-003 can be created here.
 func TestUnknownCaseTypeIsRejected(t *testing.T) {
 	h := caseHarness(t)
@@ -470,13 +483,7 @@ func TestFirstOpeningMarksAnAssignmentOpened(t *testing.T) {
 	h := caseHarness(t)
 	c := branchOfficer(t, h, "AO001", "AO")
 	caseID, _ := created(t, c.CreateCase(t, "Loan Financing"))
-	var id int64
-	if err := h.DB.QueryRow(context.Background(), `
-		INSERT INTO fos.assignments (case_id, assignment_name, assignment_type, assigned_user_id, assignment_status, created_at)
-		VALUES ($1, 'Pre-Screening Submission', 'worklist', 'AO001', 'baru', $2) RETURNING assignment_id`,
-		caseID, h.Clock.Now()).Scan(&id); err != nil {
-		t.Fatal(err)
-	}
+	id := newAssignmentAfterFirst(t, h, caseID, "AO001")
 	read := func() (string, *time.Time, *string) {
 		var (
 			status string
@@ -502,6 +509,71 @@ func TestFirstOpeningMarksAnAssignmentOpened(t *testing.T) {
 	c.OpenAssignment(t, caseID, id)
 	if _, again, _ := read(); !again.Equal(*first) {
 		t.Fatalf("first_opened_at changed on a later opening: %v -> %v", *first, *again)
+	}
+}
+
+// newAssignmentAfterFirst completes the case's first assignment and adds a
+// new Pre-Screening Submission for assignee, as when a Team Lead sends the
+// case back (FR-ASSIGN-001 rule 10).
+func newAssignmentAfterFirst(t *testing.T, h *apptest.Harness, caseID, assignee string) int64 {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := h.DB.Exec(ctx, `UPDATE fos.assignments SET assignment_status = 'sudah selesai dikerjakan', completed_at = $2
+		WHERE case_id = $1`, caseID, h.Clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	var id int64
+	if err := h.DB.QueryRow(ctx, `
+		INSERT INTO fos.assignments (case_id, assignment_name, assignment_type, assigned_user_id, assignment_status, created_at)
+		VALUES ($1, 'Pre-Screening Submission', 'worklist', $2, 'baru', $3) RETURNING assignment_id`,
+		caseID, assignee, h.Clock.Now()).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// Agreed: an Authors operator opening someone else's worklist assignment
+// changes nothing; only the owner's first opening marks it opened.
+func TestAuthorsOpeningAnotherOperatorsAssignmentChangesNothing(t *testing.T) {
+	h := caseHarness(t)
+	owner := branchOfficer(t, h, "AO001", "AO")
+	caseID, _ := created(t, owner.CreateCase(t, "Loan Financing"))
+	id := newAssignmentAfterFirst(t, h, caseID, "AO001")
+
+	h.SeedMapping(t, apptest.Mapping{Role: "Ops Authors", AccessGroup: "Authors", WorkGroup: "Default"})
+	authors := loggedIn(t, h, apptest.Operator{UserID: "AU01", RoleCode: "Ops Authors"})
+	if r := authors.OpenAssignment(t, caseID, id); r.Status != http.StatusOK || r.Body["status"] != "baru" {
+		t.Fatalf("Authors open = %d %v", r.Status, r.Body["status"])
+	}
+	var (
+		status string
+		worker *string
+		opened *time.Time
+	)
+	if err := h.DB.QueryRow(context.Background(), `SELECT assignment_status, worked_by_user_id, first_opened_at
+		FROM fos.assignments WHERE assignment_id = $1`, id).Scan(&status, &worker, &opened); err != nil {
+		t.Fatal(err)
+	}
+	if status != "baru" || worker != nil || opened != nil {
+		t.Fatalf("after Authors opened: %s %s %v", status, deref(worker), opened)
+	}
+}
+
+// DB-RULE-029: stage names are the §8.1 stages. DB-RULE-015: one unfinished
+// assignment at a time in process Pre-Screening Submission.
+func TestDatabaseEnforcesStageNamesAndOneOpenPreScreeningAssignment(t *testing.T) {
+	h := caseHarness(t)
+	caseID, _ := created(t, branchOfficer(t, h, "AO001", "AO").CreateCase(t, "Loan Financing"))
+	ctx := context.Background()
+	if _, err := h.DB.Exec(ctx, `INSERT INTO fos.case_stage_progress (case_id, stage_name, first_entered_at)
+		VALUES ($1, 'Financing Submisson', now())`, caseID); err == nil {
+		t.Fatalf("a misspelt stage name was accepted")
+	}
+	for _, name := range []string{"Pre-Screening Submission", "Document Underlying Upload", "Pre Screening"} {
+		if _, err := h.DB.Exec(ctx, `INSERT INTO fos.assignments (case_id, assignment_name, assignment_type, assigned_user_id, assignment_status, created_at)
+			VALUES ($1, $2, 'worklist', 'AO001', 'baru', now())`, caseID, name); err == nil {
+			t.Fatalf("a second unfinished %s was accepted", name)
+		}
 	}
 }
 

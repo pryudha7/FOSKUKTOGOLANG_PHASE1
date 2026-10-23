@@ -4,7 +4,9 @@ import { useState } from "react";
 import styles from "./case.module.css";
 
 // FR-CASE-006 attachments panel, closed by default. Files arrive with the
-// Case Document table in ticket 07; until then the case has none.
+// Case Document table in ticket 07; until then the case has none. The
+// open/close control sits at the top right of the page, level with the
+// Stage Bar (UI-013).
 export default function AttachmentsPanel({ count }: { count: number }) {
   const [open, setOpen] = useState(false);
   if (!open) {
@@ -13,7 +15,7 @@ export default function AttachmentsPanel({ count }: { count: number }) {
         <button type="button" className={styles.attachmentsToggle} aria-label="Open files and documents" onClick={() => setOpen(true)}>
           ⇤
         </button>
-        <span className={styles.paperclip} aria-hidden="true">
+        <span className={styles.paperclipBox} aria-hidden="true">
           📎
         </span>
         <span className={styles.attachmentsBadge}>{count}</span>

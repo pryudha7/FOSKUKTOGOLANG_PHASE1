@@ -169,14 +169,8 @@ type idleJSON struct {
 // this endpoint the request is unauthenticated (FR-ACCESS-004).
 func (s *server) me(ep endpoint) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		c, err := r.Cookie(sessionCookie)
-		if err != nil {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		sess, ok := s.auth.Session(r.Context(), c.Value, ep.id)
+		sess, ok := s.session(w, r, ep)
 		if !ok {
-			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		var idle *idleJSON
@@ -196,7 +190,7 @@ func (s *server) me(ep endpoint) http.HandlerFunc {
 		}{
 			sess.UserID, sess.FullName, toNamedJSON(&sess.Role),
 			toNamedJSON(sess.AccessGroup), toNamedJSON(sess.WorkGroup), toNamedJSON(sess.WorkQueue),
-			idle, s.loginPath(ep, sess.Method), toCaseTypesJSON(cases.CreatableCaseTypes(sess.Role)),
+			idle, s.loginPath(ep, sess.Method), toCaseTypesJSON(cases.CreatableCaseTypes(sess)),
 		})
 	}
 }

@@ -2,6 +2,7 @@
    Colours are the SoT's measured approximations. */
 
 .caseView {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -120,7 +121,6 @@
   color: #285ed9;
   font-size: 12px;
   font-weight: bold;
-  text-transform: uppercase;
 }
 
 .personName {
@@ -340,16 +340,21 @@
 
 .attachmentsClosed {
   width: 44px;
+  margin-top: 52px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding-top: 8px;
+  padding-top: 10px;
+}
+
+.paperclipBox {
+  font-size: 18px;
 }
 
 .attachmentsOpen {
   width: 300px;
-  padding: 12px;
+  padding: 12px 40px 12px 12px;
 }
 
 .attachmentsHeader {
@@ -362,15 +367,15 @@
   font-weight: bold;
 }
 
+/* Top right of the page, level with the Stage Bar, in both states. */
 .attachmentsToggle {
+  position: absolute;
+  top: 12px;
+  right: 10px;
   border: none;
   background: none;
   font-size: 18px;
   cursor: pointer;
-}
-
-.paperclip {
-  font-size: 18px;
 }
 
 .attachmentsBadge {

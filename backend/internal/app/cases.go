@@ -77,7 +77,7 @@ func (s *server) createCase(ep endpoint) http.HandlerFunc {
 			writeCaseError(w, "ERR-022")
 		case errors.Is(err, cases.ErrUnknownCaseType):
 			w.WriteHeader(http.StatusBadRequest)
-		case errors.Is(err, cases.ErrCaseID):
+		case errors.Is(err, cases.ErrCaseIDNotFormed):
 			writeCaseError(w, "ERR-005")
 		case err != nil:
 			slog.Error("create case failed", "error", err)
@@ -153,7 +153,7 @@ func (s *server) caseFrame(ep endpoint) http.HandlerFunc {
 			Lifecycle       []lifecycleJSON `json:"lifecycle"`
 			AttachmentCount int             `json:"attachmentCount"`
 		}{
-			f.CaseID, f.CaseType.Code, f.CaseType.Label, f.Priority, f.Status,
+			f.CaseID, f.CaseType.Code, f.CaseType.Label, f.Priority, f.CaseStatus,
 			personJSON(f.Created), personJSON(f.Updated), stages, lifecycle, f.AttachmentCount,
 		})
 	}
@@ -210,6 +210,6 @@ func (s *server) openAssignment(ep endpoint) http.HandlerFunc {
 			Name         string            `json:"name"`
 			Status       string            `json:"status"`
 			Page         *preScreeningJSON `json:"page"`
-		}{p.AssignmentID, p.Name, p.Status, page})
+		}{p.AssignmentID, p.Name, string(p.Status), page})
 	}
 }

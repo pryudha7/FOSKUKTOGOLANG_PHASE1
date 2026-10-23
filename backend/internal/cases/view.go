@@ -5,6 +5,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"fos/internal/auth"
 )
 
@@ -41,7 +43,7 @@ type Frame struct {
 	CaseID          string
 	CaseType        CaseType
 	Priority        int
-	Status          string
+	CaseStatus      string
 	Created         Person
 	Updated         Person
 	Stages          []StageItem
@@ -52,9 +54,9 @@ type Frame struct {
 // Frame returns the Case View frame of a case.
 func (s *Service) Frame(ctx context.Context, caseID string) (Frame, error) {
 	var (
-		f            Frame
-		caseType     string
-		status, curr *string
+		f                  Frame
+		caseType           string
+		status, currentPtr *string
 	)
 	err := s.db.QueryRow(ctx, `
 		SELECT w.case_id, w.case_type, w.urgency_work_class, w.case_status, w.current_stage,
@@ -64,7 +66,7 @@ func (s *Service) Frame(ctx context.Context, caseID string) (Frame, error) {
 		LEFT JOIN fos.operator oc ON oc.user_id = w.created_by
 		LEFT JOIN fos.operator ou ON ou.user_id = w.updated_by
 		WHERE w.case_id = $1`, caseID).Scan(
-		&f.CaseID, &caseType, &f.Priority, &status, &curr,
+		&f.CaseID, &caseType, &f.Priority, &status, &currentPtr,
 		&f.Created.UserID, &f.Created.Name, &f.Created.At,
 		&f.Updated.UserID, &f.Updated.Name, &f.Updated.At)
 	if isNotFound(err) {
@@ -73,80 +75,77 @@ func (s *Service) Frame(ctx context.Context, caseID string) (Frame, error) {
 	if err != nil {
 		return Frame{}, err
 	}
-	f.CaseType = CaseType{Code: caseType, Label: caseType}
-	if caseType == LoanFinancing.Code {
-		f.CaseType = LoanFinancing
-	}
-	if status != nil {
-		f.Status = *status
-	}
-	current := ""
-	if curr != nil {
-		current = *curr
-	}
+	f.CaseType = caseTypeOf(caseType)
+	f.CaseStatus = value(status)
+	current := value(currentPtr)
 
-	entered := map[string]bool{}
-	enteredFrom := map[string]string{}
-	rows, err := s.db.Query(ctx,
-		`SELECT stage_name, COALESCE(entered_from_stage, '') FROM fos.case_stage_progress WHERE case_id = $1`, caseID)
+	type progress struct{ stage, from string }
+	stages, err := collect(ctx, s, func(r pgx.Rows) (progress, error) {
+		var p progress
+		return p, r.Scan(&p.stage, &p.from)
+	}, `SELECT stage_name, COALESCE(entered_from_stage, '') FROM fos.case_stage_progress WHERE case_id = $1`, caseID)
 	if err != nil {
 		return Frame{}, err
 	}
-	for rows.Next() {
-		var name, from string
-		if err := rows.Scan(&name, &from); err != nil {
-			rows.Close()
-			return Frame{}, err
-		}
-		entered[name] = true
-		enteredFrom[name] = from
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return Frame{}, err
+	entered := map[string]bool{}
+	enteredFrom := map[string]string{}
+	for _, p := range stages {
+		entered[p.stage], enteredFrom[p.stage] = true, p.from
 	}
 	for _, name := range stageOrder(entered, enteredFrom) {
 		f.Stages = append(f.Stages, StageItem{Name: name, Current: name == current, Entered: entered[name] && name != current})
 	}
 
-	started := map[int64]bool{}
-	rows, err = s.db.Query(ctx, `SELECT process_id FROM fos.case_process_progress WHERE case_id = $1`, caseID)
+	type process struct {
+		stage, name string
+		started     bool
+	}
+	processes, err := collect(ctx, s, func(r pgx.Rows) (process, error) {
+		var p process
+		return p, r.Scan(&p.stage, &p.name, &p.started)
+	}, `
+		SELECT lp.stage_name, lp.process_name, cpp.process_id IS NOT NULL
+		FROM fos.lifecycle_process lp
+		LEFT JOIN fos.case_process_progress cpp ON cpp.process_id = lp.process_id AND cpp.case_id = $1
+		ORDER BY lp.stage_name, lp.sort_order`, caseID)
 	if err != nil {
 		return Frame{}, err
 	}
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return Frame{}, err
-		}
-		started[id] = true
-	}
-	rows.Close()
-
 	byStage := map[string][]LifecycleProcess{}
-	rows, err = s.db.Query(ctx, `SELECT process_id, stage_name, process_name FROM fos.lifecycle_process ORDER BY stage_name, sort_order`)
-	if err != nil {
-		return Frame{}, err
+	for _, p := range processes {
+		byStage[p.stage] = append(byStage[p.stage], LifecycleProcess{Name: p.name, Started: p.started})
 	}
-	for rows.Next() {
-		var (
-			id          int64
-			stage, name string
-		)
-		if err := rows.Scan(&id, &stage, &name); err != nil {
-			rows.Close()
-			return Frame{}, err
-		}
-		byStage[stage] = append(byStage[stage], LifecycleProcess{Name: name, Started: started[id]})
-	}
-	rows.Close()
 	for _, stage := range MainStages {
 		f.Lifecycle = append(f.Lifecycle, LifecycleStage{
 			Stage: stage, Entered: entered[stage] && stage != current, Processes: byStage[stage],
 		})
 	}
-	return f, rows.Err()
+	return f, nil
+}
+
+// collect runs a query and scans every row.
+func collect[T any](ctx context.Context, s *Service, scan func(pgx.Rows) (T, error), sql string, args ...any) ([]T, error) {
+	rows, err := s.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []T
+	for rows.Next() {
+		v, err := scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func value(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // stageOrder is the Stage Bar order (FR-CASE-004): the main stages, with
@@ -172,7 +171,7 @@ func stageOrder(entered map[string]bool, enteredFrom map[string]string) []string
 type AssignmentPage struct {
 	AssignmentID int64
 	Name         string
-	Status       string
+	Status       AssignmentStatus
 	// PreScreening is set for a Pre-Screening Submission assignment.
 	PreScreening *PreScreeningPage
 }
@@ -195,38 +194,41 @@ type Option struct {
 
 // OpenAssignment opens an assignment of a case for the session's operator.
 // The worklist owner, and any Authors operator, may open it (FR-CASE-009 Go
-// rules, agreed); its first opening marks it opened (FR-ASSIGN-001 rule 6).
+// rules, agreed). Only the owner's first opening marks it opened and records
+// the worker (FR-ASSIGN-001 rules 6 and 18); an Authors look changes nothing.
 func (s *Service) OpenAssignment(ctx context.Context, sess auth.Session, caseID string, assignmentID int64) (AssignmentPage, error) {
 	var (
-		p        AssignmentPage
-		typ      string
-		assignee *string
+		p            AssignmentPage
+		status, kind string
+		assignee     *string
 	)
 	err := s.db.QueryRow(ctx, `
 		SELECT assignment_id, assignment_name, assignment_status, assignment_type, assigned_user_id
 		FROM fos.assignments WHERE assignment_id = $1 AND case_id = $2`, assignmentID, caseID).
-		Scan(&p.AssignmentID, &p.Name, &p.Status, &typ, &assignee)
+		Scan(&p.AssignmentID, &p.Name, &status, &kind, &assignee)
 	if isNotFound(err) {
 		return AssignmentPage{}, ErrNotFound
 	}
 	if err != nil {
 		return AssignmentPage{}, err
 	}
-	owner := typ == TypeWorklist && assignee != nil && *assignee == sess.UserID
+	p.Status = AssignmentStatus(status)
+	owner := AssignmentType(kind) == Worklist && value(assignee) == sess.UserID
 	authors := sess.AccessGroup != nil && sess.AccessGroup.Name == "Authors"
 	if !owner && !authors {
 		return AssignmentPage{}, ErrForbidden
 	}
 
-	if p.Status == StatusAssignmentNew {
+	if owner && p.Status == AssignmentNew {
 		if err := s.db.QueryRow(ctx, `
 			UPDATE fos.assignments
 			SET assignment_status = $2, first_opened_at = COALESCE(first_opened_at, $3),
 			    worked_by_user_id = COALESCE(worked_by_user_id, $4)
 			WHERE assignment_id = $1 RETURNING assignment_status`,
-			assignmentID, StatusAssignmentOpened, s.now(), sess.UserID).Scan(&p.Status); err != nil {
+			assignmentID, string(AssignmentOpened), s.now(), sess.UserID).Scan(&status); err != nil {
 			return AssignmentPage{}, err
 		}
+		p.Status = AssignmentStatus(status)
 	}
 
 	if p.Name == AssignmentPreScreeningSubmission {
@@ -241,9 +243,8 @@ func (s *Service) OpenAssignment(ctx context.Context, sess auth.Session, caseID 
 
 func (s *Service) preScreeningPage(ctx context.Context, caseID string) (PreScreeningPage, error) {
 	var (
-		page         PreScreeningPage
-		branch       *string
-		customerType *string
+		page                 PreScreeningPage
+		branch, customerType *string
 	)
 	// Nama Branch is read from BMV BRANCH by code, never stored (DEC-127).
 	err := s.db.QueryRow(ctx, `
@@ -255,14 +256,9 @@ func (s *Service) preScreeningPage(ctx context.Context, caseID string) (PreScree
 	if err != nil {
 		return PreScreeningPage{}, err
 	}
-	if branch == nil {
-		page.BranchMissing = true
-	} else {
-		page.BranchName = *branch
-	}
-	if customerType != nil {
-		page.CustomerType = *customerType
-	}
+	page.BranchMissing = branch == nil
+	page.BranchName = value(branch)
+	page.CustomerType = value(customerType)
 	page.CustomerTypeOptions, err = s.options(ctx, "CUSTOMER_TYPE")
 	return page, err
 }
@@ -270,21 +266,15 @@ func (s *Service) preScreeningPage(ctx context.Context, caseID string) (PreScree
 // options lists a BMV type's Active rows (blank status counts as Active,
 // DB-RULE-092), by sort_order then code as text (§9.6).
 func (s *Service) options(ctx context.Context, bmvType string) ([]Option, error) {
-	rows, err := s.db.Query(ctx, `
+	opts, err := collect(ctx, s, func(r pgx.Rows) (Option, error) {
+		var o Option
+		return o, r.Scan(&o.Code, &o.Description)
+	}, `
 		SELECT code, description FROM fos.business_mapping_value
 		WHERE type = $1 AND sub_type = '' AND (status = 'Active' OR COALESCE(status, '') = '')
 		ORDER BY sort_order, code`, bmvType)
-	if err != nil {
-		return nil, err
+	if opts == nil {
+		opts = []Option{}
 	}
-	defer rows.Close()
-	opts := []Option{}
-	for rows.Next() {
-		var o Option
-		if err := rows.Scan(&o.Code, &o.Description); err != nil {
-			return nil, err
-		}
-		opts = append(opts, o)
-	}
-	return opts, rows.Err()
+	return opts, err
 }

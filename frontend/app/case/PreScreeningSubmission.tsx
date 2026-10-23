@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useOperator } from "@/app/session/SessionContext";
 import type { PreScreeningPage } from "./types";
 import styles from "./case.module.css";
 
@@ -8,14 +9,16 @@ import styles from "./case.module.css";
 // Nasabah; the Data Pribadi / Badan Usaha sections and Next arrive in
 // tickets 30 and 31.
 export default function PreScreeningSubmission({ page, endpointPath }: { page: PreScreeningPage; endpointPath: string }) {
+  const me = useOperator();
   const [customerType, setCustomerType] = useState(page.customerType);
   const fixed = page.customerType !== ""; // disabled after submit (FR-APP-002)
 
   return (
     <section className={styles.card}>
       <header className={styles.assignmentHeader}>
+        {/* UI-010: the avatar shows the logged-in operator's initial. */}
         <span className={styles.assignmentAvatar} aria-hidden="true">
-          P
+          {me.fullName.trim().charAt(0).toUpperCase()}
         </span>
         <h2 className={styles.cardTitle}>Pre - Screening Submission</h2>
       </header>

@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useSession } from "@/app/session/useSession";
 import IdleWarning from "@/app/session/IdleWarning";
+import { SessionContext } from "@/app/session/SessionContext";
 import Sidebar, { type MenuKey } from "./Sidebar";
 import styles from "./shell.module.css";
 
@@ -29,6 +30,7 @@ export default function DesktopShell({
     return <main aria-busy="true" />;
   }
   return (
+    <SessionContext.Provider value={me}>
     <div className={styles.shell}>
       <div className={styles.sidebarSlot}>
         <Sidebar me={me} endpointPath={endpointPath} current={current} />
@@ -40,5 +42,6 @@ export default function DesktopShell({
       </main>
       {me.idle && <IdleWarning endpointPath={endpointPath} loginPath={me.loginPath} idle={me.idle} />}
     </div>
+    </SessionContext.Provider>
   );
 }

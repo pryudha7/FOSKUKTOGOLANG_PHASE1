@@ -49,6 +49,19 @@ type Frame struct {
 	Stages          []StageItem
 	Lifecycle       []LifecycleStage
 	AttachmentCount int
+	Attachments     []Attachment
+}
+
+// Attachment is one file of the attachments panel (FR-CASE-006).
+type Attachment struct {
+	FileID   string
+	FileName string
+	// CategoryLabel is the category's label, or its codename when it has none
+	// (TBD-033).
+	CategoryLabel string
+	// UploadedBy is the uploader's full name from the operator data (DEC-032).
+	UploadedBy string
+	CreatedAt  time.Time
 }
 
 // Frame returns the Case View frame of a case.
@@ -120,6 +133,27 @@ func (s *Service) Frame(ctx context.Context, caseID string) (Frame, error) {
 			Stage: stage, Entered: entered[stage] && stage != current, Processes: byStage[stage],
 		})
 	}
+	f.Attachments, err = collect(ctx, s, func(r pgx.Rows) (Attachment, error) {
+		var a Attachment
+		return a, r.Scan(&a.FileID, &a.FileName, &a.CategoryLabel, &a.UploadedBy, &a.CreatedAt)
+	}, `
+		SELECT d.file_id::text, d.file_name, COALESCE(b.description, d.document_category, ''),
+		       COALESCE(o.full_name, d.created_by), d.created_at
+		FROM fos.case_document d
+		JOIN fos.work w ON w.case_id = d.case_id
+		LEFT JOIN fos.case_document_category c ON c.case_id = d.case_id AND c.document_category = d.document_category
+		LEFT JOIN fos.business_mapping_value b
+		  ON b.type = 'DOCUMENTPRESCREENING' AND b.sub_type = w.customer_type AND b.code = c.source_code
+		LEFT JOIN fos.operator o ON o.user_id = d.created_by
+		WHERE d.case_id = $1
+		ORDER BY d.created_at DESC, d.file_name`, caseID)
+	if err != nil {
+		return Frame{}, err
+	}
+	if f.Attachments == nil {
+		f.Attachments = []Attachment{}
+	}
+	f.AttachmentCount = len(f.Attachments)
 	return f, nil
 }
 
@@ -176,6 +210,8 @@ type AssignmentPage struct {
 	Status       AssignmentStatus
 	// PreScreening is set for a Pre-Screening Submission assignment.
 	PreScreening *PreScreeningPage
+	// Underlying is set for a Document Underlying Upload assignment.
+	Underlying *UnderlyingPage
 }
 
 // PreScreeningPage is the data UI-010 shows today: Nama Branch and the Tipe
@@ -253,6 +289,13 @@ func (s *Service) OpenAssignment(ctx context.Context, sess auth.Session, caseID 
 		}
 		page.Today, page.EarliestBirthDate = today.Format(dateISO), EarliestBirthDate(today).Format(dateISO)
 		p.PreScreening = &page
+	}
+	if p.Name == AssignmentUnderlyingDocumentUpload {
+		page, err := s.underlyingPage(ctx, sess.UserID, caseID, owner && p.Status != AssignmentCompleted)
+		if err != nil {
+			return AssignmentPage{}, err
+		}
+		p.Underlying = &page
 	}
 	return p, nil
 }

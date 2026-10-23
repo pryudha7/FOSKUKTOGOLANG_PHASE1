@@ -12,4 +12,5 @@
 - [ ] Banner lines for entries read "Pengurus <n> - <Nama Field> : <pesan>"
 - [ ] Tipe Nasabah cannot change after the first submit: test Perorangan then Badan Usaha (ticket 30 could not, as only Perorangan was accepted)
 - [ ] Form switching resets every field (AC-FR-APP-002-25/26/27)
+- [ ] Document Underlying Upload for Badan Usaha (UI-011 Varian Badan Usaha, AC-UI-011-13/14, AC-FR-FILE-004-08, AC-FR-FILE-005-02): seed DOCPRE-1 and its Document Mapping Value rows, banner 100 MB, SLIK Worst Collect 0-5 (ERR-010, ERR-028), Create with 100 MB limit (moved from ticket 07)
 - [ ] Verified at the HTTP API seam against a real PostgreSQL, with external systems faked at the network boundary.

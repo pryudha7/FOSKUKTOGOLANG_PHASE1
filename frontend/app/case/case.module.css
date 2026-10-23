@@ -721,3 +721,377 @@
   background: #31f000;
   color: #146000;
 }
+
+/* UI-011 Document Underlying Upload (Gambar 15, 16, 23) */
+.infoBanner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: #ffeccc;
+  font-size: 13px;
+}
+
+.infoBannerIcon {
+  margin-right: 4px;
+  color: #e0a100;
+}
+
+.accordion {
+  background: #ffffff;
+}
+
+.accordionHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-bottom: 1px solid #d5dbe2;
+  background: #e9eef3;
+  font: inherit;
+  font-weight: bold;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chevron,
+.chevronOpen {
+  display: inline-block;
+  color: #5c5d65;
+  transition: transform 0.1s;
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.documentTable {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #d5dbe2;
+  font-size: 13px;
+}
+
+.documentTable th {
+  padding: 12px 14px;
+  border: 1px solid #d5dbe2;
+  background: #f6f6f6;
+  text-align: left;
+}
+
+.documentTable td {
+  height: 54px;
+  padding: 0 14px;
+  border-top: 1px solid #d5dbe2;
+  background: #ffffff;
+  vertical-align: middle;
+}
+
+.documentTable th:first-child,
+.documentTable td:first-child {
+  width: 60%;
+}
+
+.documentRowSelected td {
+  background: #ebeff9;
+}
+
+.documentName {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.documentNote {
+  color: #666666;
+  font-weight: 600;
+}
+
+.documentIcon,
+.uploadIcon {
+  display: inline-flex;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #076bc9;
+  cursor: pointer;
+}
+
+.documentRowSelected .documentIcon,
+.documentRowSelected .uploadIcon {
+  color: #000000;
+}
+
+.readOnlyValue {
+  font-size: 13px;
+}
+
+/* Modals: UI-015 Upload Document (Gambar 21, 22) and ERR-035 (Gambar 43). */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(900px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 16px 20px 18px;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  align-self: stretch;
+  margin-bottom: 22px;
+}
+
+.modalTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: bold;
+}
+
+.modalX {
+  border: none;
+  background: none;
+  color: #6f6f6f;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modalErrors {
+  align-self: stretch;
+  margin: 0 0 24px;
+  padding: 22px 46px;
+  border-radius: 8px;
+  background: #ffd9db;
+  color: #4b4b4b;
+  font-size: 13px;
+}
+
+.dropArea {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  align-self: stretch;
+  padding: 8px 0 2px;
+  border: 1px dotted #000000;
+  font-size: 13px;
+}
+
+.modalOr {
+  margin: 8px 0;
+  color: #6f6f6f;
+  font-size: 13px;
+}
+
+.selectFiles {
+  height: 26px;
+  padding: 0 14px;
+  border: 1px solid #076bc9;
+  border-radius: 13px;
+  background: #ffffff;
+  color: #076bc9;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fileTable {
+  align-self: stretch;
+  margin-top: 10px;
+  border-collapse: collapse;
+  border: 1px solid #d5dbe2;
+  font-size: 13px;
+}
+
+.fileTable th {
+  padding: 10px 14px;
+  border: 1px solid #d5dbe2;
+  background: #f6f6f6;
+  text-align: left;
+}
+
+.fileTable td {
+  padding: 12px 14px;
+  vertical-align: middle;
+}
+
+.fileRequired {
+  color: #f08c00;
+  font-size: 11px;
+}
+
+.fileName {
+  width: 160px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid #5c5d65;
+  border-radius: 3px;
+  font: inherit;
+}
+
+.fileOriginal {
+  max-width: 180px;
+  overflow-wrap: anywhere;
+}
+
+.fileCategory {
+  width: 100%;
+  height: 26px;
+  border: 1px solid #c9ced6;
+  border-radius: 3px;
+  background: #ffffff;
+  color: #999999;
+  font: inherit;
+}
+
+.fileRemove {
+  border: none;
+  background: none;
+  color: #6bb7e8;
+  cursor: pointer;
+}
+
+.modalButtons {
+  display: flex;
+  justify-content: space-between;
+  align-self: stretch;
+  margin-top: 48px;
+}
+
+.modalCancel {
+  border: none;
+  background: none;
+  color: #076bc9;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.modalSubmit {
+  height: 28px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 14px;
+  background: #076bc9;
+  color: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.noAccess {
+  width: min(440px, calc(100vw - 32px));
+  padding: 18px 22px 16px;
+  border-radius: 14px;
+  background: #f5f3fb;
+}
+
+.noAccessHost {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: bold;
+}
+
+.noAccessText {
+  margin: 18px 0;
+}
+
+.noAccessActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.noAccessOk {
+  min-width: 52px;
+  height: 34px;
+  border: none;
+  border-radius: 17px;
+  background: #7b4fe0;
+  color: #ffffff;
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+/* FR-CASE-006 list (Gambar 18) */
+.attachmentList {
+  margin: 14px 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.attachmentItem {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.attachmentThumb,
+.attachmentThumbFile {
+  flex: none;
+  width: 32px;
+  height: 24px;
+  margin-top: 4px;
+  border: 1px solid #d5dbe2;
+  object-fit: cover;
+}
+
+.attachmentThumbFile {
+  background: linear-gradient(#f6f6f6, #e9eef3);
+}
+
+.attachmentText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.attachmentLink {
+  overflow: hidden;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #076bc9;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.attachmentMeta {
+  color: #3b3b3b;
+}
+
+.viewAll {
+  display: block;
+  margin: 0 auto;
+  border: none;
+  background: none;
+  color: #076bc9;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}

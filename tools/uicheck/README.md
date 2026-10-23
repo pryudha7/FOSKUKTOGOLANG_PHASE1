@@ -16,3 +16,6 @@ Before running: start PostgreSQL, the backend and `next start -p 13000` (see the
 | `idle.js` | UI-019 idle popup with a virtual clock (ticket 03) |
 | `case.js` | Create → Financing, Case View, lifecycle popup, info panel hide/show, attachments (ticket 05) |
 | `ps.js`, `check2.js` | Pre-Screening Submission validation, banner, date field/picker, Next and Back (ticket 30) |
+| `duu.js` | Document Underlying Upload: document list, Upload Document modal, document icon download, attachments panel, ERR-035 popup (ticket 07) |
+
+`duu.js` needs file storage: run `node fakegcs.js 14443 shots/gcs.json` (an in-memory stand-in for the GCS JSON API) and start the backend with `GCS_PROJECT_ID` and `GCS_BUCKET_NAME` set to any value, `GCS_CREDENTIAL` set to the written `shots/gcs.json`, and `STORAGE_EMULATOR_HOST=127.0.0.1:14443`. Its ERR-035 step edits the case through `docker exec fos-smoke-pg psql`; set `DOCKER` to docker's full path if `cmd` cannot find it.

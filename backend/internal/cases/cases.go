@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"fos/internal/auth"
+	"fos/internal/settings"
 )
 
 // CaseType is a parent case type an operator can create (FR-NAV-003). Code
@@ -100,12 +101,14 @@ var (
 )
 
 type Service struct {
-	db  *pgxpool.Pool
-	now func() time.Time
+	db       *pgxpool.Pool
+	now      func() time.Time
+	storage  Storage
+	settings *settings.Settings
 }
 
-func NewService(db *pgxpool.Pool, now func() time.Time) *Service {
-	return &Service{db: db, now: now}
+func NewService(db *pgxpool.Pool, now func() time.Time, storage Storage, settings *settings.Settings) *Service {
+	return &Service{db: db, now: now, storage: storage, settings: settings}
 }
 
 // Created identifies a new case and its first assignment.

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import type { Assignment, CaseFrame } from "./types";
+import type { Assignment, CaseFrame, PreScreeningPage, UnderlyingPage } from "./types";
 import CaseInfoPanel, { CaseHeader } from "./CaseInfoPanel";
 import StageBar from "./StageBar";
 import AttachmentsPanel from "./AttachmentsPanel";
@@ -28,7 +28,9 @@ export default function CaseView({
   // The panel shows each time Case View opens; hiding is not remembered.
   const [infoHidden, setInfoHidden] = useState(false);
 
-  useEffect(() => {
+  // load reads the frame and the assignment; a stored file changes both
+  // (the document row icon and the attachments panel).
+  const load = useCallback(() => {
     const base = `${endpointPath}/api/cases/${encodeURIComponent(caseId)}`;
     Promise.all([apiFetch(base), apiFetch(`${base}/assignments/${assignmentId}`)])
       .then(async ([f, a]) => {
@@ -41,6 +43,8 @@ export default function CaseView({
       })
       .catch(() => setFailed(0));
   }, [endpointPath, caseId, assignmentId]);
+
+  useEffect(load, [load]);
 
   if (failed !== null) {
     // No SoT screen exists for a case or assignment that cannot be opened.
@@ -64,10 +68,10 @@ export default function CaseView({
         )}
         <StageBar stages={frame.stages} lifecycle={frame.lifecycle} />
         <div className={styles.main}>
-          {assignment.page ? (
-            <PreScreeningSubmission page={assignment.page} assignment={ref} />
-          ) : assignment.name === assignmentNames.underlyingDocumentUpload ? (
-            <UnderlyingDocumentUpload assignment={ref} />
+          {assignment.page && assignment.name === assignmentNames.preScreeningSubmission ? (
+            <PreScreeningSubmission page={assignment.page as PreScreeningPage} assignment={ref} />
+          ) : assignment.page && assignment.name === assignmentNames.underlyingDocumentUpload ? (
+            <UnderlyingDocumentUpload page={assignment.page as UnderlyingPage} assignment={ref} onFilesChanged={load} />
           ) : (
             <section className={styles.card}>
               <h2 className={styles.cardTitle}>{assignment.name}</h2>
@@ -75,7 +79,7 @@ export default function CaseView({
           )}
         </div>
       </div>
-      <AttachmentsPanel count={frame.attachmentCount} />
+      <AttachmentsPanel endpointPath={endpointPath} caseId={caseId} attachments={frame.attachments} />
     </div>
   );
 }

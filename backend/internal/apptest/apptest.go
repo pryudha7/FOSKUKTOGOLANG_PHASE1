@@ -9,11 +9,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/netip"
+	"net/textproto"
 	"net/url"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -304,20 +309,54 @@ type Response struct {
 // Do sends a JSON request to path (relative to the server root).
 func (c *Client) Do(t *testing.T, method, path string, body any) Response {
 	t.Helper()
-	var rdr io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			t.Fatalf("encode body: %v", err)
-		}
-		rdr = bytes.NewReader(b)
+	if body == nil {
+		return c.send(t, method, path, "", nil)
 	}
-	req, err := http.NewRequest(method, c.h.Server.URL+path, rdr)
+	b, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("encode body: %v", err)
+	}
+	return c.send(t, method, path, "application/json", bytes.NewReader(b))
+}
+
+// Upload is a file sent as multipart/form-data part "file", after Fields.
+type Upload struct {
+	Fields      map[string]string
+	FileName    string
+	ContentType string
+	Data        []byte
+}
+
+// PostMultipart sends an upload form, as a browser does.
+func (c *Client) PostMultipart(t *testing.T, path string, u Upload) Response {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for _, k := range slices.Sorted(maps.Keys(u.Fields)) {
+		_ = mw.WriteField(k, u.Fields[k])
+	}
+	h := textproto.MIMEHeader{}
+	h.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": u.FileName}))
+	if u.ContentType != "" {
+		h.Set("Content-Type", u.ContentType)
+	}
+	part, err := mw.CreatePart(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = part.Write(u.Data)
+	_ = mw.Close()
+	return c.send(t, http.MethodPost, path, mw.FormDataContentType(), &buf)
+}
+
+func (c *Client) send(t *testing.T, method, path, contentType string, body io.Reader) Response {
+	t.Helper()
+	req, err := http.NewRequest(method, c.h.Server.URL+path, body)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	req.Header.Set("User-Agent", "apptest-browser")
 	for k, v := range c.Header {

@@ -20,3 +20,24 @@ export function relativeTime(iso: string, now: Date = new Date()): string {
   }
   return "less than a minute ago";
 }
+
+// The attachments panel's short form ("8m ago", Gambar 18). Units below a
+// minute and above minutes are not on the evidence (TBD-020); these follow
+// the same pattern.
+export function shortRelativeTime(iso: string, now: Date = new Date()): string {
+  const seconds = Math.max(0, Math.floor((now.getTime() - new Date(iso).getTime()) / 1000));
+  const units: [number, string][] = [
+    [60 * 60 * 24 * 365, "y"],
+    [60 * 60 * 24 * 30, "mo"],
+    [60 * 60 * 24, "d"],
+    [60 * 60, "h"],
+    [60, "m"],
+  ];
+  for (const [size, unit] of units) {
+    const n = Math.floor(seconds / size);
+    if (n >= 1) {
+      return `${n}${unit} ago`;
+    }
+  }
+  return "0m ago";
+}

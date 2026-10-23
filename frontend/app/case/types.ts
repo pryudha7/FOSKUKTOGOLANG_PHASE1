@@ -21,6 +21,16 @@ export type CaseFrame = {
   stages: StageItem[];
   lifecycle: LifecycleStage[];
   attachmentCount: number;
+  attachments: Attachment[]; // newest first
+};
+
+// FR-CASE-006 panel item; uploadedBy is the uploader's full name.
+export type Attachment = {
+  fileId: string;
+  fileName: string;
+  categoryLabel: string;
+  uploadedBy: string;
+  createdAt: string;
 };
 
 export type Option = { code: string; description: string };
@@ -42,7 +52,25 @@ export type PreScreeningPage = {
   earliestBirthDate: string;
 };
 
-export type Section = "form" | "customer" | "spouse";
+export type StoredFile = { fileId: string; fileName: string };
+
+// One accordion of UI-011: code is the stored codename, label is shown.
+export type DocumentCategory = {
+  code: string;
+  label: string;
+  documents: { documentType: string; mandatory: boolean; file: StoredFile | null }[];
+};
+
+export type UnderlyingPage = {
+  customerType: string;
+  memoNumber: string; // empty until it can be formed (FR-APP-008)
+  totalLimitMb: number;
+  categories: DocumentCategory[];
+  listError: { code: string; message: string } | null; // ERR-027
+  editable: boolean;
+};
+
+export type Section = "form" | "customer" | "spouse" | "upload";
 
 // A validation failure returned with 422 by a submit: key is the stable
 // field key, field the label shown in the banner.
@@ -52,5 +80,7 @@ export type Assignment = {
   assignmentId: number;
   name: string;
   status: string;
-  page: PreScreeningPage | null;
+  // PreScreeningPage on Pre-Screening Submission, UnderlyingPage on
+  // Document Underlying Upload.
+  page: PreScreeningPage | UnderlyingPage | null;
 };

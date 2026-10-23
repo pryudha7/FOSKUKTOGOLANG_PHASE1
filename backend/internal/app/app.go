@@ -20,6 +20,8 @@ import (
 	"fos/internal/auth"
 	"fos/internal/cases"
 	"fos/internal/config"
+	"fos/internal/gcs"
+	"fos/internal/settings"
 )
 
 const sessionCookie = "fos_session"
@@ -64,7 +66,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, opts ...Option) http.Handler {
 	for _, f := range opts {
 		f(&o)
 	}
-	s := &server{cfg: cfg, auth: auth.NewService(pool, cfg.LDAP, o.now), cases: cases.NewService(pool, o.now)}
+	s := &server{cfg: cfg, auth: auth.NewService(pool, cfg.LDAP, o.now), cases: cases.NewService(pool, o.now, gcs.New(cfg.GCS, o.now), settings.New(pool, o.now))}
 	mux := http.NewServeMux()
 	for _, ep := range []endpoint{
 		{id: auth.EndpointDesktop, path: cfg.EndpointPathDesktop},
@@ -82,6 +84,8 @@ func New(cfg config.Config, pool *pgxpool.Pool, opts ...Option) http.Handler {
 	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}", s.openAssignment(desktop))
 	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/submit", s.submitAssignment(desktop))
 	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/back", s.backAssignment(desktop))
+	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/documents", s.uploadDocument(desktop))
+	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/documents/{fileId}", s.downloadDocument(desktop))
 	return s.requireHTTPS(mux)
 }
 

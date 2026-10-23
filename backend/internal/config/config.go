@@ -24,6 +24,50 @@ type Config struct {
 	// X-Forwarded-Proto (TRUSTED_PROXY_CIDRS, comma-separated).
 	TrustedProxyCIDRs []netip.Prefix
 	LDAP              LDAP
+	GCS               GCS
+}
+
+// GCSAPIBaseURL is Google Cloud Storage's JSON API; it is the same in every
+// environment, so it is not a configuration key.
+const GCSAPIBaseURL = "https://storage.googleapis.com"
+
+// GCS is the file storage configuration (SoT §4.3). Like LDAP it may be
+// incomplete at startup: uploads and downloads are then refused (ENV-010).
+type GCS struct {
+	ProjectID  string // GCS_PROJECT_ID
+	BucketName string // GCS_BUCKET_NAME
+	// Credential is the path of a service-account JSON key file
+	// (GCS_CREDENTIAL, agreed for TBD-031b); its content is a secret (ENV-009).
+	Credential string
+	// APIBaseURL is GCSAPIBaseURL; tests point it at a fake.
+	APIBaseURL string
+}
+
+// gcsAPIBaseURL is GCSAPIBaseURL, or a local emulator named by Google's own
+// STORAGE_EMULATOR_HOST convention (manual UI checks; never set in an
+// environment).
+func gcsAPIBaseURL() string {
+	host := optional("STORAGE_EMULATOR_HOST")
+	if host == "" {
+		return GCSAPIBaseURL
+	}
+	if !strings.Contains(host, "://") {
+		host = "http://" + host
+	}
+	return strings.TrimSuffix(host, "/")
+}
+
+// Missing names the GCS keys without a value, never their values.
+func (g GCS) Missing() []string {
+	var out []string
+	for _, k := range []struct{ key, v string }{
+		{"GCS_PROJECT_ID", g.ProjectID}, {"GCS_BUCKET_NAME", g.BucketName}, {"GCS_CREDENTIAL", g.Credential},
+	} {
+		if k.v == "" {
+			out = append(out, k.key)
+		}
+	}
+	return out
 }
 
 // LDAP is the LDAP login configuration (SoT §4.2). Unlike the keys above it
@@ -67,6 +111,12 @@ func FromEnv() (Config, error) {
 			BindPassword: optional("LDAP_BIND_PASSWORD"),
 			BaseDN:       optional("LDAP_BASE_DN"),
 			SearchFilter: optional("LDAP_SEARCH_FILTER"),
+		},
+		GCS: GCS{
+			ProjectID:  optional("GCS_PROJECT_ID"),
+			BucketName: optional("GCS_BUCKET_NAME"),
+			Credential: optional("GCS_CREDENTIAL"),
+			APIBaseURL: gcsAPIBaseURL(),
 		},
 	}
 	proxies := get("TRUSTED_PROXY_CIDRS")

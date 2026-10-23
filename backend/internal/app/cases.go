@@ -141,20 +141,32 @@ func (s *server) caseFrame(ep endpoint) http.HandlerFunc {
 			}
 			lifecycle = append(lifecycle, lifecycleJSON{ls.Stage, ls.Entered, procs})
 		}
+		type attachmentJSON struct {
+			FileID        string    `json:"fileId"`
+			FileName      string    `json:"fileName"`
+			CategoryLabel string    `json:"categoryLabel"`
+			UploadedBy    string    `json:"uploadedBy"`
+			CreatedAt     time.Time `json:"createdAt"`
+		}
+		attachments := make([]attachmentJSON, 0, len(f.Attachments))
+		for _, a := range f.Attachments {
+			attachments = append(attachments, attachmentJSON(a))
+		}
 		writeJSON(w, http.StatusOK, struct {
-			CaseID          string          `json:"caseId"`
-			CaseType        string          `json:"caseType"`
-			CaseTypeLabel   string          `json:"caseTypeLabel"`
-			Priority        int             `json:"priority"`
-			Status          string          `json:"status"`
-			Created         personJSON      `json:"created"`
-			Updated         personJSON      `json:"updated"`
-			Stages          []stageJSON     `json:"stages"`
-			Lifecycle       []lifecycleJSON `json:"lifecycle"`
-			AttachmentCount int             `json:"attachmentCount"`
+			CaseID          string           `json:"caseId"`
+			CaseType        string           `json:"caseType"`
+			CaseTypeLabel   string           `json:"caseTypeLabel"`
+			Priority        int              `json:"priority"`
+			Status          string           `json:"status"`
+			Created         personJSON       `json:"created"`
+			Updated         personJSON       `json:"updated"`
+			Stages          []stageJSON      `json:"stages"`
+			Lifecycle       []lifecycleJSON  `json:"lifecycle"`
+			AttachmentCount int              `json:"attachmentCount"`
+			Attachments     []attachmentJSON `json:"attachments"`
 		}{
 			f.CaseID, f.CaseType.Code, f.CaseType.Label, f.Priority, f.CaseStatus,
-			personJSON(f.Created), personJSON(f.Updated), stages, lifecycle, f.AttachmentCount,
+			personJSON(f.Created), personJSON(f.Updated), stages, lifecycle, f.AttachmentCount, attachments,
 		})
 	}
 }
@@ -203,12 +215,19 @@ func (s *server) openAssignment(ep endpoint) http.HandlerFunc {
 				page.CustomerTypeOptions = append(page.CustomerTypeOptions, optionJSON(o))
 			}
 		}
+		var body any
+		switch {
+		case page != nil:
+			body = page
+		case p.Underlying != nil:
+			body = toUnderlyingJSON(*p.Underlying)
+		}
 		writeJSON(w, http.StatusOK, struct {
-			AssignmentID int64             `json:"assignmentId"`
-			Name         string            `json:"name"`
-			Status       string            `json:"status"`
-			Page         *preScreeningJSON `json:"page"`
-		}{p.AssignmentID, p.Name, string(p.Status), page})
+			AssignmentID int64  `json:"assignmentId"`
+			Name         string `json:"name"`
+			Status       string `json:"status"`
+			Page         any    `json:"page"`
+		}{p.AssignmentID, p.Name, string(p.Status), body})
 	}
 }
 

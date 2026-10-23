@@ -28,6 +28,14 @@
 - Idle timeout 14 + 1 minutes as constants (TBD-040); the server ends a desktop session 15 minutes after its last request. Exempt: role name starting "Identity Management", access group Authors or Admin. Mobile sessions have no idle timeout (FR-ACCESS-005 rule 4). Tests use a fake clock.
 - The popup's X is shown and does nothing (TBD-040). After idle logout the UI returns to the login page the session came from; `operator_session.auth_method` records it (TBD-013).
 
+**After review (agreed):**
+
+- `POST <endpoint>/api/logout` ends the session on the server and clears its cookie; the idle countdown calls it before opening the login page (FR-ACCESS-005 step 4). Ticket 04's logout reuses it.
+- `GET <endpoint>/api/me` returns the idle timings (`idle.warnAfterSeconds` 840, `idle.logoffAfterSeconds` 900) or `null` when exempt, so the UI holds no copy.
+- The Authors/Admin exemption compares the access group **name**, like the role-name rule.
+- `ENDPOINT_DEFAULT` accepts only `desktop` or `mobile`; anything else is a configuration error.
+- ERR-004 is logged with an empty `fail_reason`, like ERR-003, pending TBD-047.
+
 **Out of scope:** desktop network restriction to internal/VPN (infrastructure, TBD-017).
 
 **Not covered by automated tests:** the UI-019 popup itself (AC-FR-ACCESS-005-01/02) and the bare-host redirect (AC-FR-ACCESS-003-03) are frontend behaviour outside the HTTP API seam; the redirect was checked manually, the popup was built to UI-019 but not exercised in a browser.

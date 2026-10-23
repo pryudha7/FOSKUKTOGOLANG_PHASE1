@@ -13,15 +13,29 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// IdleTimeout is how long a desktop session survives without a request
-// (FR-ACCESS-005: 14 minutes, then a 1-minute warning). Whether these come
-// from configuration is TBD-040.
-const IdleTimeout = 15 * time.Minute
+// FR-ACCESS-005: after IdleWarning without a request the UI warns; at
+// IdleTimeout the server ends a desktop session. Whether these come from
+// configuration is TBD-040.
+const (
+	IdleWarning = 14 * time.Minute
+	IdleTimeout = 15 * time.Minute
+)
 
 // Named is a master-data entry: its stable code and display name.
 type Named struct {
 	Code string
 	Name string
+}
+
+// nullableNamed scans the code and name of a master-data entry that may be
+// absent.
+type nullableNamed struct{ code, name *string }
+
+func (n nullableNamed) named() *Named {
+	if n.code == nil {
+		return nil
+	}
+	return &Named{Code: *n.code, Name: *n.name}
 }
 
 // Session is a live session and the access context of its operator.
@@ -34,8 +48,8 @@ type Session struct {
 	// mapping (FR-ACCESS-002); each is nil when there is none. There is no
 	// default (AC-FR-ACCESS-002-03).
 	AccessGroup, WorkGroup, WorkQueue *Named
-	// IdleTimeout reports whether the session ends after IdleTimeout.
-	IdleTimeout bool
+	// IdleTimeoutApplies reports whether the session ends after IdleTimeout.
+	IdleTimeoutApplies bool
 }
 
 // Session returns the live session for a token on an endpoint, ending it if
@@ -47,7 +61,7 @@ func (s *Service) Session(ctx context.Context, token string, endpoint Endpoint) 
 		sessionID    int64
 		method       string
 		lastActivity time.Time
-		ag, wg, wq   [2]*string
+		ag, wg, wq   nullableNamed
 	)
 	err := s.db.QueryRow(ctx, `
 		SELECT s.session_id, s.auth_method, s.last_activity_at, o.user_id, o.full_name, r.role_code, r.role_name,
@@ -70,7 +84,7 @@ func (s *Service) Session(ctx context.Context, token string, endpoint Endpoint) 
 		WHERE s.token_hash = $1 AND s.endpoint = $2`,
 		hashToken(token), string(endpoint)).Scan(
 		&sessionID, &method, &lastActivity, &sess.UserID, &sess.FullName, &sess.Role.Code, &sess.Role.Name,
-		&ag[0], &ag[1], &wg[0], &wg[1], &wq[0], &wq[1])
+		&ag.code, &ag.name, &wg.code, &wg.name, &wq.code, &wq.name)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			slog.Error("session lookup failed", "error", err)
@@ -78,14 +92,12 @@ func (s *Service) Session(ctx context.Context, token string, endpoint Endpoint) 
 		return Session{}, false
 	}
 	sess.Method, sess.Endpoint = Method(method), endpoint
-	sess.AccessGroup, sess.WorkGroup, sess.WorkQueue = named(ag), named(wg), named(wq)
-	sess.IdleTimeout = idleTimeoutApplies(sess)
+	sess.AccessGroup, sess.WorkGroup, sess.WorkQueue = ag.named(), wg.named(), wq.named()
+	sess.IdleTimeoutApplies = idleTimeoutApplies(sess)
 
 	now := s.now()
-	if sess.IdleTimeout && now.Sub(lastActivity) >= IdleTimeout {
-		if _, err := s.db.Exec(ctx, `DELETE FROM fos.operator_session WHERE session_id = $1`, sessionID); err != nil {
-			slog.Error("end idle session failed", "error", err)
-		}
+	if sess.IdleTimeoutApplies && now.Sub(lastActivity) >= IdleTimeout {
+		s.endSession(ctx, sessionID)
 		return Session{}, false
 	}
 	if _, err := s.db.Exec(ctx,
@@ -95,21 +107,31 @@ func (s *Service) Session(ctx context.Context, token string, endpoint Endpoint) 
 	return sess, true
 }
 
-func named(v [2]*string) *Named {
-	if v[0] == nil {
-		return nil
+// Logout ends the session for a token on an endpoint, if there is one. A
+// token from another endpoint is left alone (FR-ACCESS-004).
+func (s *Service) Logout(ctx context.Context, token string, endpoint Endpoint) {
+	if _, err := s.db.Exec(ctx,
+		`DELETE FROM fos.operator_session WHERE token_hash = $1 AND endpoint = $2`,
+		hashToken(token), string(endpoint)); err != nil {
+		slog.Error("logout failed", "error", err)
 	}
-	return &Named{Code: *v[0], Name: *v[1]}
+}
+
+func (s *Service) endSession(ctx context.Context, sessionID int64) {
+	if _, err := s.db.Exec(ctx, `DELETE FROM fos.operator_session WHERE session_id = $1`, sessionID); err != nil {
+		slog.Error("end idle session failed", "error", err)
+	}
 }
 
 // idleTimeoutApplies follows FR-ACCESS-005 rules 3-4: desktop only, and not
-// for a role whose name starts with "Identity Management" or an operator in
-// the Authors or Admin access group. The two checks are separate.
+// for a role whose name starts with "Identity Management" or an operator
+// whose access group is Authors or Admin. The two checks are separate, and
+// both compare names, as the rule does.
 func idleTimeoutApplies(s Session) bool {
 	if s.Endpoint != EndpointDesktop || strings.HasPrefix(s.Role.Name, "Identity Management") {
 		return false
 	}
-	return s.AccessGroup == nil || (s.AccessGroup.Code != "Authors" && s.AccessGroup.Code != "Admin")
+	return s.AccessGroup == nil || (s.AccessGroup.Name != "Authors" && s.AccessGroup.Name != "Admin")
 }
 
 func (s *Service) openSession(ctx context.Context, userID string, m Method, endpoint Endpoint) (string, error) {

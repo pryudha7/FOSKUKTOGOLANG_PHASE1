@@ -71,6 +71,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, opts ...Option) http.Handler {
 		mux.HandleFunc("POST "+ep.loginPrefix+cfg.LoginPathLDAP, s.login(ep, s.auth.LoginLDAP))   // API-001
 		mux.HandleFunc("POST "+ep.loginPrefix+cfg.LoginPathDB, s.login(ep, s.auth.LoginDatabase)) // API-002
 		mux.HandleFunc("GET "+ep.path+"/api/me", s.me(ep))
+		mux.HandleFunc("POST "+ep.path+"/api/logout", s.logout(ep))
 	}
 	return s.requireHTTPS(mux)
 }
@@ -151,6 +152,12 @@ func toNamedJSON(n *auth.Named) *namedJSON {
 	return &namedJSON{n.Code, n.Name}
 }
 
+// idleJSON states the FR-ACCESS-005 timings, so the UI holds no copy of them.
+type idleJSON struct {
+	WarnAfterSeconds   int `json:"warnAfterSeconds"`
+	LogoffAfterSeconds int `json:"logoffAfterSeconds"`
+}
+
 // me returns the session's operator and access context. Without a session of
 // this endpoint the request is unauthenticated (FR-ACCESS-004).
 func (s *server) me(ep endpoint) http.HandlerFunc {
@@ -165,20 +172,39 @@ func (s *server) me(ep endpoint) http.HandlerFunc {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		var idle *idleJSON
+		if sess.IdleTimeoutApplies {
+			idle = &idleJSON{int(auth.IdleWarning.Seconds()), int(auth.IdleTimeout.Seconds())}
+		}
 		writeJSON(w, http.StatusOK, struct {
 			UserID      string     `json:"userId"`
 			FullName    string     `json:"fullName"`
-			Role        namedJSON  `json:"role"`
+			Role        *namedJSON `json:"role"`
 			AccessGroup *namedJSON `json:"accessGroup"`
 			WorkGroup   *namedJSON `json:"workGroup"`
 			WorkQueue   *namedJSON `json:"workQueue"`
-			IdleTimeout bool       `json:"idleTimeout"`
+			Idle        *idleJSON  `json:"idle"`
 			LoginPath   string     `json:"loginPath"`
 		}{
-			sess.UserID, sess.FullName, namedJSON{sess.Role.Code, sess.Role.Name},
+			sess.UserID, sess.FullName, toNamedJSON(&sess.Role),
 			toNamedJSON(sess.AccessGroup), toNamedJSON(sess.WorkGroup), toNamedJSON(sess.WorkQueue),
-			sess.IdleTimeout, s.loginPath(ep, sess.Method),
+			idle, s.loginPath(ep, sess.Method),
 		})
+	}
+}
+
+// logout ends the session of this endpoint and clears its cookie
+// (FR-ACCESS-005 step 4; FR-NAV-002 reuses it).
+func (s *server) logout(ep endpoint) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if c, err := r.Cookie(sessionCookie); err == nil {
+			s.auth.Logout(r.Context(), c.Value, ep.id)
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name: sessionCookie, Value: "", Path: ep.path, MaxAge: -1,
+			HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
+		})
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

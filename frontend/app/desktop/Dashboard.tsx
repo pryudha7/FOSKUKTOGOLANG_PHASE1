@@ -9,7 +9,7 @@ export default function Dashboard({ endpointPath, loginPath }: { endpointPath: s
   const me = useSession(endpointPath, loginPath);
   return (
     <main aria-busy={!me}>
-      {me?.idleTimeout && <IdleWarning endpointPath={endpointPath} loginPath={me.loginPath} />}
+      {me?.idle && <IdleWarning endpointPath={endpointPath} loginPath={me.loginPath} idle={me.idle} />}
     </main>
   );
 }

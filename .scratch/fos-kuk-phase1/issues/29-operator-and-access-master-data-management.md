@@ -9,4 +9,5 @@
 - [ ] Every `AC-FR-ACCESS-002-*` acceptance criterion in SoT §13 passes through the management screens
 - [ ] Only operators permitted by the permission matrix (TBD-003) can manage operators and master data
 - [ ] A role without an active mapping fills nothing (AC-FR-ACCESS-002-03)
+- [ ] Enforce §9.3 when master data is edited: an active mapping never refers to an inactive or missing master (today the session lookup ignores such a mapping, but nothing prevents saving one)
 - [ ] Verified at the HTTP API seam against a real PostgreSQL, with external systems faked at the network boundary.

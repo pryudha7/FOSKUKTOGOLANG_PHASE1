@@ -166,8 +166,10 @@ func TestSessionsAreIsolatedPerEndpoint(t *testing.T) {
 func TestIdleDesktopSessionEndsAtFifteenMinutes(t *testing.T) {
 	h := apptest.New(t)
 	c := loggedIn(t, h, apptest.Operator{UserID: "AO014"})
-	if field(t, c.Me(t), "idleTimeout") != true {
-		t.Fatalf("idle timeout should apply to an ordinary operator")
+	// The server states the FR-ACCESS-005 timings, so the UI holds no copy.
+	me := c.Me(t)
+	if field(t, me, "idle", "warnAfterSeconds") != float64(14*60) || field(t, me, "idle", "logoffAfterSeconds") != float64(15*60) {
+		t.Fatalf("idle = %v, want 840/900 seconds", field(t, me, "idle"))
 	}
 
 	h.Clock.Advance(15*time.Minute - time.Second)
@@ -203,18 +205,27 @@ func TestIdleTimeoutExemptions(t *testing.T) {
 	h := apptest.New(t)
 	h.SeedMapping(t, apptest.Mapping{Role: "Ops Authors", AccessGroup: "Authors", WorkGroup: "Default"})
 	h.SeedMapping(t, apptest.Mapping{Role: "Ops Admin", AccessGroup: "Admin", WorkGroup: "Default"})
+	// Rule 3b names the access group; a code that differs from the name is
+	// irrelevant.
+	if _, err := h.DB.Exec(context.Background(), `INSERT INTO fos.access_groups
+		(access_group_code, access_group_name, is_active, created_at, updated_at)
+		VALUES ('AG-AUTHORS-2', 'Authors', TRUE, now(), now())`); err != nil {
+		t.Fatal(err)
+	}
+	h.SeedMapping(t, apptest.Mapping{Role: "Ops Authors 2", AccessGroup: "AG-AUTHORS-2", WorkGroup: "Default"})
 	exempt := map[string]*apptest.Client{
 		"Identity Management SectHead": loggedIn(t, h, apptest.Operator{UserID: "IM01", RoleCode: "Identity Management SectHead"}),
 		"Identity Management X":        loggedIn(t, h, apptest.Operator{UserID: "IM02", RoleCode: "Identity Management X"}),
 		"Authors":                      loggedIn(t, h, apptest.Operator{UserID: "AU01", RoleCode: "Ops Authors"}),
 		"Admin":                        loggedIn(t, h, apptest.Operator{UserID: "AD01", RoleCode: "Ops Admin"}),
+		"Authors, other code":          loggedIn(t, h, apptest.Operator{UserID: "AU02", RoleCode: "Ops Authors 2"}),
 	}
 	// Only the role-name prefix counts, not a name that merely contains it.
 	ordinary := loggedIn(t, h, apptest.Operator{UserID: "OP01", RoleCode: "Former Identity Management"})
 
 	for name, c := range exempt {
-		if field(t, c.Me(t), "idleTimeout") != false {
-			t.Fatalf("%s: idleTimeout should be false", name)
+		if got := field(t, c.Me(t), "idle"); got != nil {
+			t.Fatalf("%s: idle = %v, want none", name, got)
 		}
 	}
 	h.Clock.Advance(2 * time.Hour)
@@ -238,6 +249,44 @@ func TestMobileSessionHasNoIdleTimeout(t *testing.T) {
 	h.Clock.Advance(time.Hour)
 	if me := c.MeAt(t, apptest.EndpointPathMobile); me.Status != http.StatusOK {
 		t.Fatalf("mobile session timed out: %d", me.Status)
+	}
+}
+
+// FR-ACCESS-005 step 4: logging off ends the session on the server, so the
+// browser's Back button cannot revive it.
+func TestLogoutEndsTheSessionOnTheServer(t *testing.T) {
+	h := apptest.New(t)
+	c := loggedIn(t, h, apptest.Operator{UserID: "AO019"})
+	token := c.SessionCookie(apptest.EndpointPathDesktop)
+
+	if r := c.Logout(t, apptest.EndpointPathDesktop); r.Status != http.StatusNoContent {
+		t.Fatalf("logout = %d, want 204", r.Status)
+	}
+	if me := c.Me(t); me.Status != http.StatusUnauthorized {
+		t.Fatalf("session alive after logout: %d", me.Status)
+	}
+	if r := h.DoWithSessionCookie(t, http.MethodGet, apptest.EndpointPathDesktop+"/api/me", token); r.Status != http.StatusUnauthorized {
+		t.Fatalf("logged-out token still accepted: %d", r.Status)
+	}
+	if r := c.Logout(t, apptest.EndpointPathDesktop); r.Status != http.StatusNoContent {
+		t.Fatalf("second logout = %d, want 204", r.Status)
+	}
+}
+
+// A logout on one endpoint leaves the operator's session on the other alone.
+func TestLogoutOnlyEndsTheSessionOfItsEndpoint(t *testing.T) {
+	h := apptest.New(t)
+	h.SeedOperator(t, apptest.Operator{UserID: "AO020", Password: "Rahasia#1", MobileAccess: true})
+	c := h.NewClient()
+	c.LoginDatabase(t, "AO020", "Rahasia#1")
+	c.LoginMobileDatabase(t, "AO020", "Rahasia#1")
+	mobileToken := c.SessionCookie(apptest.EndpointPathMobile)
+
+	if r := h.DoWithSessionCookie(t, http.MethodPost, apptest.EndpointPathDesktop+"/api/logout", mobileToken); r.Status != http.StatusNoContent {
+		t.Fatalf("logout = %d", r.Status)
+	}
+	if me := c.MeAt(t, apptest.EndpointPathMobile); me.Status != http.StatusOK {
+		t.Fatalf("mobile session ended by a desktop logout: %d", me.Status)
 	}
 }
 

@@ -343,6 +343,12 @@ func (c *Client) MeAt(t *testing.T, endpointPath string) Response {
 	return c.Do(t, http.MethodGet, endpointPath+"/api/me", nil)
 }
 
+// Logout ends the session on an endpoint.
+func (c *Client) Logout(t *testing.T, endpointPath string) Response {
+	t.Helper()
+	return c.Do(t, http.MethodPost, endpointPath+"/api/logout", nil)
+}
+
 // LoginMobileDatabase submits Database-path credentials on the mobile
 // endpoint (agreed: login paths nest under ENDPOINT_PATH_MOBILE).
 func (c *Client) LoginMobileDatabase(t *testing.T, username, password string) Response {

@@ -1,15 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiFetch, serverRequestEvent } from "@/lib/api";
+import { apiFetch, logOff, serverRequestEvent, type Me } from "@/lib/api";
 import styles from "./idle.module.css";
 
-const warnAfterMs = 14 * 60 * 1000; // FR-ACCESS-005: warning after 14 minutes
-const countdownSeconds = 60; //         then 1:00 to log off (TBD-040: configurable?)
-
-// UI-019 "Log off timeout warning". The server ends the session at 15
-// minutes regardless (FR-ACCESS-005 rule 2); this popup only warns.
-export default function IdleWarning({ endpointPath, loginPath }: { endpointPath: string; loginPath: string }) {
+// UI-019 "Log off timeout warning", with the timings the server states. The
+// server ends the session at the logoff time regardless (FR-ACCESS-005 rule
+// 2); at the end of the countdown the UI ends it too (step 4).
+export default function IdleWarning({
+  endpointPath,
+  loginPath,
+  idle,
+}: {
+  endpointPath: string;
+  loginPath: string;
+  idle: NonNullable<Me["idle"]>;
+}) {
+  const warnAfterMs = idle.warnAfterSeconds * 1000;
+  const countdownSeconds = idle.logoffAfterSeconds - idle.warnAfterSeconds;
   const [remaining, setRemaining] = useState<number | null>(null);
   const warnTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const showing = remaining !== null;
@@ -17,7 +25,7 @@ export default function IdleWarning({ endpointPath, loginPath }: { endpointPath:
   const restart = useCallback(() => {
     clearTimeout(warnTimer.current);
     warnTimer.current = setTimeout(() => setRemaining(countdownSeconds), warnAfterMs);
-  }, []);
+  }, [warnAfterMs, countdownSeconds]);
 
   // Each server request restarts the idle timer, except while the popup is
   // shown: then only OK does (FR-ACCESS-005 rule 1).
@@ -40,12 +48,12 @@ export default function IdleWarning({ endpointPath, loginPath }: { endpointPath:
       return;
     }
     if (remaining <= 0) {
-      window.location.assign(loginPath);
+      void logOff(endpointPath, loginPath);
       return;
     }
     const tick = setTimeout(() => setRemaining(remaining - 1), 1000);
     return () => clearTimeout(tick);
-  }, [remaining, loginPath]);
+  }, [remaining, endpointPath, loginPath]);
 
   if (!showing) {
     return null;

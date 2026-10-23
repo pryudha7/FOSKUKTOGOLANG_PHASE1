@@ -13,6 +13,13 @@ export function apiFetch(input: string, init?: RequestInit): Promise<Response> {
 export type Me = {
   userId: string;
   fullName: string;
-  idleTimeout: boolean;
+  // FR-ACCESS-005 timings, or null when the operator is exempt.
+  idle: { warnAfterSeconds: number; logoffAfterSeconds: number } | null;
   loginPath: string;
 };
+
+// Ends the endpoint's session on the server, then opens its login page.
+export async function logOff(endpointPath: string, loginPath: string): Promise<void> {
+  await apiFetch(`${endpointPath}/api/logout`, { method: "POST" }).catch(() => undefined);
+  window.location.assign(loginPath);
+}

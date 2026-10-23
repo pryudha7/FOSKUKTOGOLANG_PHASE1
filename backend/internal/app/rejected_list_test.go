@@ -72,7 +72,7 @@ func TestDHNScreensABusinessEntityByNPWP(t *testing.T) {
 		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name, establishment_date) VALUES ($1, 'Badan Usaha', '012345678901234', 'PT Maju', '2010-05-01')`, caseID)
 		addSpouse(h, t, caseID)
 	})
-	eventually(t, "the run to reach SLIK", func() bool { return run(t, h, caseID).Step == "SLIK" })
+	eventually(t, "the Rejected List to pass", func() bool { return pastRejectedList(run(t, h, caseID)) })
 	calls := dhn.Calls()
 	if len(calls) != 1 || calls[0].Path != "/v1/customer/dhn/check/012345678901234" || len(dukcapil.Requests()) != 0 {
 		t.Fatalf("DHN calls %+v, Dukcapil calls %d", calls, len(dukcapil.Requests()))
@@ -120,7 +120,7 @@ func TestRejectedListPassesWithoutAnActiveMatch(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			h, _, _, caseID := checksWith(t, dukcapilOK, dhnOK, func(h *apptest.Harness, caseID string) { seed(h, caseID) })
-			eventually(t, "the run to reach SLIK", func() bool { return run(t, h, caseID).Step == "SLIK" })
+			eventually(t, "the Rejected List to pass", func() bool { return pastRejectedList(run(t, h, caseID)) })
 		})
 	}
 }
@@ -202,7 +202,7 @@ func TestRecoveryRepeatsTheRejectedListCheck(t *testing.T) {
 	exec(t, h, `INSERT INTO fos.prescreening_runs (case_id, state, current_step, attempt, owner_id, heartbeat_at, started_at, updated_at)
 		VALUES ($1, 'RUNNING', 'Rejected List', 1, 'dead-executor', $2, $2, $2)`, caseID, time.Now().UTC().Add(-2*time.Minute))
 	apptest.New(t, func(c *config.Config) { c.DatabaseURL = h.Config.DatabaseURL })
-	eventually(t, "the run to reach SLIK", func() bool { return run(t, h, caseID).Step == "SLIK" })
+	eventually(t, "the Rejected List to pass", func() bool { return pastRejectedList(run(t, h, caseID)) })
 	if len(apiLogs(t, h, caseID)) != 0 {
 		t.Fatal("the Rejected List was logged")
 	}
@@ -240,7 +240,7 @@ func TestRejectedListMatchesTheCustomerType(t *testing.T) {
 		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name, establishment_date) VALUES ($1, 'Badan Usaha', '012345678901234', 'PT Maju', '2010-05-01')`, caseID)
 		listRejected(t, h, "012345678901234", "Orang", "1990-01-01", "ACTIVE", "Perorangan")
 	})
-	eventually(t, "the run to reach SLIK", func() bool { return run(t, h, caseID).Step == "SLIK" })
+	eventually(t, "the Rejected List to pass", func() bool { return pastRejectedList(run(t, h, caseID)) })
 }
 
 // FR-PSAPI-001 rule 9: when the Rejected List entry cannot be saved, the

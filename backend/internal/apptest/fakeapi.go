@@ -117,3 +117,18 @@ func (h *Harness) UseDHN(t *testing.T, f *FakeAPI) {
 	t.Helper()
 	h.useAPI(t, "dhn", f.URL, "DHN_APIKEY", DHNAPIKey)
 }
+
+// SLIKAPIKey is the key the SLIK fake is called with.
+const SLIKAPIKey = "slik-test-key"
+
+// SLIK request replies (FR-PSAPI-008 rule 3).
+var (
+	SLIKAccepted = FakeReply{Status: 200, Body: `{"code":"1100","message":"success"}`}
+	SLIKInvalid  = FakeReply{Status: 400, Body: `{"code":"4000","message":"request invalid","errors":["pilihan fasilitas hanya boleh Seluruh atau Outstanding"]}`}
+)
+
+// UseSLIK points the SLIK settings at a fake.
+func (h *Harness) UseSLIK(t *testing.T, f *FakeAPI) {
+	t.Helper()
+	h.useAPI(t, "slik", f.URL, "SLIK_APIKEY", SLIKAPIKey)
+}

@@ -37,14 +37,11 @@ func apiNames(logs []apiLogRow) []string {
 // AC-FR-PSAPI-006-01, -03, AC-FR-PSAPI-007-02: after Dukcapil, DHN is a GET
 // on the customer's NIK with x-api-key, logged with the NIK as request; even
 // DN-01 passes; the Rejected List finds nothing and logs nothing; the run
-// then waits on SLIK (ticket 11).
+// then goes on to SLIK.
 func TestDHNAndRejectedListPass(t *testing.T) {
 	h, _, dhn, caseID := checksWith(t, []apptest.FakeReply{apptest.DukcapilMatch}, []apptest.FakeReply{apptest.DHNFound}, nil)
 
-	eventually(t, "the run to reach SLIK", func() bool { return run(t, h, caseID).Step == "SLIK" })
-	if got := run(t, h, caseID); got.State != "RUNNING" {
-		t.Fatalf("run = %+v", got)
-	}
+	eventually(t, "the Rejected List to pass", func() bool { return pastRejectedList(run(t, h, caseID)) })
 	calls := dhn.Calls()
 	if len(calls) != 1 || calls[0].Method != http.MethodGet || calls[0].Path != "/v1/customer/dhn/check/3171011234567890" ||
 		calls[0].Header.Get("x-api-key") != apptest.DHNAPIKey || calls[0].Header.Get("Accept") != "application/json" || calls[0].Body != "" {
@@ -64,4 +61,14 @@ func TestDHNAndRejectedListPass(t *testing.T) {
 	if caseStatus(t, h, caseID) != "Pending-Prescreening" {
 		t.Fatalf("case_status = %s", caseStatus(t, h, caseID))
 	}
+}
+
+// pastRejectedList reports whether the run has moved beyond the Rejected
+// List check (to SLIK or later), whatever state the later steps leave it in.
+func pastRejectedList(r runRow) bool {
+	switch r.Step {
+	case "Dukcapil", "DHN", "Rejected List":
+		return false
+	}
+	return true
 }

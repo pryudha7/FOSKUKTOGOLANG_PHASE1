@@ -458,3 +458,43 @@ func (h *Harness) DoWithSessionCookie(t *testing.T, method, path, token string) 
 	c := &Client{Header: http.Header{"Cookie": {"fos_session=" + token}}, h: h, http: &http.Client{}}
 	return c.Do(t, method, path, nil)
 }
+
+// CallService posts multipart form fields and one file to an external
+// service path (e.g. /api/NBS/v1/PBSResponse) with Basic credentials, as the
+// RPA does; empty user sends no credentials.
+func (h *Harness) CallService(t *testing.T, path, user, password string, fields map[string]string, fileField, fileName string, data []byte) Response {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for _, k := range slices.Sorted(maps.Keys(fields)) {
+		_ = mw.WriteField(k, fields[k])
+	}
+	if fileField != "" {
+		part, err := mw.CreateFormFile(fileField, fileName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = part.Write(data)
+	}
+	_ = mw.Close()
+	req, err := http.NewRequest(http.MethodPost, h.Server.URL+path, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("X-Forwarded-Proto", "https")
+	if user != "" {
+		req.SetBasicAuth(user, password)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	out := Response{Status: resp.StatusCode, Raw: string(raw), Header: resp.Header}
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &out.Body)
+	}
+	return out
+}

@@ -99,6 +99,9 @@ func New(cfg config.Config, pool *pgxpool.Pool, opts ...Option) *App {
 	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/retry", s.retryReview(desktop))
 	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/documents", s.uploadDocument(desktop))
 	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/documents/{fileId}", s.downloadDocument(desktop))
+	// External services (FR-PSAPI-009) live at the root, outside the endpoints.
+	mux.HandleFunc("POST "+serviceNamespace+"v1/PBSResponse", s.pbsResponse)
+	mux.HandleFunc(serviceNamespace, s.serviceUnknown)
 	return &App{Handler: s.requireHTTPS(mux), cases: s.cases}
 }
 

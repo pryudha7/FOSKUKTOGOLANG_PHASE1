@@ -22,6 +22,7 @@ import (
 // Run states (§9.15).
 const (
 	runRunning         = "RUNNING"
+	runWaitingSLIK     = "WAITING_SLIK"
 	runCompleted       = "COMPLETED"
 	runStoppedRejected = "STOPPED_REJECTED"
 	runStoppedFailed   = "STOPPED_FAILED"
@@ -69,10 +70,13 @@ func (o outcome) logStatus() string {
 	return apiSuccess
 }
 
-// attempt is one try of a check: its outcome and the log row it made.
+// attempt is one try of a check: its outcome, the log row it made, and
+// what a passed attempt changes besides the run (e.g. slik_report REQUESTED),
+// applied in the transaction that records it.
 type attempt struct {
 	outcome outcome
 	log     *apiLog
+	apply   func(context.Context, pgx.Tx) error
 }
 
 // check is one step of the run. apiName is its Connect API Log api_name;
@@ -119,7 +123,10 @@ func newExecutor(s *Service) *Executor {
 		s: s, owner: fmt.Sprintf("%s/%d/%s", host, os.Getpid(), hex.EncodeToString(b)),
 		http: &http.Client{}, getenv: os.Getenv, ctx: ctx, cancel: cancel, active: map[int64]bool{},
 	}
-	e.checks = map[string]check{dukcapilAPI.logName: e.dukcapilCheck(), dhnAPI.logName: e.dhnCheck(), stepRejectedList: e.rejectedListCheck()}
+	e.checks = map[string]check{
+		dukcapilAPI.logName: e.dukcapilCheck(), dhnAPI.logName: e.dhnCheck(), stepRejectedList: e.rejectedListCheck(),
+		stepSLIK: e.slikCheck(subjectCustomer), stepSLIKSpouse: e.slikCheck(subjectSpouse),
+	}
 	return e
 }
 
@@ -290,7 +297,7 @@ func (e *Executor) execute(runID int64) {
 		}
 		switch a.outcome {
 		case outcomeSuccess, outcomeSkip:
-			if !e.advance(ctx, r, a.log) {
+			if !e.advance(ctx, r, a) {
 				return
 			}
 		case outcomeRejected:
@@ -306,7 +313,7 @@ func (e *Executor) execute(runID int64) {
 				e.finish(ctx, r, a.log, e.fail)
 				return
 			}
-			if !e.recordAttempt(ctx, r, a.log, r.step, r.attempt+1) {
+			if !e.recordAttempt(ctx, r, a.log, nil, r.step, r.attempt+1) {
 				return
 			}
 			select {
@@ -327,21 +334,71 @@ func nextStep(step string) string {
 	return checkOrder[i+1]
 }
 
-// advance records a passed attempt and moves to the next step.
-func (e *Executor) advance(ctx context.Context, r runRef, log *apiLog) bool {
+// advance records a passed attempt and moves to the next step. After the
+// SLIK requests the run waits for their results (FR-PSAPI-011) unless they
+// are all in already.
+func (e *Executor) advance(ctx context.Context, r runRef, a attempt) bool {
 	next := nextStep(r.step)
 	if next == "" {
 		// Every check passed: Pipeline Data Entry (FR-APP-004) is ticket 15.
-		e.finish(ctx, r, log, func(context.Context, pgx.Tx, runRef) (string, error) { return runCompleted, nil })
+		e.finish(ctx, r, a.log, func(ctx context.Context, tx pgx.Tx, _ runRef) (string, error) {
+			return runCompleted, applyOf(a)(ctx, tx)
+		})
 		return false
 	}
-	return e.recordAttempt(ctx, r, log, next, 1)
+	if r.step != stepSLIKSpouse {
+		return e.recordAttempt(ctx, r, a.log, a.apply, next, 1)
+	}
+	waiting := false
+	err := e.inOwnedRun(ctx, r, a.log, func(tx pgx.Tx) error {
+		if err := applyOf(a)(ctx, tx); err != nil {
+			return err
+		}
+		var pending bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM fos.slik_report WHERE case_id = $1 AND status <> $2)`,
+			r.caseID, slikReceived).Scan(&pending); err != nil {
+			return err
+		}
+		state, deadline := runRunning, (*time.Time)(nil)
+		if pending {
+			sla, err := e.s.settings.Int(ctx, "process/slik/wait_sla_seconds")
+			if err != nil {
+				return err
+			}
+			d := e.s.now().Add(time.Duration(sla) * time.Second)
+			state, deadline, waiting = runWaitingSLIK, &d, true
+		}
+		_, err := tx.Exec(ctx, `UPDATE fos.prescreening_runs SET state = $2, current_step = $3, attempt = 1, wait_deadline_at = $4,
+			heartbeat_at = $5, updated_at = $5 WHERE run_id = $1`, r.id, state, next, deadline, e.s.now())
+		return err
+	})
+	if err != nil {
+		if ctx.Err() == nil && !errors.Is(err, errRunLost) {
+			e.stopBroken(ctx, r, fmt.Errorf("attempt not recorded: %w", err))
+		}
+		return false
+	}
+	return !waiting
 }
 
-// recordAttempt writes the attempt's log row and the run's next position in
-// one transaction, only while this executor still owns the run.
-func (e *Executor) recordAttempt(ctx context.Context, r runRef, log *apiLog, step string, attemptNumber int) bool {
+// applyOf is the attempt's extra change, or none.
+func applyOf(a attempt) func(context.Context, pgx.Tx) error {
+	if a.apply == nil {
+		return func(context.Context, pgx.Tx) error { return nil }
+	}
+	return a.apply
+}
+
+// recordAttempt writes the attempt's log row, its extra change (if any) and
+// the run's next position in one transaction, only while this executor
+// still owns the run.
+func (e *Executor) recordAttempt(ctx context.Context, r runRef, log *apiLog, apply func(context.Context, pgx.Tx) error, step string, attemptNumber int) bool {
 	err := e.inOwnedRun(ctx, r, log, func(tx pgx.Tx) error {
+		if apply != nil {
+			if err := apply(ctx, tx); err != nil {
+				return err
+			}
+		}
 		_, err := tx.Exec(ctx, `UPDATE fos.prescreening_runs SET current_step = $2, attempt = $3, heartbeat_at = $4, updated_at = $4 WHERE run_id = $1`,
 			r.id, step, attemptNumber, e.s.now())
 		return err
@@ -420,9 +477,19 @@ func (e *Executor) inOwnedRun(ctx context.Context, r runRef, log *apiLog, change
 // the alternate stage Rejected, and its Customer and Spouse to the Rejected
 // List unless the Rejected List itself rejected it (FR-PSAPI-007).
 func (e *Executor) reject(ctx context.Context, tx pgx.Tx, r runRef) (string, error) {
+	reason := ""
 	if r.step != stepRejectedList {
-		if err := e.recordRejection(ctx, tx, r.caseID, e.apiNameOf(r.step)); err != nil {
-			return "", err
+		reason = rejectionReason(e.apiNameOf(r.step), "")
+	}
+	return runStoppedRejected, e.rejectCase(ctx, tx, r.caseID, reason)
+}
+
+// rejectCase moves the case to Rejected and, given a reason, records its
+// Customer and Spouse on the Rejected List, in the caller's transaction.
+func (e *Executor) rejectCase(ctx context.Context, tx pgx.Tx, caseID, reason string) error {
+	if reason != "" {
+		if err := e.recordRejection(ctx, tx, caseID, reason); err != nil {
+			return err
 		}
 	}
 	now := e.s.now()
@@ -430,14 +497,12 @@ func (e *Executor) reject(ctx context.Context, tx pgx.Tx, r runRef) (string, err
 		INSERT INTO fos.case_stage_progress (case_id, stage_name, first_entered_at, entered_from_stage)
 		SELECT case_id, $2, $3, current_stage FROM fos.work WHERE case_id = $1
 		ON CONFLICT (case_id, stage_name) DO UPDATE SET entered_from_stage = EXCLUDED.entered_from_stage`,
-		r.caseID, StageRejected, now); err != nil {
-		return "", err
+		caseID, StageRejected, now); err != nil {
+		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE fos.work SET case_status = $2, current_stage = $3, updated_at = $4 WHERE case_id = $1`,
-		r.caseID, CaseStatusRejectedPreScreening, StageRejected, now); err != nil {
-		return "", err
-	}
-	return runStoppedRejected, nil
+	_, err := tx.Exec(ctx, `UPDATE fos.work SET case_status = $2, current_stage = $3, updated_at = $4 WHERE case_id = $1`,
+		caseID, CaseStatusRejectedPreScreening, StageRejected, now)
+	return err
 }
 
 // fail is a Check Failure (FR-PSAPI-001 Process 4): the case returns to its

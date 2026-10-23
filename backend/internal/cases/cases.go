@@ -118,6 +118,9 @@ func NewService(db *pgxpool.Pool, now func() time.Time, storage Storage, setting
 // executor died, now and every minute (FR-PSAPI-002 Process 5).
 func (s *Service) StartRuns() { s.runs.Start() }
 
+// Now is the service clock (UTC).
+func (s *Service) Now() time.Time { return s.now() }
+
 // Close stops the executor and waits for its runs to pause.
 func (s *Service) Close() { s.runs.Close() }
 

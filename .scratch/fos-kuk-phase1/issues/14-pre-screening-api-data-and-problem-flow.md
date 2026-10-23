@@ -13,3 +13,5 @@
 - [ ] Verified at the HTTP API seam against a real PostgreSQL, with external systems faked at the network boundary.
 
 Note from ticket 09 (2026-10-23): the UI-020 table on the Retry view has no sort/filter menus yet; add them here with History Details. A run stopped STOPPED_BROKEN (missing setting or secret) should raise the Problem Flow assignment (FR-FLOW-001).
+
+Moved here from ticket 11 (2026-10-23): View SLIK on the SLIK / SLIKPasangan RESPONSE tab (AC-FR-PSAPI-010-05; the PDF comes with ticket 34).

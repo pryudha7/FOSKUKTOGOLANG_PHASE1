@@ -34,4 +34,6 @@ Backend tests run at the HTTP API seam against a real PostgreSQL; external syste
 
 ## Deployment requirement: TLS
 
+External services call the backend directly under `/api/NBS/` (for example the RPA's `POST /api/NBS/v1/PBSResponse`, FR-PSAPI-009). The proxy must route that prefix to the backend, not through Next.js. The RPA account is an operator with role `RPA` and a bcrypt password; every hit on the prefix is written to the Connect API Log.
+
 The backend accepts requests only over HTTPS (FR-LOGIN-004): directly over TLS, or from a proxy listed in `TRUSTED_PROXY_CIDRS` that sends `X-Forwarded-Proto: https`. The Next.js server forwards that header from its client unchanged, so the TLS-terminating proxy in front of Next.js must **overwrite** `X-Forwarded-Proto` and `X-Forwarded-For` on every request.

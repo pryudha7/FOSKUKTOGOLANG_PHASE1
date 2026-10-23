@@ -21,4 +21,6 @@ Before running: start PostgreSQL, the backend and `next start -p 13000` (see the
 | `retry.js` | Sesuai starts the Pre-Screening Check; Dukcapil on a closed port fails four times; the Team Lead's Retry view (Gambar 35) and its Submit (ticket 09); needs `api/dukcapil/baseurl` set to a closed port and `DUKCAPIL_APIKEY` in the backend environment |
 | `duu.js` | Document Underlying Upload: document list, Upload Document modal, document icon download, attachments panel, ERR-035 popup (ticket 07) |
 
+No UI check for ticket 11: it has no screen (the PBSResponse service is called by the RPA).
+
 `duu.js` needs file storage: run `node fakegcs.js 14443 shots/gcs.json` (an in-memory stand-in for the GCS JSON API) and start the backend with `GCS_PROJECT_ID` and `GCS_BUCKET_NAME` set to any value, `GCS_CREDENTIAL` set to the written `shots/gcs.json`, and `STORAGE_EMULATOR_HOST=127.0.0.1:14443`. Its ERR-035 step edits the case through `docker exec fos-smoke-pg psql`; set `DOCKER` to docker's full path if `cmd` cannot find it.

@@ -106,6 +106,27 @@ func (s *Service) LoginDatabase(ctx context.Context, a Attempt) (Operator, strin
 
 // LoginLDAP authenticates against the directory, then requires the user to
 // be a registered FOS operator (FR-LOGIN-002).
+// VerifyServiceAccount checks Basic credentials of a system account (e.g.
+// the RPA calling PBSResponse, FR-PSAPI-009): an operator with roleCode and
+// a matching bcrypt password. It returns the stored user ID. No session is
+// made and no login_log row is written (DB-RULE-069 concerns operators).
+func (s *Service) VerifyServiceAccount(ctx context.Context, username, password, roleCode string) (string, bool, error) {
+	var userID, hash, role string
+	err := s.db.QueryRow(ctx, `SELECT user_id, password_hash, role_code FROM fos.operator WHERE lower(user_id) = lower($1)`, username).
+		Scan(&userID, &hash, &role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password)) // same cost as a known user
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil || role != roleCode {
+		return "", false, nil
+	}
+	return userID, true, nil
+}
+
 func (s *Service) LoginLDAP(ctx context.Context, a Attempt) (Operator, string, error) {
 	l := s.newLogin(ctx, MethodLDAP, a)
 	if !s.ldap.Complete() {

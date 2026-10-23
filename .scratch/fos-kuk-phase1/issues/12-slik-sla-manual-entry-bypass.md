@@ -13,3 +13,5 @@
 - [ ] A bypassed retry writes a Bypass log row without calling SLIK
 - [ ] Create is refused until a SLIK document is uploaded on a case returned for Manual SLIK Entry (ERR-036)
 - [ ] Verified at the HTTP API seam against a real PostgreSQL, with external systems faked at the network boundary.
+
+Moved here from ticket 11 (2026-10-23): creating the SLIKWQFlowAct assignment when the run enters WAITING_SLIK (FR-PSAPI-011 step 1, FR-PSAPI-013) and completing it on a result; AC-FR-PSAPI-010-06 (copy of the automatic SLIK PDF into Dokumen Pre-Screening when Document Underlying Upload reopens; needs ticket 34's PDF).

@@ -157,7 +157,7 @@ func (e *Executor) call(ctx context.Context, c apiConfig, log *apiLog, u *url.UR
 func (e *Executor) send(ctx context.Context, c apiConfig, log *apiLog, path string, body []byte, headers map[string]string, evaluate func(string) outcome) (attempt, error) {
 	if c.simulate {
 		log.status, log.response, log.method = apiSuccess, c.simulateResponse, ""
-		return attempt{outcomeSuccess, log}, nil
+		return attempt{outcome: outcomeSuccess, log: log}, nil
 	}
 	u, err := c.endpoint(path)
 	if err != nil {
@@ -172,14 +172,14 @@ func (e *Executor) send(ctx context.Context, c apiConfig, log *apiLog, path stri
 		o = evaluate(log.response)
 	}
 	log.status = o.logStatus()
-	return attempt{o, log}, nil
+	return attempt{outcome: o, log: log}, nil
 }
 
 // failed is an attempt that failed before any call, e.g. on missing
 // request data (agreed for ticket 09): logged as Fail and retried.
 func failed(log *apiLog, cause error) attempt {
 	log.status, log.response, log.method = apiFail, cause.Error(), ""
-	return attempt{outcomeFail, log}
+	return attempt{outcome: outcomeFail, log: log}
 }
 
 // noBodyMessage is the Response of an answer without a body (FR-PSAPI-004

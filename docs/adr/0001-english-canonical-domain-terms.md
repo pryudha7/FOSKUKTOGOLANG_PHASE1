@@ -1,0 +1,3 @@
+# English canonical domain terms over the Indonesian UI
+
+The FOS KUK Source of Truth and the user interface are in Indonesian, but `GLOSSARY.md` uses English canonical terms (e.g. **Customer Type**) with the Indonesian UI label recorded beside each (_Tipe Nasabah_), and Go and database identifiers map one-to-one to those English terms. We chose this because the SoT already mandates English snake_case database names and English stage names, so a single English vocabulary keeps glossary, code and schema aligned; the cost is that business users and UI copy speak Indonesian, which the recorded UI label bridges.

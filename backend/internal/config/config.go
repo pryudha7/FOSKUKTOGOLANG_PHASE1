@@ -19,6 +19,7 @@ type Config struct {
 	LoginPathDB         string // LOGIN_PATH_DB
 	LoginPathLDAP       string // LOGIN_PATH_LDAP
 	EndpointPathDesktop string // ENDPOINT_PATH_DESKTOP
+	EndpointPathMobile  string // ENDPOINT_PATH_MOBILE
 	// TrustedProxyCIDRs lists the reverse proxies allowed to assert HTTPS via
 	// X-Forwarded-Proto (TRUSTED_PROXY_CIDRS, comma-separated).
 	TrustedProxyCIDRs []netip.Prefix
@@ -59,6 +60,7 @@ func FromEnv() (Config, error) {
 		LoginPathDB:         get("LOGIN_PATH_DB"),
 		LoginPathLDAP:       get("LOGIN_PATH_LDAP"),
 		EndpointPathDesktop: get("ENDPOINT_PATH_DESKTOP"),
+		EndpointPathMobile:  get("ENDPOINT_PATH_MOBILE"),
 		LDAP: LDAP{
 			URL:          optional("LDAP_URL"),
 			BindDN:       optional("LDAP_BIND_DN"),

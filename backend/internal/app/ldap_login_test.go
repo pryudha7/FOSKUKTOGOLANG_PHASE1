@@ -136,8 +136,9 @@ func loadConfigFromEnv(t *testing.T, dir *apptest.FakeLDAP, key, value string) c
 	env := map[string]string{
 		"APP_ENV": "test", "LISTEN_ADDR": ":0", "DATABASE_URL": "unused",
 		"LOGIN_PATH_DB": apptest.LoginPathDB, "LOGIN_PATH_LDAP": apptest.LoginPathLDAP,
-		"ENDPOINT_PATH_DESKTOP": apptest.EndpointPathDesktop, "TRUSTED_PROXY_CIDRS": "127.0.0.1/32",
-		"LDAP_URL": dir.URL, "LDAP_BIND_DN": dir.BindDN, "LDAP_BIND_PASSWORD": dir.BindPassword,
+		"ENDPOINT_PATH_DESKTOP": apptest.EndpointPathDesktop, "ENDPOINT_PATH_MOBILE": apptest.EndpointPathMobile,
+		"TRUSTED_PROXY_CIDRS": "127.0.0.1/32",
+		"LDAP_URL":            dir.URL, "LDAP_BIND_DN": dir.BindDN, "LDAP_BIND_PASSWORD": dir.BindPassword,
 		"LDAP_BASE_DN": dir.BaseDN, "LDAP_SEARCH_FILTER": "SamAccountName=%v", "LDAP_TIMEOUT_SECONDS": "2",
 	}
 	env[key] = value

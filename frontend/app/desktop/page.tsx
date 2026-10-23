@@ -1,4 +1,4 @@
-import { requireEnv } from "@/lib/env";
+import { endpoints } from "@/lib/env";
 import Dashboard from "./Dashboard";
 
 // UI-009 Dashboard, served at ENDPOINT_PATH_DESKTOP. Its components arrive in
@@ -6,7 +6,6 @@ import Dashboard from "./Dashboard";
 export const dynamic = "force-dynamic";
 
 export default function DesktopPage() {
-  return (
-    <Dashboard endpointPath={requireEnv("ENDPOINT_PATH_DESKTOP")} loginPath={requireEnv("LOGIN_PATH_DB")} />
-  );
+  const { desktop } = endpoints();
+  return <Dashboard endpointPath={desktop.path} loginPath={desktop.defaultLoginPath} />;
 }

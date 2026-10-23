@@ -1,23 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSession } from "@/app/session/useSession";
+import IdleWarning from "@/app/session/IdleWarning";
 
-// Empty Dashboard shell: shown only to an authenticated operator; anyone
-// else is sent to the login page.
+// Empty Dashboard shell for an authenticated desktop operator; its
+// components arrive in later tickets.
 export default function Dashboard({ endpointPath, loginPath }: { endpointPath: string; loginPath: string }) {
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    fetch(`${endpointPath}/api/me`, { cache: "no-store" })
-      .then((res) => {
-        if (res.ok) {
-          setReady(true);
-        } else {
-          window.location.assign(loginPath);
-        }
-      })
-      .catch(() => window.location.assign(loginPath));
-  }, [endpointPath, loginPath]);
-
-  return <main aria-busy={!ready} />;
+  const me = useSession(endpointPath, loginPath);
+  return (
+    <main aria-busy={!me}>
+      {me?.idleTimeout && <IdleWarning endpointPath={endpointPath} loginPath={me.loginPath} />}
+    </main>
+  );
 }

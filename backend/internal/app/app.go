@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -31,6 +32,16 @@ var loginErrors = map[string]struct {
 	"ERR-001": {http.StatusUnauthorized, "Informasi yang Anda masukkan tidak dikenali."},
 	"ERR-002": {http.StatusServiceUnavailable, "Layanan autentikasi sedang tidak tersedia. Silakan coba beberapa saat lagi."},
 	"ERR-003": {http.StatusServiceUnavailable, "Layanan sedang tidak tersedia. Silakan coba beberapa saat lagi."},
+	"ERR-004": {http.StatusForbidden, "Anda tidak memiliki akses ke aplikasi mobile."},
+}
+
+// endpoint is one channel (FR-ACCESS-003). Its login paths are the
+// configured LOGIN_PATH_* under loginPrefix: none on desktop, and
+// ENDPOINT_PATH_MOBILE on mobile (agreed for TBD-017).
+type endpoint struct {
+	id          auth.Endpoint
+	path        string
+	loginPrefix string
 }
 
 type server struct {
@@ -38,13 +49,38 @@ type server struct {
 	auth *auth.Service
 }
 
-func New(cfg config.Config, pool *pgxpool.Pool) http.Handler {
-	s := &server{cfg: cfg, auth: auth.NewService(pool, cfg.LDAP)}
+// Option adjusts how the app is built.
+type Option func(*options)
+
+type options struct{ now func() time.Time }
+
+// WithClock replaces the wall clock, e.g. with a test clock.
+func WithClock(now func() time.Time) Option { return func(o *options) { o.now = now } }
+
+func New(cfg config.Config, pool *pgxpool.Pool, opts ...Option) http.Handler {
+	o := options{now: func() time.Time { return time.Now().UTC() }}
+	for _, f := range opts {
+		f(&o)
+	}
+	s := &server{cfg: cfg, auth: auth.NewService(pool, cfg.LDAP, o.now)}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST "+cfg.LoginPathLDAP, s.login(s.auth.LoginLDAP))   // API-001
-	mux.HandleFunc("POST "+cfg.LoginPathDB, s.login(s.auth.LoginDatabase)) // API-002
-	mux.HandleFunc("GET "+cfg.EndpointPathDesktop+"/api/me", s.me)
+	for _, ep := range []endpoint{
+		{id: auth.EndpointDesktop, path: cfg.EndpointPathDesktop},
+		{id: auth.EndpointMobile, path: cfg.EndpointPathMobile, loginPrefix: cfg.EndpointPathMobile},
+	} {
+		mux.HandleFunc("POST "+ep.loginPrefix+cfg.LoginPathLDAP, s.login(ep, s.auth.LoginLDAP))   // API-001
+		mux.HandleFunc("POST "+ep.loginPrefix+cfg.LoginPathDB, s.login(ep, s.auth.LoginDatabase)) // API-002
+		mux.HandleFunc("GET "+ep.path+"/api/me", s.me(ep))
+	}
 	return s.requireHTTPS(mux)
+}
+
+// loginPath is the login page a session on ep came from.
+func (s *server) loginPath(ep endpoint, m auth.Method) string {
+	if m == auth.MethodLDAP {
+		return ep.loginPrefix + s.cfg.LoginPathLDAP
+	}
+	return ep.loginPrefix + s.cfg.LoginPathDB
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -63,7 +99,7 @@ func writeOperator(w http.ResponseWriter, op auth.Operator) {
 
 // login handles a credential submit to a login path: username and password,
 // no other field (API-001, API-002).
-func (s *server) login(authenticate func(context.Context, auth.Attempt) (auth.Operator, string, error)) http.HandlerFunc {
+func (s *server) login(ep endpoint, authenticate func(context.Context, auth.Attempt) (auth.Operator, string, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Username string `json:"username"`
@@ -80,7 +116,7 @@ func (s *server) login(authenticate func(context.Context, auth.Attempt) (auth.Op
 			Password:  req.Password,
 			ClientIP:  s.clientIP(r),
 			UserAgent: r.UserAgent(),
-			Endpoint:  auth.EndpointDesktop,
+			Endpoint:  ep.id,
 		})
 		var refusal *auth.LoginError
 		if errors.As(err, &refusal) {
@@ -94,7 +130,7 @@ func (s *server) login(authenticate func(context.Context, auth.Attempt) (auth.Op
 		http.SetCookie(w, &http.Cookie{
 			Name:     sessionCookie,
 			Value:    token,
-			Path:     s.cfg.EndpointPathDesktop,
+			Path:     ep.path,
 			HttpOnly: true,
 			Secure:   true,
 			SameSite: http.SameSiteLaxMode,
@@ -103,14 +139,47 @@ func (s *server) login(authenticate func(context.Context, auth.Attempt) (auth.Op
 	}
 }
 
-func (s *server) me(w http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(sessionCookie); err == nil {
-		if op, ok := s.auth.SessionOperator(r.Context(), c.Value, auth.EndpointDesktop); ok {
-			writeOperator(w, op)
+type namedJSON struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+}
+
+func toNamedJSON(n *auth.Named) *namedJSON {
+	if n == nil {
+		return nil
+	}
+	return &namedJSON{n.Code, n.Name}
+}
+
+// me returns the session's operator and access context. Without a session of
+// this endpoint the request is unauthenticated (FR-ACCESS-004).
+func (s *server) me(ep endpoint) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c, err := r.Cookie(sessionCookie)
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		sess, ok := s.auth.Session(r.Context(), c.Value, ep.id)
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		writeJSON(w, http.StatusOK, struct {
+			UserID      string     `json:"userId"`
+			FullName    string     `json:"fullName"`
+			Role        namedJSON  `json:"role"`
+			AccessGroup *namedJSON `json:"accessGroup"`
+			WorkGroup   *namedJSON `json:"workGroup"`
+			WorkQueue   *namedJSON `json:"workQueue"`
+			IdleTimeout bool       `json:"idleTimeout"`
+			LoginPath   string     `json:"loginPath"`
+		}{
+			sess.UserID, sess.FullName, namedJSON{sess.Role.Code, sess.Role.Name},
+			toNamedJSON(sess.AccessGroup), toNamedJSON(sess.WorkGroup), toNamedJSON(sess.WorkQueue),
+			sess.IdleTimeout, s.loginPath(ep, sess.Method),
+		})
 	}
-	w.WriteHeader(http.StatusUnauthorized)
 }
 
 // requireHTTPS refuses, without processing, any request that did not arrive

@@ -4,9 +4,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"log/slog"
 	"time"
@@ -29,7 +26,10 @@ const (
 // Endpoint is the channel a session belongs to (FR-ACCESS-004).
 type Endpoint string
 
-const EndpointDesktop Endpoint = "DESKTOP"
+const (
+	EndpointDesktop Endpoint = "DESKTOP"
+	EndpointMobile  Endpoint = "MOBILE"
+)
 
 // LoginError is a login refusal: the SoT error code shown to the operator
 // (§12) and the internal login_log fail_reason (§9.21).
@@ -52,6 +52,9 @@ var (
 	ErrLDAPUnavailable = &LoginError{Code: "ERR-002", FailReason: "LDAP_UNAVAILABLE"}
 	// ErrDatabaseUnavailable is ERR-003. The SoT defines no fail_reason for it.
 	ErrDatabaseUnavailable = &LoginError{Code: "ERR-003"}
+	// ErrNoMobileAccess is ERR-004: valid credentials on the mobile endpoint
+	// without the operator's mobile access checklist (FR-ACCESS-003 rule 4).
+	ErrNoMobileAccess = &LoginError{Code: "ERR-004"}
 )
 
 // Operator is the authenticated operator.
@@ -75,8 +78,8 @@ type Service struct {
 	now  func() time.Time
 }
 
-func NewService(db *pgxpool.Pool, ldap config.LDAP) *Service {
-	return &Service{db: db, ldap: ldap, now: func() time.Time { return time.Now().UTC() }}
+func NewService(db *pgxpool.Pool, ldap config.LDAP, now func() time.Time) *Service {
+	return &Service{db: db, ldap: ldap, now: now}
 }
 
 // dummyHash keeps the cost of an unknown-user attempt close to a wrong
@@ -98,7 +101,7 @@ func (s *Service) LoginDatabase(ctx context.Context, a Attempt) (Operator, strin
 	case bcrypt.CompareHashAndPassword([]byte(rec.passwordHash), []byte(a.Password)) != nil:
 		return l.refuse(rec.UserID, ErrInvalidCredential)
 	}
-	return l.admit(rec.Operator)
+	return l.admit(rec)
 }
 
 // LoginLDAP authenticates against the directory, then requires the user to
@@ -119,12 +122,13 @@ func (s *Service) LoginLDAP(ctx context.Context, a Attempt) (Operator, string, e
 	case !found:
 		return l.refuse("", ErrNotRegistered)
 	}
-	return l.admit(rec.Operator)
+	return l.admit(rec)
 }
 
 type operatorRecord struct {
 	Operator
 	passwordHash string
+	mobileAccess bool
 }
 
 // findOperator matches the username case-insensitively (TBD-012, agreed). A
@@ -132,8 +136,8 @@ type operatorRecord struct {
 func (s *Service) findOperator(ctx context.Context, username string) (operatorRecord, bool, *LoginError) {
 	var rec operatorRecord
 	err := s.db.QueryRow(ctx,
-		`SELECT user_id, full_name, password_hash FROM fos.operator WHERE lower(user_id) = lower($1)`,
-		username).Scan(&rec.UserID, &rec.FullName, &rec.passwordHash)
+		`SELECT user_id, full_name, password_hash, mobile_access FROM fos.operator WHERE lower(user_id) = lower($1)`,
+		username).Scan(&rec.UserID, &rec.FullName, &rec.passwordHash, &rec.mobileAccess)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return operatorRecord{}, false, nil
@@ -157,14 +161,19 @@ func (s *Service) newLogin(ctx context.Context, m Method, a Attempt) login {
 	return login{s: s, ctx: ctx, method: m, a: a}
 }
 
-func (l login) admit(op Operator) (Operator, string, error) {
-	token, err := l.s.openSession(l.ctx, op.UserID, l.a.Endpoint)
+// admit opens a session for an authenticated operator, unless the mobile
+// endpoint is used without mobile access.
+func (l login) admit(rec operatorRecord) (Operator, string, error) {
+	if l.a.Endpoint == EndpointMobile && !rec.mobileAccess {
+		return l.refuse(rec.UserID, ErrNoMobileAccess)
+	}
+	token, err := l.s.openSession(l.ctx, rec.UserID, l.method, l.a.Endpoint)
 	if err != nil {
 		slog.Error("open session failed", "error", err)
-		return l.refuse(op.UserID, ErrDatabaseUnavailable)
+		return l.refuse(rec.UserID, ErrDatabaseUnavailable)
 	}
-	l.log(op.UserID, nil)
-	return op, token, nil
+	l.log(rec.UserID, nil)
+	return rec.Operator, token, nil
 }
 
 func (l login) refuse(operatorUserID string, e *LoginError) (Operator, string, error) {
@@ -187,34 +196,4 @@ func (l login) log(operatorUserID string, refusal *LoginError) {
 	if err != nil {
 		slog.Error("LOGIN_LOG_WRITE_FAILED", "error", err)
 	}
-}
-
-// SessionOperator returns the operator owning a live session token.
-func (s *Service) SessionOperator(ctx context.Context, token string, endpoint Endpoint) (Operator, bool) {
-	var op Operator
-	err := s.db.QueryRow(ctx, `
-		UPDATE fos.operator_session s SET last_activity_at = $3
-		FROM fos.operator o
-		WHERE s.token_hash = $1 AND s.endpoint = $2 AND o.user_id = s.user_id
-		RETURNING o.user_id, o.full_name`,
-		hashToken(token), string(endpoint), s.now()).Scan(&op.UserID, &op.FullName)
-	return op, err == nil
-}
-
-func (s *Service) openSession(ctx context.Context, userID string, endpoint Endpoint) (string, error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	token := base64.RawURLEncoding.EncodeToString(raw)
-	now := s.now()
-	_, err := s.db.Exec(ctx, `
-		INSERT INTO fos.operator_session (token_hash, user_id, endpoint, created_at, last_activity_at)
-		VALUES ($1, $2, $3, $4, $4)`, hashToken(token), userID, string(endpoint), now)
-	return token, err
-}
-
-func hashToken(token string) []byte {
-	sum := sha256.Sum256([]byte(token))
-	return sum[:]
 }

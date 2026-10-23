@@ -3,6 +3,7 @@ package cases
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -18,11 +19,11 @@ const (
 	bmvDecision                = "FAC_DECISION"
 	decisionMatch              = "SESUAI"
 	decisionMismatch           = "TIDAKSESUAI"
-	// CaseStatusPendingPrescreening follows a Sesuai decision (FR-APP-010 step 5).
-	CaseStatusPendingPrescreening = "Pending-Prescreening"
+	// CaseStatusPendingPreScreening follows a Sesuai decision (FR-APP-010 step 5).
+	CaseStatusPendingPreScreening = "Pending-Prescreening"
 
-	KeyDecision = "decision"
-	KeyNotes    = "notes"
+	keyDecision = "decision"
+	keyNotes    = "notes"
 
 	msgNotesLength = "Notes maksimal 1000 karakter" // ERR-030, SoT PROPOSED text
 	// maxNotesRunes bounds Notes, counted after CRLF becomes LF (DB-RULE-037).
@@ -46,16 +47,9 @@ type ReviewPage struct {
 	Editable        bool
 }
 
-// NotesBanner is the latest Pre Screening decision shown on UI-010 once the
-// case has one (FR-APP-010 rule 2).
-type NotesBanner struct {
-	Decision string
-	Notes    string
-}
-
-// recommendations lists the case's Pre Screening Recommendations, oldest
-// first (DEC-051, DB-RULE-123). The description is read by code without a
-// status filter (FR-APP-010 rule 5).
+// recommendations lists the case's Pre-Screening Review Recommendations,
+// oldest first (DEC-051, DB-RULE-123). The description is read by code
+// without a status filter (FR-APP-010 rule 5).
 func (s *Service) recommendations(ctx context.Context, caseID string, viewer *time.Location) ([]Recommendation, error) {
 	out, err := collect(ctx, s, func(r pgx.Rows) (Recommendation, error) {
 		var (
@@ -66,10 +60,10 @@ func (s *Service) recommendations(ctx context.Context, caseID string, viewer *ti
 		rec.SubmittedAt = submittedAt(at.In(viewer))
 		return rec, err
 	}, `
-		SELECT COALESCE(o.full_name, d.decided_by), d.decided_at, COALESCE(b.description, d.decision_code, ''), d.notes
+		SELECT COALESCE(o.full_name, d.decided_by), d.decided_at, COALESCE(bmv.description, d.decision_code, ''), d.notes
 		FROM fos.case_pre_screening_decision d
 		LEFT JOIN fos.operator o ON o.user_id = d.decided_by
-		LEFT JOIN fos.business_mapping_value b ON b.type = $2 AND b.sub_type = '' AND b.code = d.decision_code
+		LEFT JOIN fos.business_mapping_value bmv ON bmv.type = $2 AND bmv.sub_type = '' AND bmv.code = d.decision_code
 		WHERE d.case_id = $1 AND d.recommendation_type = $3
 		ORDER BY d.decided_at, d.decision_id`, caseID, bmvDecision, recommendationPreScreening)
 	if out == nil {
@@ -84,23 +78,15 @@ func submittedAt(t time.Time) string {
 	return fmt.Sprintf("%s %d:%02d", t.Format("02/01/06"), t.Hour(), t.Minute())
 }
 
-// notesBanner is the latest Pre Screening decision, or nil (DB-RULE-036).
-func (s *Service) notesBanner(ctx context.Context, caseID string) (*NotesBanner, error) {
-	var b NotesBanner
-	err := s.db.QueryRow(ctx, `
-		SELECT COALESCE(bmv.description, d.decision_code, ''), d.notes
-		FROM fos.case_pre_screening_decision d
-		LEFT JOIN fos.business_mapping_value bmv ON bmv.type = $2 AND bmv.sub_type = '' AND bmv.code = d.decision_code
-		WHERE d.case_id = $1 AND d.recommendation_type = $3
-		ORDER BY d.decided_at DESC, d.decision_id DESC LIMIT 1`, caseID, bmvDecision, recommendationPreScreening).
-		Scan(&b.Decision, &b.Notes)
-	if isNotFound(err) {
-		return nil, nil
-	}
-	if err != nil {
+// latestRecommendation is the latest Pre-Screening Review decision, shown
+// as UI-010's Notes banner, or nil before the first (FR-APP-010 rule 2,
+// DB-RULE-036: the last of the oldest-first order).
+func (s *Service) latestRecommendation(ctx context.Context, caseID string) (*Recommendation, error) {
+	all, err := s.recommendations(ctx, caseID, time.UTC)
+	if err != nil || len(all) == 0 {
 		return nil, err
 	}
-	return &b, nil
+	return &all[len(all)-1], nil
 }
 
 func (s *Service) reviewPage(ctx context.Context, sess auth.Session, caseID string) (ReviewPage, error) {
@@ -111,24 +97,17 @@ func (s *Service) reviewPage(ctx context.Context, sess auth.Session, caseID stri
 	if page.DecisionOptions, err = s.options(ctx, bmvDecision); err != nil {
 		return ReviewPage{}, err
 	}
-	loc, err := s.operatorLocationOf(ctx, sess.UserID)
+	// A viewer whose timezone cannot be read still sees the page, in UTC.
+	loc, err := operatorLocationOf(ctx, s.db, sess.UserID)
 	if err != nil {
-		return ReviewPage{}, err
+		slog.Error("operator timezone unreadable; showing times in UTC", "user_id", sess.UserID, "error", err)
+		loc = time.UTC
 	}
 	page.History, err = s.recommendations(ctx, caseID, loc)
 	return page, err
 }
 
-// operatorLocationOf is an operator's timezone (BR-UI-003).
-func (s *Service) operatorLocationOf(ctx context.Context, userID string) (*time.Location, error) {
-	var timezone string
-	if err := s.db.QueryRow(ctx, `SELECT timezone FROM fos.operator WHERE user_id = $1`, userID).Scan(&timezone); err != nil {
-		return nil, err
-	}
-	return operatorLocation(timezone)
-}
-
-// SubmitReview is Submit on Pre Screening (FR-APP-010): it validates
+// SubmitReview is Submit on the Pre-Screening Review (FR-APP-010): it validates
 // Keputusan and Notes, appends the Recommendation and completes the
 // assignment. Tidak Sesuai gives the case's Branch Officer a new
 // Pre-Screening Submission; Sesuai sets case_status Pending-Prescreening (the
@@ -148,24 +127,26 @@ func (s *Service) SubmitReview(ctx context.Context, sess auth.Session, caseID st
 	}
 
 	decisionCode = strings.TrimSpace(decisionCode)
-	notes = strings.ReplaceAll(strings.TrimSpace(notes), "\r\n", "\n")
+	notes = strings.TrimSpace(strings.ReplaceAll(notes, "\r\n", "\n"))
 	var errs []FieldError
 	if decisionCode == "" {
-		errs = append(errs, required(SectionForm, KeyDecision, "Keputusan"))
+		errs = append(errs, required(SectionForm, keyDecision, "Keputusan"))
 	} else {
 		opts, err := optionsIn(ctx, tx, bmvDecision)
 		if err != nil {
 			return err
 		}
-		if !hasCode(opts, decisionCode) {
-			return ErrUnsupported // not an option the page offered
+		// Not an option the page offered, or an option this branching does
+		// not know, which would leave the case with no next step.
+		if !hasCode(opts, decisionCode) || (decisionCode != decisionMatch && decisionCode != decisionMismatch) {
+			return ErrUnsupported
 		}
 	}
 	switch {
 	case notes == "":
-		errs = append(errs, required(SectionForm, KeyNotes, "Notes"))
+		errs = append(errs, required(SectionForm, keyNotes, "Notes"))
 	case utf8.RuneCountInString(notes) > maxNotesRunes:
-		errs = append(errs, FieldError{SectionForm, KeyNotes, "Notes", "ERR-030", msgNotesLength})
+		errs = append(errs, FieldError{SectionForm, keyNotes, "Notes", "ERR-030", msgNotesLength})
 	}
 	if len(errs) > 0 {
 		return &ValidationError{errs}
@@ -207,7 +188,7 @@ func (s *Service) SubmitReview(ctx context.Context, sess auth.Session, caseID st
 			return err
 		}
 	case decisionMatch:
-		if _, err := tx.Exec(ctx, `UPDATE fos.work SET case_status = $2 WHERE case_id = $1`, caseID, CaseStatusPendingPrescreening); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE fos.work SET case_status = $2 WHERE case_id = $1`, caseID, CaseStatusPendingPreScreening); err != nil {
 			return err
 		}
 	}

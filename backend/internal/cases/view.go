@@ -222,7 +222,7 @@ type AssignmentPage struct {
 	PreScreening *PreScreeningPage
 	// Underlying is set for a Document Underlying Upload assignment.
 	Underlying *UnderlyingPage
-	// Review is set for the Team Lead's Pre Screening assignment.
+	// Review is set for the Team Lead's Pre-Screening Review assignment.
 	Review *ReviewPage
 }
 
@@ -242,8 +242,8 @@ type PreScreeningPage struct {
 	// Today and EarliestBirthDate bound the birth-date pickers, as the
 	// operator's dates (yyyy-mm-dd).
 	Today, EarliestBirthDate string
-	// NotesBanner is the latest Pre Screening decision, once there is one.
-	NotesBanner *NotesBanner
+	// NotesBanner is the latest Pre-Screening Review decision, once there is one.
+	NotesBanner *Recommendation
 }
 
 // Option is a BMV dropdown option.
@@ -349,7 +349,7 @@ func (s *Service) preScreeningPage(ctx context.Context, caseID string) (PreScree
 	if page.Spouse, err = s.savedParty(ctx, caseID, partySpouse); err != nil {
 		return PreScreeningPage{}, err
 	}
-	page.NotesBanner, err = s.notesBanner(ctx, caseID)
+	page.NotesBanner, err = s.latestRecommendation(ctx, caseID)
 	return page, err
 }
 

@@ -154,15 +154,23 @@ func validatePerson(section string, p Person, today time.Time) []FieldError {
 // today (TBD-023g, agreed).
 func EarliestBirthDate(today time.Time) time.Time { return today.AddDate(-100, 0, 0) }
 
-// operatorToday is the operator's current date (BR-UI-003), at midnight UTC.
-func (s *Service) operatorToday(ctx context.Context, q interface {
+// rowQuerier is the pool or a transaction, for single-row reads.
+type rowQuerier interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
-}, userID string) (time.Time, error) {
+}
+
+// operatorLocationOf is an operator's timezone (BR-UI-003).
+func operatorLocationOf(ctx context.Context, q rowQuerier, userID string) (*time.Location, error) {
 	var timezone string
 	if err := q.QueryRow(ctx, `SELECT timezone FROM fos.operator WHERE user_id = $1`, userID).Scan(&timezone); err != nil {
-		return time.Time{}, err
+		return nil, err
 	}
-	loc, err := operatorLocation(timezone)
+	return operatorLocation(timezone)
+}
+
+// operatorToday is the operator's current date (BR-UI-003), at midnight UTC.
+func (s *Service) operatorToday(ctx context.Context, q rowQuerier, userID string) (time.Time, error) {
+	loc, err := operatorLocationOf(ctx, q, userID)
 	if err != nil {
 		return time.Time{}, err
 	}

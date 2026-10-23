@@ -67,7 +67,7 @@ export default function PreScreeningSubmission({ page, assignment }: { page: Pre
         <div className={styles.formPanel}>
           {/* Gambar 29: the Team Lead's latest decision, above Nama Branch. */}
           {page.notesBanner && (
-            <div className={styles.notesBanner} role="note">
+            <div className={`${styles.infoBanner} ${styles.notesBanner}`} role="note">
               <strong>Notes</strong>
               <span className={styles.notesLabel}>Keputusan</span>
               <span>{page.notesBanner.decision}</span>

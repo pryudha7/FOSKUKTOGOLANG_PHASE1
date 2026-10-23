@@ -1153,14 +1153,10 @@
   white-space: pre-wrap;
 }
 
+/* Laid out over .infoBanner, as UI-010 says it is the same banner. */
 .notesBanner {
-  display: flex;
-  flex-direction: column;
   gap: 4px;
-  padding: 14px 16px 22px;
-  border-radius: 8px;
-  background: #ffeccc;
-  font-size: 13px;
+  padding-bottom: 22px;
 }
 
 .notesBanner strong {

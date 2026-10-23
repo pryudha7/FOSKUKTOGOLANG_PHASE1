@@ -32,4 +32,6 @@ Agreed with the user before implementation (2026-10-23):
 Implementation notes (2026-10-23):
 
 - Submit is `POST .../assignments/{id}/review` with `decisionCode` and `notes`; a code that is not an Active option is refused with 400.
+- AC-FR-APP-009-01, -02 and -04 are tested with ticket 33 (`create_test.go`, `create_validation_test.go`); AC-FR-APP-009-03 here.
+- Review fixes (agreed): glossary terms in comments; a decision code the branching does not know is refused (400); the Notes banner is the last Recommendation; a viewer without a readable timezone sees History in UTC (logged); CRLF is normalised before trimming; the banner reuses the UI-011 info banner style; tests for the locked Tipe Nasabah after return and for History after an option is retired.
 - A Recommendation whose decider is not in the operator data (e.g. the case's Branch Officer missing on Sesuai) fails the Submit and records nothing.

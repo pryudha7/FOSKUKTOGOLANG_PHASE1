@@ -7,7 +7,7 @@ import (
 	"fos/internal/cases"
 )
 
-// notesJSON is a Pre Screening decision as UI-010's Notes banner shows it.
+// notesJSON is a Pre-Screening Review decision as UI-010's Notes banner shows it.
 type notesJSON struct {
 	Decision string `json:"decision"`
 	Notes    string `json:"notes"`
@@ -35,7 +35,7 @@ func toReviewJSON(p cases.ReviewPage) reviewJSON {
 }
 
 // submitReview handles POST .../assignments/{id}/review: Submit on the Team
-// Lead's Pre Screening (FR-APP-010). Only Keputusan and Notes are accepted.
+// Lead's Pre-Screening Review (FR-APP-010). Only Keputusan and Notes are accepted.
 func (s *server) submitReview(ep endpoint) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sess, ok := s.session(w, r, ep)

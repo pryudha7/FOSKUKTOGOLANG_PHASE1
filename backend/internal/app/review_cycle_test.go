@@ -150,3 +150,43 @@ func TestReviewRefusesOtherAssignmentsAndUnknownDeciders(t *testing.T) {
 		t.Fatal("a failed review changed the case")
 	}
 }
+
+// An Active decision code the branching does not know is refused, so the
+// case never closes the Team Lead's assignment without a next step.
+func TestReviewRefusesUnknownActiveDecisions(t *testing.T) {
+	h, _, tl, caseID, id := toReview(t)
+	h.SeedBMV(t, "FAC_DECISION", "TUNDA", "Tunda", 0, "Active")
+	if r := review(t, tl, caseID, id, "TUNDA", "x"); r.Status != http.StatusBadRequest {
+		t.Fatalf("unknown active code = %d", r.Status)
+	}
+	if len(decisions(t, h, caseID)) != 0 {
+		t.Fatal("recorded")
+	}
+}
+
+// AC-FR-APP-010-04: after Tidak Sesuai, Tipe Nasabah cannot change while
+// Data Pribadi can; FR-APP-010 rule 5: History keeps the description of a
+// retired option.
+func TestReturnedCaseKeepsTipeNasabahAndHistoryKeepsRetiredOptions(t *testing.T) {
+	h, _, tl, caseID, id := toReview(t)
+	review(t, tl, caseID, id, "TIDAKSESUAI", "Nama salah.")
+	exec(t, h, `UPDATE fos.business_mapping_value SET status = 'Inactive' WHERE type = 'FAC_DECISION' AND code = 'TIDAKSESUAI'`)
+	h.SeedBMV(t, "CUSTOMER_TYPE", "Lain", "Lain", 3, "Active")
+
+	ao := relogin(t, h, "AO001")
+	returned := assignments(t, h, caseID)[len(assignments(t, h, caseID))-1].ID
+	p := ao.OpenAssignment(t, caseID, returned)
+	if banner, _ := field(t, p, "page", "notesBanner").(map[string]any); banner["decision"] != "Tidak Sesuai" {
+		t.Fatalf("banner after retiring the option = %s", p.Raw)
+	}
+	changed := person{"3171011234567890", "Budi Santosa", yearsAgo(h, 30, 0)}
+	if r := ao.Do(t, http.MethodPost, submitPath(caseID, returned, "submit"), preScreening("Badan Usaha", changed, person{})); r.Status != http.StatusBadRequest {
+		t.Fatalf("changed Tipe Nasabah = %d", r.Status)
+	}
+	if r := ao.Do(t, http.MethodPost, submitPath(caseID, returned, "submit"), preScreening("Perorangan", changed, person{})); r.Status != http.StatusOK {
+		t.Fatalf("changed Nama = %d %s", r.Status, r.Raw)
+	}
+	if got := customers(t, h, caseID)["Nasabah"].Name; got != "Budi Santosa" {
+		t.Fatalf("stored name = %s", got)
+	}
+}

@@ -50,7 +50,7 @@ export type PreScreeningPage = {
   // The operator's today and the earliest birth date, yyyy-mm-dd.
   today: string;
   earliestBirthDate: string;
-  // The latest Pre Screening decision once the case has one (FR-APP-010 rule 2).
+  // The latest Pre-Screening Review decision once the case has one (FR-APP-010 rule 2).
   notesBanner: { decision: string; notes: string } | null;
 };
 

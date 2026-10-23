@@ -1,0 +1,258 @@
+// Package apptest runs the FOS backend against a real PostgreSQL for tests at
+// the HTTP API seam. External systems are faked by pointing configuration at
+// httptest servers owned by the test.
+package apptest
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/cookiejar"
+	"net/http/httptest"
+	"net/netip"
+	"net/url"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/testcontainers/testcontainers-go"
+	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
+	"golang.org/x/crypto/bcrypt"
+
+	"fos/internal/app"
+	"fos/internal/config"
+	"fos/internal/migrate"
+)
+
+const (
+	LoginPathDB         = "/PRWebDB1"
+	EndpointPathDesktop = "/app/fossyariah"
+)
+
+var (
+	containerOnce sync.Once
+	containerDSN  func(db string) string
+	containerErr  error
+	dbCounter     atomic.Int64
+)
+
+// startContainer starts one PostgreSQL container per test binary.
+func startContainer() {
+	ctx := context.Background()
+	c, err := tcpostgres.Run(ctx, "postgres:16-alpine",
+		tcpostgres.WithDatabase("postgres"),
+		tcpostgres.WithUsername("postgres"),
+		tcpostgres.WithPassword("postgres"),
+		testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").
+			WithOccurrence(2).WithStartupTimeout(60*time.Second)),
+	)
+	if err != nil {
+		containerErr = err
+		return
+	}
+	host, err := c.Host(ctx)
+	if err != nil {
+		containerErr = err
+		return
+	}
+	port, err := c.MappedPort(ctx, "5432/tcp")
+	if err != nil {
+		containerErr = err
+		return
+	}
+	containerDSN = func(db string) string {
+		return fmt.Sprintf("postgres://postgres:postgres@%s:%s/%s?sslmode=disable", host, port.Port(), db)
+	}
+}
+
+// Harness is one running backend with its own fresh, migrated database.
+type Harness struct {
+	Server *httptest.Server
+	DB     *pgxpool.Pool
+	Config config.Config
+}
+
+// New starts the backend on a fresh database. Requests made through the
+// harness arrive as HTTPS forwarded by a trusted proxy unless stated otherwise.
+func New(t *testing.T) *Harness {
+	t.Helper()
+	containerOnce.Do(startContainer)
+	if containerErr != nil {
+		t.Fatalf("start postgres container: %v", containerErr)
+	}
+	ctx := context.Background()
+
+	name := fmt.Sprintf("fos_test_%d", dbCounter.Add(1))
+	admin, err := pgx.Connect(ctx, containerDSN("postgres"))
+	if err != nil {
+		t.Fatalf("connect admin: %v", err)
+	}
+	if _, err := admin.Exec(ctx, "CREATE DATABASE "+name); err != nil {
+		t.Fatalf("create database: %v", err)
+	}
+	admin.Close(ctx)
+
+	cfg := config.Config{
+		Env:                 "test",
+		DatabaseURL:         containerDSN(name),
+		LoginPathDB:         LoginPathDB,
+		EndpointPathDesktop: EndpointPathDesktop,
+		TrustedProxyCIDRs:   []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32"), netip.MustParsePrefix("::1/128")},
+	}
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		t.Fatalf("open pool: %v", err)
+	}
+	if err := migrate.Up(ctx, pool); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	srv := httptest.NewServer(app.New(cfg, pool))
+	t.Cleanup(func() {
+		srv.Close()
+		pool.Close()
+	})
+	return &Harness{Server: srv, DB: pool, Config: cfg}
+}
+
+// Operator is a seeded FOS operator.
+type Operator struct {
+	UserID   string
+	Password string
+	FullName string
+	RoleCode string
+}
+
+// SeedOperator inserts an operator (and its role, if missing) directly; there
+// is no administration API for operators yet.
+func (h *Harness) SeedOperator(t *testing.T, op Operator) {
+	t.Helper()
+	ctx := context.Background()
+	if op.RoleCode == "" {
+		op.RoleCode = "AO"
+	}
+	if op.FullName == "" {
+		op.FullName = op.UserID
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(op.Password), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	_, err = h.DB.Exec(ctx, `
+		INSERT INTO fos.roles (role_code, role_name, is_active, created_at, updated_at)
+		VALUES ($1, $1, TRUE, now() AT TIME ZONE 'UTC', now() AT TIME ZONE 'UTC')
+		ON CONFLICT (role_code) DO NOTHING`, op.RoleCode)
+	if err != nil {
+		t.Fatalf("seed role: %v", err)
+	}
+	_, err = h.DB.Exec(ctx, `
+		INSERT INTO fos.operator (user_id, password_hash, full_name, role_code, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, now() AT TIME ZONE 'UTC', now() AT TIME ZONE 'UTC')`,
+		op.UserID, string(hash), op.FullName, op.RoleCode)
+	if err != nil {
+		t.Fatalf("seed operator: %v", err)
+	}
+}
+
+// Client is a browser-like client with its own cookie jar.
+type Client struct {
+	// Header is added to every request, e.g. X-Forwarded-For.
+	Header   http.Header
+	h        *Harness
+	http     *http.Client
+	insecure bool
+}
+
+// NewClient returns a client whose requests arrive over HTTPS via the proxy.
+func (h *Harness) NewClient() *Client {
+	jar, _ := cookiejar.New(nil)
+	return &Client{Header: http.Header{}, h: h, http: &http.Client{Jar: httpsJar{jar}}}
+}
+
+// httpsJar stores and sends cookies as if the server URL were https: in
+// production TLS ends at the proxy, so Secure cookies do reach the backend.
+type httpsJar struct{ http.CookieJar }
+
+func asHTTPS(u *url.URL) *url.URL {
+	c := *u
+	c.Scheme = "https"
+	return &c
+}
+
+func (j httpsJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
+	j.CookieJar.SetCookies(asHTTPS(u), cookies)
+}
+
+func (j httpsJar) Cookies(u *url.URL) []*http.Cookie { return j.CookieJar.Cookies(asHTTPS(u)) }
+
+// NewPlainHTTPClient returns a client whose requests arrive without TLS.
+func (h *Harness) NewPlainHTTPClient() *Client {
+	c := h.NewClient()
+	c.insecure = true
+	return c
+}
+
+// Response is a decoded API response.
+type Response struct {
+	Status int
+	Body   map[string]any
+	Raw    string
+	Header http.Header
+}
+
+// Do sends a JSON request to path (relative to the server root).
+func (c *Client) Do(t *testing.T, method, path string, body any) Response {
+	t.Helper()
+	var rdr io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("encode body: %v", err)
+		}
+		rdr = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, c.h.Server.URL+path, rdr)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("User-Agent", "apptest-browser")
+	for k, v := range c.Header {
+		req.Header[k] = v
+	}
+	if !c.insecure {
+		req.Header.Set("X-Forwarded-Proto", "https")
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	out := Response{Status: resp.StatusCode, Raw: string(raw), Header: resp.Header}
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &out.Body)
+	}
+	return out
+}
+
+// LoginDatabase submits the Database-path login.
+func (c *Client) LoginDatabase(t *testing.T, username, password string) Response {
+	t.Helper()
+	return c.Do(t, http.MethodPost, EndpointPathDesktop+"/api/auth/login",
+		map[string]string{"method": "DATABASE", "username": username, "password": password})
+}
+
+// Me returns the operator of the current session.
+func (c *Client) Me(t *testing.T) Response {
+	t.Helper()
+	return c.Do(t, http.MethodGet, EndpointPathDesktop+"/api/me", nil)
+}

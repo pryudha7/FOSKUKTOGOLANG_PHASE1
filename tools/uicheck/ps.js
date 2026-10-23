@@ -1,0 +1,61 @@
+const { chromium } = require("playwright-core");
+const out = process.argv[2];
+const dmy = (d) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+(async () => {
+  const browser = await chromium.launch({ executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe" });
+  const ctx = await browser.newContext({ viewport: { width: 1500, height: 1000 }, extraHTTPHeaders: { "X-Forwarded-Proto": "https" } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("http://localhost:13000/PRWebDB1");
+  await page.fill('input[name="username"]', "pebrianto");
+  await page.fill('input[name="password"]', "Rahasia#1");
+  await page.click('button[type="submit"]');
+  await page.waitForURL("**/app/fossyariah");
+  await page.hover("nav"); await page.waitForTimeout(300);
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByRole("button", { name: "Financing", exact: true }).click();
+  await page.waitForURL("**/assignment/*");
+  await page.mouse.move(900, 500);
+  await page.getByLabel("Tipe Nasabah").selectOption("Perorangan");
+  const r = {};
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.waitForSelector("[role=alert][class*=errorBanner]");
+  r.emptyBanner = await page.locator("[role=alert][class*=errorBanner]").innerText();
+  await page.screenshot({ path: `${out}/ps-1-empty.png`, fullPage: true });
+
+  const sixteen = new Date(); sixteen.setFullYear(sixteen.getFullYear() - 16);
+  await page.getByLabel("Data Pribadi NIK").fill("3171011234567890");
+  await page.getByLabel("Data Pribadi Nama").fill("John Doe");
+  await page.getByLabel("Data Pribadi Tanggal Lahir").fill(dmy(sixteen));
+  await page.getByLabel("Data Pribadi NIK").focus();
+  r.longForm = await page.locator("[class*=dateLong]").first().innerText();
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.waitForTimeout(400);
+  r.ageBanner = await page.locator("[role=alert][class*=errorBanner]").innerText();
+  await page.screenshot({ path: `${out}/ps-2-age.png`, fullPage: true });
+
+  await page.locator("button[aria-label='Pilih tanggal']").first().click();
+  await page.waitForSelector("[aria-label='Date picker']");
+  await page.screenshot({ path: `${out}/ps-3-picker.png`, clip: { x: 380, y: 300, width: 600, height: 480 } });
+  await page.keyboard.press("Escape");
+  await page.mouse.click(1300, 120);
+
+  await page.getByLabel("Data Pribadi Tanggal Lahir").fill("15/08/1990");
+  page.on("response", async (res) => { if (res.url().includes("/submit")) { r.submitStatus = res.status(); r.submitBody = await res.text().catch(() => ""); } });
+  await page.getByRole("button", { name: "Next" }).click();
+
+  await page.waitForFunction(() => document.querySelector("h2")?.textContent === "Document Underlying Upload");
+  r.afterNext = page.url();
+  await page.screenshot({ path: `${out}/ps-4-duu.png` });
+  await page.getByRole("button", { name: "Back" }).click();
+  await page.waitForFunction(() => document.querySelector("h2")?.textContent === "Pre - Screening Submission");
+  r.afterBack = page.url();
+  r.typeDisabled = await page.getByLabel("Tipe Nasabah").isDisabled();
+  r.savedNik = await page.getByLabel("Data Pribadi NIK").inputValue();
+  r.savedDate = await page.locator("[class*=dateLong]").first().innerText();
+  await page.screenshot({ path: `${out}/ps-5-back.png` });
+  r.errors = errors;
+  console.log(JSON.stringify(r, null, 1));
+  await browser.close();
+})().catch((e) => { console.error(e); process.exit(1); });

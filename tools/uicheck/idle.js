@@ -1,0 +1,41 @@
+const { chromium } = require("playwright-core");
+const out = process.argv[2];
+(async () => {
+  const browser = await chromium.launch({ executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe" });
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, extraHTTPHeaders: { "X-Forwarded-Proto": "https" } });
+  const page = await ctx.newPage();
+  await page.clock.install();
+  await page.goto("http://localhost:13000/PRWebDB1");
+  await page.fill('input[name="username"]', "pebrianto");
+  await page.fill('input[name="password"]', "Rahasia#1");
+  await page.click('button[type="submit"]');
+  await page.waitForURL("**/app/fossyariah");
+  await page.waitForSelector("nav");
+  await page.hover("nav"); await page.waitForTimeout(300);
+  await page.screenshot({ path: `${out}/ao-2b-expanded-300.png` });
+  await page.mouse.move(700, 400);
+  const res = {};
+  await page.clock.fastForward("13:59");
+  res.at1359 = await page.locator("[role=alertdialog]").count();
+  await page.clock.fastForward("00:02");
+  res.at1401 = await page.locator("[role=alertdialog]").count();
+  for (let i = 0; i < 27; i++) { await page.clock.runFor(1000); await page.waitForTimeout(15); }
+  res.countdown = await page.locator("[role=alertdialog]").innerText();
+  await page.screenshot({ path: `${out}/idle-1-popup.png` });
+  await page.getByRole("button", { name: "OK" }).click();
+  await page.waitForTimeout(300);
+  res.afterOk = await page.locator("[role=alertdialog]").count();
+  await page.clock.fastForward("13:59");
+  res.afterOk1359 = await page.locator("[role=alertdialog]").count();
+  await page.clock.fastForward("00:02");
+  res.afterOk1401 = await page.locator("[role=alertdialog]").count();
+  console.log(JSON.stringify(res));
+  for (let i = 0; i < 62 && page.url().endsWith("/app/fossyariah"); i++) { await page.clock.runFor(1000); await page.waitForTimeout(15); }
+  await page.waitForURL("**/PRWebDB1", { timeout: 5000 });
+  res.afterCountdownUrl = page.url();
+  await page.goto("http://localhost:13000/app/fossyariah");
+  await page.waitForURL("**/PRWebDB1", { timeout: 5000 });
+  res.protectedAfterIdle = page.url();
+  console.log(JSON.stringify(res, null, 1));
+  await browser.close();
+})().catch((e) => { console.error(e); process.exit(1); });

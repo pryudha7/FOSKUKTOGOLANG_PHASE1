@@ -16,11 +16,11 @@ Single-context: one root `GLOSSARY.md` plus `docs/adr/`. See `docs/agents/domain
 
 ## Source of truth
 
-`docs/FOS_KUK_SoT_v1.docx` defines what to build. Cite its IDs (FR-, BR-, UI-, DB-RULE-, AC-) in tickets, tests and commits.
+`docs/FOS_KUK_SoT_v1.docx` defines what to build. Cite its IDs (FR-, BR-, UI-, DB-RULE-, AC-) in tickets, tests and commits. Search it in `docs/sot/FOS_KUK_SoT_v1.txt` (extracted text; regenerate with `tools/sot/` when the document changes).
 
 ### UI
 
-Build each screen to match its screenshot in the SoT: the _Gambar NN_ referenced by the screen's UI- entry in §10 and by its FR. Match layout, sections, field order, labels and text exactly as shown, untranslated. When the screenshot and the written spec disagree, report the conflict and wait for a decision.
+Build each screen to match its screenshot in the SoT: the _Gambar NN_ referenced by the screen's UI- entry in §10 and by its FR, viewable as `docs/ui-reference/gambar-NNN.png`. Check the result in a browser with `tools/uicheck/`. Match layout, sections, field order, labels and text exactly as shown, untranslated. When the screenshot and the written spec disagree, report the conflict and wait for a decision.
 
 ### Database schema
 

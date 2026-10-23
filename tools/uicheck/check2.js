@@ -1,0 +1,37 @@
+const { chromium } = require("playwright-core");
+const out = process.argv[2];
+(async () => {
+  const browser = await chromium.launch({ executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe" });
+  const ctx = await browser.newContext({ viewport: { width: 1500, height: 1000 }, extraHTTPHeaders: { "X-Forwarded-Proto": "https" } });
+  const page = await ctx.newPage();
+  await page.goto("http://localhost:13000/PRWebDB1");
+  await page.fill('input[name="username"]', "pebrianto");
+  await page.fill('input[name="password"]', "Rahasia#1");
+  await page.click('button[type="submit"]');
+  await page.waitForURL("**/app/fossyariah");
+  await page.hover("nav"); await page.waitForTimeout(300);
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByRole("button", { name: "Financing", exact: true }).click();
+  await page.waitForURL("**/assignment/*");
+  await page.mouse.move(900, 500);
+  const r = {};
+  r.badanUsahaDisabled = await page.locator("option", { hasText: "Badan Usaha" }).isDisabled();
+  await page.getByLabel("Tipe Nasabah").selectOption("Perorangan");
+  await page.getByLabel("Data Pribadi NIK").fill("3171011234567890");
+  await page.getByLabel("Data Pribadi Nama").fill("Budi");
+  await page.getByLabel("Data Pribadi Tanggal Lahir").fill("15/08/1990");
+  await page.getByLabel("Data Pasangan Nama").fill("Siti");
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.waitForSelector("[role=alert][class*=errorBanner]");
+  r.banner = await page.locator("[role=alert][class*=errorBanner]").innerText();
+  await page.locator("button[aria-label='Pilih tanggal']").first().click();
+  await page.waitForSelector("[aria-label='Date picker']");
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+  // the picker opens on the selected month (Aug 1990); go to today's month to probe tomorrow
+  await page.locator("[aria-label='Date picker'] select[aria-label='Tahun']").selectOption(String(tomorrow.getFullYear()));
+  await page.locator("[aria-label='Date picker'] select[aria-label='Bulan']").selectOption(String(tomorrow.getMonth() + 1));
+  r.tomorrowDisabled = await page.locator("[aria-label='Date picker'] button:not([class*=dpOther])", { hasText: new RegExp(`^${tomorrow.getDate()}$`) }).first().isDisabled();
+  await page.screenshot({ path: `${out}/ps-6-spouse-banner.png` });
+  console.log(JSON.stringify(r, null, 1));
+  await browser.close();
+})().catch((e) => { console.error(e); process.exit(1); });

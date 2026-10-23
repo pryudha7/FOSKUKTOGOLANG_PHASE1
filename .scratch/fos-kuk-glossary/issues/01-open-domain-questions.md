@@ -28,3 +28,5 @@ What do these stand for, and what do they mean in the KUK flow?
 Terms for Analyst Survey, Recommendation Stage, Pre-Disbursement, FAC Checker, Disbursement, Financing Revision and Phone Verification wait for SoT v2.
 
 ## Comments
+
+- 2026-10-23, ticket 09 — SoT conflict on Connect API Log headers: FR-PSAPI-004 rule 2 and AC-FR-PSAPI-004-01 say HTTP headers, including the API key, are not stored; §9.14 has `request_headers`/`response_headers` (CONFIRMED) and DB-RULE-066 masks secret values with "***". Decided with the user for now: follow §9.14 and DB-RULE-066 (headers stored, secrets masked). Ask the SoT owner to align FR-PSAPI-004 rule 2.

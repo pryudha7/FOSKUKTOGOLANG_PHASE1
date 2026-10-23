@@ -16,7 +16,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Pre-Screening Check run (FR-PSAPI-001, FR-PSAPI-002, §9.15).
+// The Pre-Screening Check (FR-PSAPI-001, FR-PSAPI-002) runs as a row of
+// prescreening_runs (§9.15) driven by an in-process Executor.
 
 // Run states (§9.15).
 const (
@@ -27,7 +28,7 @@ const (
 	runStoppedBroken   = "STOPPED_BROKEN"
 )
 
-// Case statuses of the run (FR-PSAPI-001).
+// Case statuses of the Pre-Screening Check (FR-PSAPI-001).
 const (
 	CaseStatusRejectedPreScreening = "ResolvedRejected-Prescreening"
 	CaseStatusFailedPreScreening   = "Failed-PrescreeningConnection"
@@ -35,8 +36,9 @@ const (
 	StageRejected = "Rejected"
 )
 
-// checkOrder is FR-PSAPI-001's order. A step without an implementation
-// pauses the run there until a later ticket adds it (agreed for ticket 09).
+// checkOrder is FR-PSAPI-001's order of steps, by their SoT names. A step
+// without an implementation pauses the run there until a later ticket adds
+// it (agreed for ticket 09).
 var checkOrder = []string{"Dukcapil", "DHN", "Rejected List", "SLIK", "SLIK Pasangan", "Pefindo", "Pefindo Pasangan"}
 
 // Executor timings (FR-PSAPI-002 Process 4 and 5).
@@ -56,16 +58,29 @@ const (
 	outcomeSkip // the check does not apply to the case
 )
 
+// logStatus is the outcome's Connect API Log status.
+func (o outcome) logStatus() string {
+	switch o {
+	case outcomeRejected:
+		return apiRejected
+	case outcomeFail:
+		return apiFail
+	}
+	return apiSuccess
+}
+
 // attempt is one try of a check: its outcome and the log row it made.
 type attempt struct {
 	outcome outcome
 	log     *apiLog
 }
 
-// check is one step of the run. try returns an error only for a system
-// failure (e.g. a missing setting), which stops the run broken.
+// check is one step of the run. apiName is its Connect API Log api_name;
+// try returns an error only for a system failure (a missing setting), which
+// stops the run broken.
 type check struct {
-	try func(ctx context.Context, caseID string, attemptNumber int) (attempt, error)
+	apiName string
+	try     func(ctx context.Context, caseID string, attemptNumber int) (attempt, error)
 	// retry gives the step's maximum retries and gap (FR-PSAPI-002).
 	retry func(ctx context.Context) (int, time.Duration, error)
 }
@@ -78,8 +93,8 @@ type runRef struct {
 	attempt int
 }
 
-// Executor runs Pre-Screening Check runs in the background, one goroutine
-// per run, and resumes runs whose executor died (DEC-058).
+// Executor executes Pre-Screening Check runs in the background, one
+// goroutine per run, and resumes runs whose executor died (DEC-058).
 type Executor struct {
 	s      *Service
 	owner  string
@@ -91,6 +106,7 @@ type Executor struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 	mu     sync.Mutex
+	closed bool
 	active map[int64]bool
 }
 
@@ -109,6 +125,11 @@ func newExecutor(s *Service) *Executor {
 
 // Start runs the recovery sweep now and every sweepEvery.
 func (e *Executor) Start() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.closed {
+		return
+	}
 	e.wg.Add(1)
 	go func() {
 		defer e.wg.Done()
@@ -126,17 +147,20 @@ func (e *Executor) Start() {
 }
 
 // Close stops every run goroutine and waits for them; their runs resume
-// through another executor's sweep.
+// through another executor's sweep. No run starts after Close.
 func (e *Executor) Close() {
+	e.mu.Lock()
+	e.closed = true
 	e.cancel()
+	e.mu.Unlock()
 	e.wg.Wait()
 }
 
-// kick executes a run this executor owns.
-func (e *Executor) kick(runID int64) {
+// launch executes a run this executor owns, unless it already does.
+func (e *Executor) launch(runID int64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.active[runID] || e.ctx.Err() != nil {
+	if e.closed || e.active[runID] {
 		return
 	}
 	e.active[runID] = true
@@ -168,7 +192,7 @@ func (e *Executor) sweep() {
 		runRunning, stale, implemented)
 	if err != nil {
 		if ctx.Err() == nil {
-			slog.Error("pre-screening recovery sweep failed", "error", err)
+			slog.Error("Pre-Screening Check recovery sweep failed", "error", err)
 		}
 		return
 	}
@@ -185,13 +209,15 @@ func (e *Executor) sweep() {
 		if err != nil || tag.RowsAffected() != 1 {
 			continue // another executor took it
 		}
-		slog.Info("pre-screening run taken over", "run_id", id, "owner", e.owner)
-		e.kick(id)
+		slog.Info("Pre-Screening Check run taken over", "run_id", id, "owner", e.owner)
+		e.launch(id)
 	}
 }
 
-// heartbeat keeps the run's heartbeat_at fresh while it executes.
-func (e *Executor) heartbeat(ctx context.Context, runID int64) {
+// heartbeat keeps the run's heartbeat_at fresh while it executes. When the
+// run is no longer this executor's (taken over), it stops the execution at
+// once, including a call in flight (FR-PSAPI-002 rule 3).
+func (e *Executor) heartbeat(ctx context.Context, stop context.CancelFunc, runID int64) {
 	t := time.NewTicker(heartbeatEvery)
 	defer t.Stop()
 	for {
@@ -199,9 +225,18 @@ func (e *Executor) heartbeat(ctx context.Context, runID int64) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if _, err := e.s.db.Exec(ctx, `UPDATE fos.prescreening_runs SET heartbeat_at = $3 WHERE run_id = $1 AND owner_id = $2 AND state = $4`,
-				runID, e.owner, e.s.now(), runRunning); err != nil && ctx.Err() == nil {
-				slog.Error("pre-screening heartbeat failed", "run_id", runID, "error", err)
+			tag, err := e.s.db.Exec(ctx, `UPDATE fos.prescreening_runs SET heartbeat_at = $3 WHERE run_id = $1 AND owner_id = $2 AND state = $4`,
+				runID, e.owner, e.s.now(), runRunning)
+			if err != nil {
+				if ctx.Err() == nil {
+					slog.Error("Pre-Screening Check heartbeat failed", "run_id", runID, "error", err)
+				}
+				continue
+			}
+			if tag.RowsAffected() == 0 {
+				slog.Warn("Pre-Screening Check run lost to another executor; stopping", "run_id", runID)
+				stop()
+				return
 			}
 		}
 	}
@@ -220,30 +255,38 @@ func (e *Executor) load(ctx context.Context, runID int64) (runRef, bool, error) 
 }
 
 // execute runs the checks from current_step until the run stops, waits on
-// a step not implemented yet, or this executor closes (FR-PSAPI-002).
+// a step not implemented yet, loses its ownership, or the executor closes
+// (FR-PSAPI-002).
 func (e *Executor) execute(runID int64) {
 	ctx, stop := context.WithCancel(e.ctx)
+	var beat sync.WaitGroup
+	beat.Add(1)
+	go func() {
+		defer beat.Done()
+		e.heartbeat(ctx, stop, runID)
+	}()
+	defer beat.Wait()
 	defer stop()
-	go e.heartbeat(ctx, runID)
 	for {
 		r, ok, err := e.load(ctx, runID)
 		if err != nil || !ok {
 			if err != nil && ctx.Err() == nil {
-				slog.Error("pre-screening run load failed", "run_id", runID, "error", err)
+				slog.Error("Pre-Screening Check run load failed", "run_id", runID, "error", err)
 			}
 			return
 		}
 		c, ok := e.checks[r.step]
 		if !ok {
-			slog.Info("pre-screening run waits: step not implemented yet", "run_id", r.id, "case_id", r.caseID, "step", r.step)
+			slog.Info("Pre-Screening Check run waits: step not implemented yet", "run_id", r.id, "case_id", r.caseID, "step", r.step)
 			return
 		}
 		a, err := c.try(ctx, r.caseID, r.attempt)
 		if ctx.Err() != nil {
-			return // closing: the attempt is not recorded and is repeated on recovery
+			return // closing or lost: the attempt is not recorded and is repeated on recovery
 		}
 		if err != nil {
-			e.stopBroken(r, err)
+			slog.Error("Pre-Screening Check run stopped by a system failure", "run_id", r.id, "case_id", r.caseID, "step", r.step, "error", err)
+			e.finish(ctx, r, nil, func(context.Context, pgx.Tx, runRef) (string, error) { return runStoppedBroken, nil })
 			return
 		}
 		switch a.outcome {
@@ -257,14 +300,15 @@ func (e *Executor) execute(runID int64) {
 		case outcomeFail:
 			max, gap, err := c.retry(ctx)
 			if err != nil {
-				e.stopBroken(r, err)
+				slog.Error("Pre-Screening Check run stopped by a system failure", "run_id", r.id, "step", r.step, "error", err)
+				e.finish(ctx, r, nil, func(context.Context, pgx.Tx, runRef) (string, error) { return runStoppedBroken, nil })
 				return
 			}
 			if r.attempt >= 1+max {
 				e.finish(ctx, r, a.log, e.fail)
 				return
 			}
-			if !e.record(ctx, r, a.log, r.step, r.attempt+1) {
+			if !e.recordAttempt(ctx, r, a.log, r.step, r.attempt+1) {
 				return
 			}
 			select {
@@ -276,7 +320,7 @@ func (e *Executor) execute(runID int64) {
 	}
 }
 
-// nextStep is the check after step, or "" after the last.
+// nextStep is the step after step, or "" after the last.
 func nextStep(step string) string {
 	i := slices.Index(checkOrder, step)
 	if i < 0 || i+1 >= len(checkOrder) {
@@ -285,36 +329,36 @@ func nextStep(step string) string {
 	return checkOrder[i+1]
 }
 
-// advance records a passed attempt and moves to the next check.
+// advance records a passed attempt and moves to the next step.
 func (e *Executor) advance(ctx context.Context, r runRef, log *apiLog) bool {
 	next := nextStep(r.step)
 	if next == "" {
-		// All checks passed: Pipeline Data Entry (FR-APP-004) is ticket 15.
+		// Every check passed: Pipeline Data Entry (FR-APP-004) is ticket 15.
 		e.finish(ctx, r, log, func(context.Context, pgx.Tx, runRef) (string, error) { return runCompleted, nil })
 		return false
 	}
-	return e.record(ctx, r, log, next, 1)
+	return e.recordAttempt(ctx, r, log, next, 1)
 }
 
-// record writes the attempt's log row and the run's next position in one
-// transaction, only while this executor still owns the run.
-func (e *Executor) record(ctx context.Context, r runRef, log *apiLog, step string, attemptNumber int) bool {
+// recordAttempt writes the attempt's log row and the run's next position in
+// one transaction, only while this executor still owns the run.
+func (e *Executor) recordAttempt(ctx context.Context, r runRef, log *apiLog, step string, attemptNumber int) bool {
 	err := e.inOwnedRun(ctx, r, log, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE fos.prescreening_runs SET current_step = $2, attempt = $3, heartbeat_at = $4, updated_at = $4 WHERE run_id = $1`,
 			r.id, step, attemptNumber, e.s.now())
 		return err
 	})
 	if err != nil {
-		if ctx.Err() == nil {
-			slog.Error("pre-screening run record failed", "run_id", r.id, "error", err)
+		if ctx.Err() == nil && !errors.Is(err, errRunLost) {
+			slog.Error("Pre-Screening Check attempt not recorded", "run_id", r.id, "error", err)
 		}
 		return false
 	}
 	return true
 }
 
-// finish writes the attempt's log row and stops the run with the state end
-// returns, applying end's case changes in the same transaction.
+// finish writes the attempt's log row (if any) and stops the run with the
+// state end returns, applying end's case changes in the same transaction.
 func (e *Executor) finish(ctx context.Context, r runRef, log *apiLog, end func(context.Context, pgx.Tx, runRef) (string, error)) {
 	err := e.inOwnedRun(ctx, r, log, func(tx pgx.Tx) error {
 		state, err := end(ctx, tx, r)
@@ -324,8 +368,8 @@ func (e *Executor) finish(ctx context.Context, r runRef, log *apiLog, end func(c
 		_, err = tx.Exec(ctx, `UPDATE fos.prescreening_runs SET state = $2, updated_at = $3 WHERE run_id = $1`, r.id, state, e.s.now())
 		return err
 	})
-	if err != nil && ctx.Err() == nil {
-		slog.Error("pre-screening run finish failed", "run_id", r.id, "error", err)
+	if err != nil && ctx.Err() == nil && !errors.Is(err, errRunLost) {
+		slog.Error("Pre-Screening Check run not finished", "run_id", r.id, "error", err)
 	}
 }
 
@@ -359,8 +403,8 @@ func (e *Executor) inOwnedRun(ctx context.Context, r runRef, log *apiLog, change
 	return tx.Commit(ctx)
 }
 
-// reject is FR-PSAPI-001 Process 3: the case goes to the alternate stage
-// Rejected. The Rejected List entry is ticket 10.
+// reject is a Check Rejection (FR-PSAPI-001 Process 3): the case goes to
+// the alternate stage Rejected. The Rejected List entry is ticket 10.
 func (e *Executor) reject(ctx context.Context, tx pgx.Tx, r runRef) (string, error) {
 	now := e.s.now()
 	if _, err := tx.Exec(ctx, `
@@ -377,8 +421,8 @@ func (e *Executor) reject(ctx context.Context, tx pgx.Tx, r runRef) (string, err
 	return runStoppedRejected, nil
 }
 
-// fail is FR-PSAPI-001 Process 4: the case returns to its Team Lead on a
-// new Pre Screening assignment, shown as the Retry view.
+// fail is a Check Failure (FR-PSAPI-001 Process 4): the case returns to its
+// Team Lead on a new Pre-Screening Review assignment, shown as the Retry view.
 func (e *Executor) fail(ctx context.Context, tx pgx.Tx, r runRef) (string, error) {
 	now := e.s.now()
 	if _, err := tx.Exec(ctx, `UPDATE fos.work SET case_status = $2, updated_at = $3 WHERE case_id = $1`,
@@ -394,18 +438,8 @@ func (e *Executor) fail(ctx context.Context, tx pgx.Tx, r runRef) (string, error
 	return runStoppedFailed, nil
 }
 
-// stopBroken stops a run on a system failure: case_status does not change
-// (FR-PSAPI-001 rule 10); the Problem Flow is ticket 14.
-func (e *Executor) stopBroken(r runRef, cause error) {
-	slog.Error("pre-screening run stopped by a system failure", "run_id", r.id, "case_id", r.caseID, "step", r.step, "error", cause)
-	if _, err := e.s.db.Exec(e.ctx, `UPDATE fos.prescreening_runs SET state = $2, updated_at = $4 WHERE run_id = $1 AND owner_id = $3`,
-		r.id, runStoppedBroken, e.owner, e.s.now()); err != nil && e.ctx.Err() == nil {
-		slog.Error("pre-screening run stop failed", "run_id", r.id, "error", err)
-	}
-}
-
-// startRun creates the case's run at the first check, owned by this
-// executor, inside the caller's transaction; kick it after the commit.
+// startRun creates the case's run at the first step, owned by this
+// executor, inside the caller's transaction; launch it after the commit.
 func (e *Executor) startRun(ctx context.Context, tx pgx.Tx, caseID string) (int64, error) {
 	now := e.s.now()
 	var id int64
@@ -415,16 +449,27 @@ func (e *Executor) startRun(ctx context.Context, tx pgx.Tx, caseID string) (int6
 	return id, err
 }
 
-// resumeRun restarts the case's failed run at its failed check with a fresh
+// latestRun is the case's newest run (§9.15 keeps older ones as history).
+const latestRun = `(SELECT max(run_id) FROM fos.prescreening_runs WHERE case_id = $1)`
+
+// resumeRun restarts the case's failed run at its failed step with a fresh
 // attempt cycle (FR-PSAPI-001 rule 5), inside the caller's transaction.
 func (e *Executor) resumeRun(ctx context.Context, tx pgx.Tx, caseID string) (int64, error) {
 	var id int64
 	err := tx.QueryRow(ctx, `
 		UPDATE fos.prescreening_runs SET state = $2, attempt = 1, owner_id = $3, heartbeat_at = $4, updated_at = $4
-		WHERE run_id = (SELECT max(run_id) FROM fos.prescreening_runs WHERE case_id = $1) AND state = $5
+		WHERE run_id = `+latestRun+` AND state = $5
 		RETURNING run_id`, caseID, runRunning, e.owner, e.s.now(), runStoppedFailed).Scan(&id)
 	if isNotFound(err) {
 		return 0, ErrUnsupported
 	}
 	return id, err
+}
+
+// apiNameOf is the Connect API Log api_name of a step, or the step itself.
+func (e *Executor) apiNameOf(step string) string {
+	if c, ok := e.checks[step]; ok {
+		return c.apiName
+	}
+	return step
 }

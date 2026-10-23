@@ -124,6 +124,14 @@ func (s *Service) reviewPage(ctx context.Context, sess auth.Session, caseID stri
 	if err != nil || !retrying {
 		return page, err
 	}
+	// The failed step's attempts of the newest run, its last cycle only.
+	var step string
+	var attempts int
+	var started time.Time
+	if err := s.db.QueryRow(ctx, `SELECT current_step, attempt, started_at FROM fos.prescreening_runs WHERE run_id = `+latestRun+` AND state = $2`,
+		caseID, runStoppedFailed).Scan(&step, &attempts, &started); err != nil && !isNotFound(err) {
+		return ReviewPage{}, err
+	}
 	logs, err := collect(ctx, s, func(r pgx.Rows) (APILogEntry, error) {
 		var (
 			l  APILogEntry
@@ -134,13 +142,12 @@ func (s *Service) reviewPage(ctx context.Context, sess auth.Session, caseID stri
 		return l, err
 	}, `
 		SELECT * FROM (
-			SELECT l.api_name, l.submitted_at, l.api_status, COALESCE(l.request, ''), COALESCE(l.response, '')
-			FROM fos.connect_api_log l
-			JOIN fos.prescreening_runs r ON r.case_id = l.case_id AND l.api_name = r.current_step
-			WHERE r.run_id = (SELECT max(run_id) FROM fos.prescreening_runs WHERE case_id = $1) AND r.state = $2
-			ORDER BY l.submitted_at DESC, l.attempt_number DESC
-			LIMIT (SELECT attempt FROM fos.prescreening_runs WHERE run_id = (SELECT max(run_id) FROM fos.prescreening_runs WHERE case_id = $1))
-		) last ORDER BY submitted_at`, caseID, runStoppedFailed)
+			SELECT api_name, submitted_at, api_status, COALESCE(request, ''), COALESCE(response, '')
+			FROM fos.connect_api_log
+			WHERE case_id = $1 AND api_name = $2 AND submitted_at >= $3
+			ORDER BY submitted_at DESC, attempt_number DESC
+			LIMIT $4
+		) last ORDER BY submitted_at`, caseID, s.runs.apiNameOf(step), started, attempts)
 	if err != nil {
 		return ReviewPage{}, err
 	}
@@ -255,7 +262,7 @@ func (s *Service) SubmitReview(ctx context.Context, sess auth.Session, caseID st
 		return err
 	}
 	if runID != 0 {
-		s.runs.kick(runID)
+		s.runs.launch(runID)
 	}
 	return nil
 }
@@ -299,7 +306,7 @@ func (s *Service) RetryReview(ctx context.Context, sess auth.Session, caseID str
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
-	s.runs.kick(runID)
+	s.runs.launch(runID)
 	return nil
 }
 

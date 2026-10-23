@@ -238,3 +238,63 @@ func TestAnExecutorThatLostItsRunRecordsNothing(t *testing.T) {
 		t.Fatalf("run = %+v", got)
 	}
 }
+
+// AC-FR-PSAPI-004-01: two calls of the same API give two rows, each with
+// its long response kept whole.
+func TestLongResponsesAreLoggedWhole(t *testing.T) {
+	long := `{"NIK":"Sesuai (100)","NAMA_LGKP":"Sesuai (100)","TGL_LHR":"Sesuai","ALAMAT":"` + strings.Repeat("Jalan Panjang ", 20000) + `"}`
+	h, _, _, caseID := sesuaiWith(t, apptest.DukcapilReply{Status: 500, Body: strings.Repeat("x", 300000)}, apptest.DukcapilReply{Status: 200, Body: long})
+	eventually(t, "the run to reach DHN", func() bool { return run(t, h, caseID).Step == "DHN" })
+	logs := apiLogs(t, h, caseID)
+	if len(logs) != 2 || len(logs[0].Response) != 300000 || logs[1].Response != long {
+		t.Fatalf("rows %d, lengths %d / %d", len(logs), len(logs[0].Response), len(logs[1].Response))
+	}
+}
+
+// Dukcapil checks the Individual Customer only, never the Spouse.
+func TestDukcapilNeverSendsTheSpouse(t *testing.T) {
+	h, _, tl, caseID, id := toReview(t)
+	exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, id_number, full_name, birth_date) VALUES ($1, 'Pasangan', '3171019876543210', 'Siti Aminah', '1990-01-01')`, caseID)
+	fake := apptest.StartFakeDukcapil(t, apptest.DukcapilMatch)
+	h.UseDukcapil(t, fake)
+	review(t, tl, caseID, id, "SESUAI", "x")
+	eventually(t, "the run to reach DHN", func() bool { return run(t, h, caseID).Step == "DHN" })
+	reqs := fake.Requests()
+	if len(reqs) != 1 || strings.Contains(reqs[0].Body, "3171019876543210") || strings.Contains(reqs[0].Body, "Siti") {
+		t.Fatalf("requests = %+v", reqs)
+	}
+}
+
+// RESPONSE_CODE 13 passes whether it comes as text or as a number.
+func TestDukcapilNotFoundAsNumberPasses(t *testing.T) {
+	h, _, _, caseID := sesuaiWith(t, apptest.DukcapilReply{Status: 200, Body: `{"RESPONSE_CODE":13,"RESPONSE_DESC":"Data Tidak Ditemukan"}`})
+	eventually(t, "the run to reach DHN", func() bool { return run(t, h, caseID).Step == "DHN" })
+}
+
+// Agreed for ticket 09: missing request data is a Fail of each attempt,
+// so the case returns to the Team Lead; nothing is sent.
+func TestMissingRequestDataFailsTheAttempts(t *testing.T) {
+	h, _, tl, caseID, id := toReview(t)
+	fake := apptest.StartFakeDukcapil(t, apptest.DukcapilMatch)
+	h.UseDukcapil(t, fake)
+	exec(t, h, `UPDATE fos.customer SET birth_date = NULL WHERE case_id = $1 AND customer_type = 'Nasabah'`, caseID)
+	review(t, tl, caseID, id, "SESUAI", "x")
+	eventually(t, "the run to fail", func() bool { return run(t, h, caseID).State == "STOPPED_FAILED" })
+	logs := apiLogs(t, h, caseID)
+	if len(fake.Requests()) != 0 || len(logs) != 4 || !strings.HasPrefix(logs[0].Response, "Dukcapil request data missing") {
+		t.Fatalf("calls %d, logs %+v", len(fake.Requests()), logs)
+	}
+}
+
+// DEC-060: the API key header is masked even when the setting omits it.
+func TestDukcapilKeyIsAlwaysMasked(t *testing.T) {
+	h, _, tl, caseID, id := toReview(t)
+	fake := apptest.StartFakeDukcapil(t, apptest.DukcapilMatch)
+	h.UseDukcapil(t, fake)
+	exec(t, h, `UPDATE fos.dynamic_system_settings SET value = 'Cookie' WHERE purpose = 'api/log/masked_headers'`)
+	review(t, tl, caseID, id, "SESUAI", "x")
+	eventually(t, "the run to reach DHN", func() bool { return run(t, h, caseID).Step == "DHN" })
+	if n := count(t, h, `SELECT count(*) FROM fos.connect_api_log WHERE case_id = $1 AND request_headers::text LIKE '%'||$2||'%'`, caseID, apptest.DukcapilAPIKey); n != 0 {
+		t.Fatal("the API key was stored")
+	}
+}

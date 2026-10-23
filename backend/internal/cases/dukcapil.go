@@ -14,10 +14,17 @@ import (
 	"time"
 )
 
-// Dukcapil check (FR-PSAPI-003): the Perorangan customer's Data Pribadi,
-// never the spouse or a Badan Usaha.
+// The Dukcapil check (FR-PSAPI-003) checks an Individual Customer's
+// personal data, never the Spouse's or a Business Entity's.
 
-const apiDukcapil = "Dukcapil"
+const (
+	apiDukcapil = "Dukcapil"
+	// dukcapilKeyHeader carries the API key; it is masked in the log whatever
+	// api/log/masked_headers says (DEC-060).
+	dukcapilKeyHeader = "x-Gateway-APIKey"
+	// maxResponseBytes bounds a response read into the log.
+	maxResponseBytes = 10 << 20
+)
 
 // dukcapilRequest is the body, in the SoT's field order.
 type dukcapilRequest struct {
@@ -26,9 +33,20 @@ type dukcapilRequest struct {
 	NamaLengkap  string `json:"namaLengkap"`
 }
 
+// dukcapilConfig is the call's configuration (§9.25, DEC-060).
+type dukcapilConfig struct {
+	simulate         bool
+	simulateResponse string
+	url              string
+	timeout          time.Duration
+	key              string
+	maskedHeaders    []string
+}
+
 func (e *Executor) dukcapilCheck() check {
 	return check{
-		try: e.tryDukcapil,
+		apiName: apiDukcapil,
+		try:     e.tryDukcapil,
 		retry: func(ctx context.Context) (int, time.Duration, error) {
 			max, err := e.s.settings.Int(ctx, "api/dukcapil/retry_max")
 			if err != nil {
@@ -40,94 +58,109 @@ func (e *Executor) dukcapilCheck() check {
 	}
 }
 
+// dukcapilConfig reads the settings and the API key; a missing one is a
+// system failure of the step (DB-RULE-084).
+func (e *Executor) dukcapilConfig(ctx context.Context) (dukcapilConfig, error) {
+	st := e.s.settings
+	var c dukcapilConfig
+	var err error
+	if c.maskedHeaders, err = e.s.maskedHeaderNames(ctx); err != nil {
+		return c, err
+	}
+	c.maskedHeaders = append(c.maskedHeaders, dukcapilKeyHeader)
+	if c.simulate, err = st.Bool(ctx, "api/dukcapil/simulate"); err != nil {
+		return c, err
+	}
+	if c.simulate {
+		c.simulateResponse, err = st.String(ctx, "api/dukcapil/simulate_response")
+		return c, err
+	}
+	base, err := st.String(ctx, "api/dukcapil/baseurl")
+	if err != nil {
+		return c, err
+	}
+	path, err := st.String(ctx, "api/dukcapil/path")
+	if err != nil {
+		return c, err
+	}
+	timeoutMS, err := st.Int(ctx, "api/dukcapil/timeout_ms")
+	if err != nil {
+		return c, err
+	}
+	keyRef, err := st.String(ctx, "secret/dukcapil/apikey_ref")
+	if err != nil {
+		return c, err
+	}
+	if c.key = e.getenv(keyRef); c.key == "" {
+		return c, fmt.Errorf("Dukcapil API key: environment variable %s is empty (DEC-060)", keyRef)
+	}
+	u, err := url.Parse(strings.TrimSuffix(base, "/") + path)
+	if err != nil || u.Host == "" {
+		return c, errors.New("api/dukcapil/baseurl or api/dukcapil/path is not a URL")
+	}
+	u.User = nil // never logged with credentials (§9.14)
+	c.url = u.String()
+	c.timeout = time.Duration(timeoutMS) * time.Millisecond
+	return c, nil
+}
+
 func (e *Executor) tryDukcapil(ctx context.Context, caseID string, attemptNumber int) (attempt, error) {
-	s := e.s
-	var (
-		customerType *string
-		nik, name    *string
-		birthDate    *time.Time
-	)
-	if err := s.db.QueryRow(ctx, `SELECT customer_type FROM fos.work WHERE case_id = $1`, caseID).Scan(&customerType); err != nil {
+	var customerType *string
+	if err := e.s.db.QueryRow(ctx, `SELECT customer_type FROM fos.work WHERE case_id = $1`, caseID).Scan(&customerType); err != nil {
 		return attempt{}, err
 	}
 	if value(customerType) != customerTypeIndividual {
 		return attempt{outcome: outcomeSkip}, nil
 	}
-	// FR-PSAPI-002 rule 6: the request is built from the case data each time.
-	if err := s.db.QueryRow(ctx, `
-		SELECT id_number, full_name, birth_date FROM fos.customer WHERE case_id = $1 AND customer_type = $2`,
-		caseID, partyCustomer).Scan(&nik, &name, &birthDate); err != nil {
-		return attempt{}, fmt.Errorf("Dukcapil request data: %w", err)
-	}
-	if birthDate == nil {
-		return attempt{}, errors.New("Dukcapil request data: no birth date")
-	}
-	body, _ := json.Marshal(dukcapilRequest{value(nik), birthDate.Format("02-01-2006"), value(name)})
-	secret, err := s.maskedHeaderNames(ctx)
+	cfg, err := e.dukcapilConfig(ctx)
 	if err != nil {
 		return attempt{}, err
 	}
-	log := &apiLog{name: apiDukcapil, submittedAt: s.now(), request: string(body), method: http.MethodPost, attempt: attemptNumber}
+	log := &apiLog{name: apiDukcapil, submittedAt: e.s.now(), method: http.MethodPost, attempt: attemptNumber}
 
-	simulate, err := s.settings.Bool(ctx, "api/dukcapil/simulate")
+	// FR-PSAPI-002 rule 6: the request is built from the case data each time;
+	// missing data is a Fail of the attempt (FR-PSAPI-003, agreed).
+	body, err := e.dukcapilBody(ctx, caseID)
 	if err != nil {
-		return attempt{}, err
+		log.status, log.response, log.method = apiFail, err.Error(), ""
+		return attempt{outcomeFail, log}, nil
 	}
-	if simulate {
+	log.request = string(body)
+
+	if cfg.simulate {
 		// No call; the configured response is logged as Success (FR-PSAPI-003).
-		resp, err := s.settings.String(ctx, "api/dukcapil/simulate_response")
-		if err != nil {
-			return attempt{}, err
-		}
-		log.status, log.response, log.method = apiSuccess, resp, ""
+		log.status, log.response, log.method = apiSuccess, cfg.simulateResponse, ""
 		return attempt{outcomeSuccess, log}, nil
 	}
 
-	base, err := s.settings.String(ctx, "api/dukcapil/baseurl")
-	if err != nil {
-		return attempt{}, err
-	}
-	path, err := s.settings.String(ctx, "api/dukcapil/path")
-	if err != nil {
-		return attempt{}, err
-	}
-	timeoutMS, err := s.settings.Int(ctx, "api/dukcapil/timeout_ms")
-	if err != nil {
-		return attempt{}, err
-	}
-	keyRef, err := s.settings.String(ctx, "secret/dukcapil/apikey_ref")
-	if err != nil {
-		return attempt{}, err
-	}
-	key := e.getenv(keyRef)
-	if key == "" {
-		return attempt{}, fmt.Errorf("Dukcapil API key: environment variable %s is empty (DEC-060)", keyRef)
-	}
-
-	log.url = strings.TrimSuffix(base, "/") + path
-	timeout := time.Duration(timeoutMS) * time.Millisecond
-	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	log.url = cfg.url
+	callCtx, cancel := context.WithTimeout(ctx, cfg.timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(callCtx, http.MethodPost, log.url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(callCtx, http.MethodPost, cfg.url, bytes.NewReader(body))
 	if err != nil {
-		return attempt{}, fmt.Errorf("Dukcapil URL: %w", err)
+		return attempt{}, errors.New("Dukcapil request could not be built")
 	}
-	req.Header.Set("x-Gateway-APIKey", key)
+	req.Header.Set(dukcapilKeyHeader, cfg.key)
 	req.Header.Set("Content-Type", "application/json")
-	log.requestHeaders = masked(req.Header, secret)
+	log.requestHeaders = masked(req.Header, cfg.maskedHeaders)
 
 	start := time.Now()
 	resp, err := e.http.Do(req)
 	if err == nil {
 		var raw []byte
-		raw, err = io.ReadAll(resp.Body)
+		raw, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 		resp.Body.Close()
 		code := resp.StatusCode
 		log.httpStatus = &code
-		log.responseHeaders = masked(resp.Header, secret)
-		log.response = string(raw)
-		if err == nil && len(bytes.TrimSpace(raw)) == 0 {
+		log.responseHeaders = masked(resp.Header, cfg.maskedHeaders)
+		switch {
+		case err != nil:
+		case len(raw) > maxResponseBytes:
+			err = fmt.Errorf("response larger than %d bytes", maxResponseBytes)
+		case len(bytes.TrimSpace(raw)) == 0:
 			log.response = noBodyMessage(code)
+		default:
+			log.response = string(raw)
 		}
 	}
 	log.duration = time.Since(start)
@@ -135,13 +168,31 @@ func (e *Executor) tryDukcapil(ctx context.Context, caseID string, attemptNumber
 		return attempt{}, ctx.Err()
 	}
 	if err != nil {
-		log.response = callError(err, req.URL, timeout)
+		log.response = callError(err, req.URL, cfg.timeout)
 		log.status = apiFail
 		return attempt{outcomeFail, log}, nil
 	}
 	o := evaluateDukcapil(log.response)
-	log.status = map[outcome]string{outcomeSuccess: apiSuccess, outcomeRejected: apiRejected, outcomeFail: apiFail}[o]
+	log.status = o.logStatus()
 	return attempt{o, log}, nil
+}
+
+// dukcapilBody is the request for the case's Individual Customer.
+func (e *Executor) dukcapilBody(ctx context.Context, caseID string) ([]byte, error) {
+	var (
+		nik, name *string
+		birthDate *time.Time
+	)
+	err := e.s.db.QueryRow(ctx, `
+		SELECT id_number, full_name, birth_date FROM fos.customer WHERE case_id = $1 AND customer_type = $2`,
+		caseID, partyCustomer).Scan(&nik, &name, &birthDate)
+	if isNotFound(err) || (err == nil && (value(nik) == "" || value(name) == "" || birthDate == nil)) {
+		return nil, errors.New("Dukcapil request data missing: the customer's NIK, Nama or Tanggal Lahir is empty")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(dukcapilRequest{value(nik), birthDate.Format("02-01-2006"), value(name)})
 }
 
 // evaluateDukcapil is FR-PSAPI-003 "Evaluasi hasil", judged on the body only.
@@ -151,7 +202,8 @@ func evaluateDukcapil(body string) outcome {
 		return outcomeFail
 	}
 	if code, ok := fields["RESPONSE_CODE"]; ok {
-		if code == "13" { // data not found: passes (PROPOSED)
+		// Data not found passes (PROPOSED); the code may come as text or number.
+		if fmt.Sprint(code) == "13" {
 			return outcomeSuccess
 		}
 		return outcomeFail

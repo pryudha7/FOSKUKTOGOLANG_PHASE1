@@ -40,3 +40,14 @@ Implementation notes (2026-10-23):
 - Retry is `POST .../assignments/{id}/retry`; a decision on the Retry view is refused with 400.
 - Two take-over guards are race-only and have no deterministic test: the `heartbeat_at` condition in the take-over UPDATE (DB-RULE-047) and the executor's in-memory "already executing" check. The ownership check before recording is tested.
 - `go test -race` needs cgo, which this machine lacks; the race detector was not run.
+
+Review fixes agreed with the user (2026-10-23):
+
+- Glossary terms in comments and logs (Pre-Screening Check, Individual Customer, Spouse, Business Entity).
+- `x-Gateway-APIKey` is masked by code whatever `api/log/masked_headers` says.
+- A heartbeat that finds the run taken over cancels the execution at once, including a call in flight; Close holds the lock while cancelling, no run starts after Close, and heartbeat goroutines are waited for; a broken stop goes through the owned-run transaction.
+- The Retry view lists the failed step's attempts of the newest run (`apiName` per check, shared `latestRun` subquery).
+- RESPONSE_CODE 13 passes as text or number; userinfo is stripped from the logged URL; responses are read up to 10 MB.
+- Missing request data is a Fail of the attempt (retried), not a broken stop; a missing setting stays STOPPED_BROKEN.
+- Headers conflict (FR-PSAPI-004 rule 2 vs §9.14 / DB-RULE-066): headers stay stored with secrets masked; raised in the open domain questions.
+- Not deterministically testable, left without a test: the heartbeat's lost-run cancellation (15 s interval), the `closed` guard in `launch`, and the run start-time scope of the Retry rows (only older runs from a reopen, TBD-042, would differ).

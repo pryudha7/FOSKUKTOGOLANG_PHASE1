@@ -244,10 +244,10 @@ func (s *server) downloadDocument(ep endpoint) http.HandlerFunc {
 	}
 }
 
-// createAssignment handles POST .../assignments/{id}/create: Create on
+// createUnderlying handles POST .../assignments/{id}/create: Create on
 // Document Underlying Upload (FR-FILE-004, FR-APP-009). Only SLIK Request
 // Data is accepted (BR-UI-010).
-func (s *server) createAssignment(ep endpoint) http.HandlerFunc {
+func (s *server) createUnderlying(ep endpoint) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sess, ok := s.session(w, r, ep)
 		if !ok {

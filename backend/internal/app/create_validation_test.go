@@ -234,3 +234,17 @@ func TestBusinessEntityHasNoSLIKRequestData(t *testing.T) {
 		t.Fatalf("Badan Usaha create = %d", r.Status)
 	}
 }
+
+// A saved code that is no longer an Active option shows as unchosen, so the
+// next Create asks for it (ERR-010); other saved values stay.
+func TestSavedSLIKCodeNoLongerOfferedShowsEmpty(t *testing.T) {
+	h, c, caseID, id := readyToCreate(t)
+	exec(t, h, `UPDATE fos.work SET slik_request_purpose_code = 'TP-1', slik_segmentation_code = 'SG-1',
+		slik_identity_address = 'Jl. Lama' WHERE case_id = $1`, caseID)
+	exec(t, h, `UPDATE fos.business_mapping_value SET status = 'Inactive' WHERE type = 'SLIK_TUJUANPERMINTAAN' AND code = 'TP-1'`)
+
+	values, _ := field(t, c.OpenAssignment(t, caseID, id), "page", "slik", "values").(map[string]any)
+	if values["requestPurpose"] != "" || values["segmentation"] != "SG-1" || values["address"] != "Jl. Lama" {
+		t.Fatalf("values = %v", values)
+	}
+}

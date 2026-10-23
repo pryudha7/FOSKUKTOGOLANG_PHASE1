@@ -157,9 +157,19 @@ func (s *Service) Frame(ctx context.Context, caseID string) (Frame, error) {
 	return f, nil
 }
 
+// querier is the pool or a transaction.
+type querier interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}
+
 // collect runs a query and scans every row.
 func collect[T any](ctx context.Context, s *Service, scan func(pgx.Rows) (T, error), sql string, args ...any) ([]T, error) {
-	rows, err := s.db.Query(ctx, sql, args...)
+	return collectIn(ctx, s.db, scan, sql, args...)
+}
+
+// collectIn is collect on q, e.g. inside a transaction.
+func collectIn[T any](ctx context.Context, q querier, scan func(pgx.Rows) (T, error), sql string, args ...any) ([]T, error) {
+	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +341,12 @@ func (s *Service) preScreeningPage(ctx context.Context, caseID string) (PreScree
 // options lists a BMV type's Active rows (blank status counts as Active,
 // DB-RULE-092), by sort_order then code as text (§9.6).
 func (s *Service) options(ctx context.Context, bmvType string) ([]Option, error) {
-	opts, err := collect(ctx, s, func(r pgx.Rows) (Option, error) {
+	return optionsIn(ctx, s.db, bmvType)
+}
+
+// optionsIn is options on q, e.g. inside a transaction.
+func optionsIn(ctx context.Context, q querier, bmvType string) ([]Option, error) {
+	opts, err := collectIn(ctx, q, func(r pgx.Rows) (Option, error) {
 		var o Option
 		return o, r.Scan(&o.Code, &o.Description)
 	}, `

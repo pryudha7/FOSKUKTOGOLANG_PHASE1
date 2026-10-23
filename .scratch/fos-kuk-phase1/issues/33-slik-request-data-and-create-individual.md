@@ -34,3 +34,11 @@ Implementation notes (2026-10-23):
 - Create is `POST .../assignments/{id}/create`; a code that is not an Active option, an unknown field, or a Badan Usaha case is refused with 400.
 - The total counts only files of the case's PRESCREENING categories (FR-FILE-004 rule 1).
 - The Team Lead check runs after the field checks pass, so its message never mixes with field errors.
+
+Review fixes agreed with the user (2026-10-23):
+
+- Glossary names: `AssignmentPreScreeningReview` (value stays "Pre Screening"), handler `createUnderlying`.
+- Create reads options and mandatory documents inside its transaction.
+- A 422 that is not JSON shows the generic banner and re-enables Create; an accordion with ERR-026 opens after every Create result; the row text comes from the server message.
+- A saved SLIK code no longer offered shows as unchosen, so Create asks for it (ERR-010).
+- Left as is: the shared shape with `moveTo`, the four dropdown blocks, ERR-020's "Notes:" format in the banner, no active-status check on the Team Lead (TBD-029), trimming of Alamat Nasabah, the 10/100 MB limit in code (DEC-043).

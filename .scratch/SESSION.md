@@ -12,7 +12,7 @@ Where the FOS KUK rebuild stands, so the next session can continue without re-de
 | 04 | UI-008 sidebar, Create menu (AO/SAO), avatar Log off | f26b5ba, 1afbc13 |
 | 05 | Create Financing Case, Case ID / Customer Code, Case View frame (stage bar, info panel, lifecycle popup, attachments panel) | b512c0b, aa8d56d |
 | 30 | Pre-Screening Submission (Perorangan): validation, customer rows, Next to Document Underlying Upload, Back | 6a7229c, 4d258a9 |
-| 33 | SLIK Request Data (stored on work), Create with ERR-010/020/026/029, TL Pre Screening assignment | (this commit) |
+| 33 | SLIK Request Data (stored on work), Create with ERR-010/020/026/029, Team Lead Pre Screening assignment | 69cefcc, (review fixes) |
 | 07 | Underlying Document list (master snapshot), Upload Document modal to GCS with replacement, download with ERR-035, attachments panel, Nomor Memo | cc1f096, (review fixes) |
 
 Each ticket file in `.scratch/fos-kuk-phase1/issues/` has a **Comments** section with the decisions agreed with the user (many are interim answers to SoT TBDs) and what was deferred.

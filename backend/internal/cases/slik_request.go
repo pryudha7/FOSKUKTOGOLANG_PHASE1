@@ -44,21 +44,28 @@ func (s *Service) slikSection(ctx context.Context, caseID string) (SLIKSection, 
 		FROM fos.work WHERE case_id = $1`, caseID).Scan(&purpose, &facility, &address, &searchType, &segmentation); err != nil {
 		return SLIKSection{}, err
 	}
-	sec.Values = SLIKRequest{value(purpose), value(facility), value(address), value(searchType), value(segmentation)}
+	sec.Values.Address = value(address)
 	for _, o := range []struct {
 		bmvType string
+		saved   *string
+		value   *string
 		into    *[]Option
 	}{
-		{bmvRequestPurpose, &sec.Options.RequestPurpose},
-		{bmvFacilityOption, &sec.Options.FacilityOption},
-		{bmvSearchType, &sec.Options.SearchType},
-		{bmvSegmentation, &sec.Options.Segmentation},
+		{bmvRequestPurpose, purpose, &sec.Values.RequestPurpose, &sec.Options.RequestPurpose},
+		{bmvFacilityOption, facility, &sec.Values.FacilityOption, &sec.Options.FacilityOption},
+		{bmvSearchType, searchType, &sec.Values.SearchType, &sec.Options.SearchType},
+		{bmvSegmentation, segmentation, &sec.Values.Segmentation, &sec.Options.Segmentation},
 	} {
 		opts, err := s.options(ctx, o.bmvType)
 		if err != nil {
 			return SLIKSection{}, err
 		}
 		*o.into = opts
+		// A saved code no longer offered shows as unchosen, so Create asks
+		// for it again (ERR-010) instead of sending a code it would refuse.
+		if hasCode(opts, value(o.saved)) {
+			*o.value = value(o.saved)
+		}
 	}
 	return sec, nil
 }

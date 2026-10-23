@@ -40,6 +40,8 @@ export default function UnderlyingDocumentUpload({
   );
   const [errors, setErrors] = useState<FieldError[]>([]);
   const [creating, setCreating] = useState(false);
+  // Counts Create results, so an accordion with ERR-026 opens after each one.
+  const [attempt, setAttempt] = useState(0);
 
   async function create() {
     if (creating || !page.editable) {
@@ -57,12 +59,14 @@ export default function UnderlyingDocumentUpload({
       window.location.assign(assignment.endpointPath);
       return;
     }
-    if (res?.status === 422) {
-      setErrors(((await res.json()) as { errors: FieldError[] }).errors);
+    const invalid = res?.status === 422 ? ((await res.json().catch(() => null)) as { errors?: FieldError[] } | null) : null;
+    if (invalid?.errors) {
+      setErrors(invalid.errors);
     } else {
       setErrors([]);
       setFailed(true);
     }
+    setAttempt((n) => n + 1);
     setCreating(false);
   }
 
@@ -116,7 +120,8 @@ export default function UnderlyingDocumentUpload({
               key={c.code}
               category={c}
               editable={page.editable}
-              missing={errors.filter((e) => e.section === "documents" && e.key.startsWith(`${c.code}/`)).map((e) => e.field)}
+              missing={errors.filter((e) => e.section === "documents" && e.key.startsWith(`${c.code}/`))}
+              attempt={attempt}
               onUpload={(documentType) => setUploading({ category: c, documentType })}
               onDownload={download}
             />
@@ -264,25 +269,27 @@ function CategoryAccordion({
   category,
   editable,
   missing,
+  attempt,
   onUpload,
   onDownload,
 }: {
   category: DocumentCategory;
   editable: boolean;
-  missing: string[];
+  missing: FieldError[]; // ERR-026 of this category's rows
+  attempt: number;
   onUpload: (documentType: string) => void;
   onDownload: (file: StoredFile) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const hasErrors = missing.length > 0;
-  // Opens once per Create result; the operator may close it again.
-  const missingKey = missing.join("|");
+  // Opens after each Create result with errors here; the operator may close it again.
   useEffect(() => {
-    if (missingKey) {
+    if (hasErrors) {
       setOpen(true);
     }
-  }, [missingKey]);
+  }, [attempt, hasErrors]);
+  const missingMessage = (documentType: string) => missing.find((e) => e.field === documentType)?.message;
   return (
     <div className={styles.accordion}>
       <button type="button" className={styles.accordionHeader} aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -332,7 +339,7 @@ function CategoryAccordion({
                       </button>
                     )}
                     {d.documentType}
-                    {missing.includes(d.documentType) && <span className={styles.documentError}>Harap upload dokumen wajib</span>}
+                    {missingMessage(d.documentType) && <span className={styles.documentError}>{missingMessage(d.documentType)}</span>}
                   </span>
                 </td>
                 <td className={styles.documentNote}>{d.mandatory ? "Mandatory" : "Conditional"}</td>

@@ -12,8 +12,9 @@ import (
 	"fos/internal/auth"
 )
 
-// AssignmentPreScreening is the Team Lead's assignment after Create (FR-APP-009).
-const AssignmentPreScreening = "Pre Screening"
+// AssignmentPreScreeningReview is the Team Lead's assignment after Create,
+// named "Pre Screening" in the SoT (FR-APP-009; GLOSSARY Pre-Screening Review).
+const AssignmentPreScreeningReview = "Pre Screening"
 
 // UI-011 sections and keys of a FieldError on Create.
 const (
@@ -105,7 +106,7 @@ func (s *Service) CreateUnderlying(ctx context.Context, sess auth.Session, caseI
 				errs = append(errs, FieldError{SectionSLIK, f.key, f.label, "ERR-029", msgAddressLength})
 			}
 		default:
-			opts, err := s.options(ctx, f.bmvType)
+			opts, err := optionsIn(ctx, tx, f.bmvType)
 			if err != nil {
 				return 0, err
 			}
@@ -128,7 +129,7 @@ func (s *Service) CreateUnderlying(ctx context.Context, sess auth.Session, caseI
 		errs = append(errs, FieldError{SectionForm, KeyTotalSize, "Notes", "ERR-020",
 			fmt.Sprintf("Maksimal total ukuran file upload: %d MB (Total: %s MB)", limit, totalMB(total))})
 	}
-	missing, err := collect(ctx, s, func(r pgx.Rows) (FieldError, error) {
+	missing, err := collectIn(ctx, tx, func(r pgx.Rows) (FieldError, error) {
 		var cat, docType string
 		err := r.Scan(&cat, &docType)
 		return FieldError{SectionDocuments, cat + "/" + docType, docType, "ERR-026", msgMandatoryDocument}, err
@@ -171,12 +172,12 @@ func (s *Service) CreateUnderlying(ctx context.Context, sess auth.Session, caseI
 		a.id, string(AssignmentCompleted), now); err != nil {
 		return 0, err
 	}
-	// FR-APP-009 step 2: opened time and worker are set when the TL first opens it.
+	// FR-APP-009 step 2: opened time and worker are set when the Team Lead first opens it.
 	var next int64
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO fos.assignments (case_id, assignment_name, assignment_type, assigned_user_id, assignment_status, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6) RETURNING assignment_id`,
-		caseID, AssignmentPreScreening, string(Worklist), value(teamLead), string(AssignmentNew), now).Scan(&next); err != nil {
+		caseID, AssignmentPreScreeningReview, string(Worklist), value(teamLead), string(AssignmentNew), now).Scan(&next); err != nil {
 		return 0, err
 	}
 	return next, tx.Commit(ctx)

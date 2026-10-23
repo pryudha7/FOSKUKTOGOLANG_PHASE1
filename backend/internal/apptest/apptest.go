@@ -33,6 +33,7 @@ import (
 
 const (
 	LoginPathDB         = "/PRWebDB1"
+	LoginPathLDAP       = "/PRWebLDAP1"
 	EndpointPathDesktop = "/app/fossyariah"
 )
 
@@ -109,6 +110,7 @@ func New(t *testing.T, configure ...func(*config.Config)) *Harness {
 		Env:                 "test",
 		DatabaseURL:         containerDSN(name),
 		LoginPathDB:         LoginPathDB,
+		LoginPathLDAP:       LoginPathLDAP,
 		EndpointPathDesktop: EndpointPathDesktop,
 		TrustedProxyCIDRs:   []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32"), netip.MustParsePrefix("::1/128")},
 	}
@@ -258,6 +260,13 @@ func (c *Client) Do(t *testing.T, method, path string, body any) Response {
 func (c *Client) LoginDatabase(t *testing.T, username, password string) Response {
 	t.Helper()
 	return c.Do(t, http.MethodPost, LoginPathDB,
+		map[string]string{"username": username, "password": password})
+}
+
+// LoginLDAP submits credentials to LOGIN_PATH_LDAP (API-001).
+func (c *Client) LoginLDAP(t *testing.T, username, password string) Response {
+	t.Helper()
+	return c.Do(t, http.MethodPost, LoginPathLDAP,
 		map[string]string{"username": username, "password": password})
 }
 

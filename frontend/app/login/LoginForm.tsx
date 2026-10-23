@@ -24,7 +24,7 @@ export default function LoginForm({ loginPath, endpointPath }: { loginPath: stri
     }
     setSubmitting(true);
     try {
-      // API-002: POST LOGIN_PATH_DB with username and password only.
+      // API-001/API-002: POST to the login path with username and password only.
       const res = await fetch(loginPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

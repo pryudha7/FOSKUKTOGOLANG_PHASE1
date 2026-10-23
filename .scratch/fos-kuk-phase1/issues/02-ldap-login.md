@@ -11,3 +11,16 @@
 - [ ] The LDAP bind password never appears in code, repository or logs
 - [ ] Tests use a fake LDAP server
 - [ ] Verified at the HTTP API seam against a real PostgreSQL, with external systems faked at the network boundary.
+
+## Comments
+
+**Decisions while implementing (2026-10-23), agreed with the user:**
+
+- ERR-002 text: "Layanan autentikasi sedang tidak tersedia. Silakan coba beberapa saat lagi." (HTTP 503, interim per TBD-013).
+- Transport follows the `LDAP_URL` scheme (`ldap://` or `ldaps://` with certificate validation); no StartTLS yet. New required-for-LDAP key `LDAP_TIMEOUT_SECONDS` (TBD-011).
+- `LDAP_BIND_PASSWORD` is injected through the environment by the deployment (TBD-010).
+- With any LDAP key empty or "TBD" the app still starts; LDAP login is refused with ERR-002 / `LDAP_UNAVAILABLE` (ENV-008).
+- A directory user who is not a FOS operator gets ERR-001 / `NOT_REGISTERED`; operator matching is case-insensitive.
+- An empty password is refused before any bind: directories treat it as an unauthenticated bind that succeeds (RFC 4513 §5.1.2).
+
+**Tests** use an in-process fake directory (`apptest.FakeLDAP`) that matches attributes exactly and records the filters it receives.

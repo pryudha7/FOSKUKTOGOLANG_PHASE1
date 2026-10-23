@@ -1,12 +1,14 @@
 // Package config reads the per-environment configuration (SoT §4, ENV-001 to
-// ENV-006). Every key is required: there are no hard-coded defaults.
+// ENV-010). There are no hard-coded defaults.
 package config
 
 import (
 	"fmt"
 	"net/netip"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -14,13 +16,32 @@ type Config struct {
 	ListenAddr          string // LISTEN_ADDR
 	DatabaseURL         string // DATABASE_URL
 	LoginPathDB         string // LOGIN_PATH_DB
+	LoginPathLDAP       string // LOGIN_PATH_LDAP
 	EndpointPathDesktop string // ENDPOINT_PATH_DESKTOP
 	// TrustedProxyCIDRs lists the reverse proxies allowed to assert HTTPS via
 	// X-Forwarded-Proto (TRUSTED_PROXY_CIDRS, comma-separated).
 	TrustedProxyCIDRs []netip.Prefix
+	LDAP              LDAP
 }
 
-// FromEnv loads the configuration, failing on any missing key.
+// LDAP is the LDAP login configuration (SoT §4.2). Unlike the keys above it
+// may be incomplete at startup: LDAP login is then refused (ENV-008).
+type LDAP struct {
+	URL          string        // LDAP_URL
+	BindDN       string        // LDAP_BIND_DN
+	BindPassword string        // LDAP_BIND_PASSWORD, a secret (ENV-007)
+	BaseDN       string        // LDAP_BASE_DN
+	SearchFilter string        // LDAP_SEARCH_FILTER, %v replaced by the username
+	Timeout      time.Duration // LDAP_TIMEOUT_SECONDS (TBD-011, agreed)
+}
+
+// Complete reports whether every LDAP key has a value.
+func (l LDAP) Complete() bool {
+	return l.URL != "" && l.BindDN != "" && l.BindPassword != "" && l.BaseDN != "" &&
+		l.SearchFilter != "" && l.Timeout > 0
+}
+
+// FromEnv loads the configuration, failing on any missing required key.
 func FromEnv() (Config, error) {
 	var missing []string
 	get := func(key string) string {
@@ -35,11 +56,25 @@ func FromEnv() (Config, error) {
 		ListenAddr:          get("LISTEN_ADDR"),
 		DatabaseURL:         get("DATABASE_URL"),
 		LoginPathDB:         get("LOGIN_PATH_DB"),
+		LoginPathLDAP:       get("LOGIN_PATH_LDAP"),
 		EndpointPathDesktop: get("ENDPOINT_PATH_DESKTOP"),
+		LDAP: LDAP{
+			URL:          optional("LDAP_URL"),
+			BindDN:       optional("LDAP_BIND_DN"),
+			BindPassword: optional("LDAP_BIND_PASSWORD"),
+			BaseDN:       optional("LDAP_BASE_DN"),
+			SearchFilter: optional("LDAP_SEARCH_FILTER"),
+		},
 	}
 	proxies := get("TRUSTED_PROXY_CIDRS")
 	if len(missing) > 0 {
 		return Config{}, fmt.Errorf("missing configuration: %s", strings.Join(missing, ", "))
+	}
+	if cfg.LoginPathDB == cfg.LoginPathLDAP {
+		return Config{}, fmt.Errorf("LOGIN_PATH_DB and LOGIN_PATH_LDAP must differ")
+	}
+	if secs, err := strconv.Atoi(optional("LDAP_TIMEOUT_SECONDS")); err == nil && secs > 0 {
+		cfg.LDAP.Timeout = time.Duration(secs) * time.Second
 	}
 	for _, p := range strings.Split(proxies, ",") {
 		prefix, err := netip.ParsePrefix(strings.TrimSpace(p))
@@ -49,4 +84,14 @@ func FromEnv() (Config, error) {
 		cfg.TrustedProxyCIDRs = append(cfg.TrustedProxyCIDRs, prefix)
 	}
 	return cfg, nil
+}
+
+// optional reads a key whose absence is handled where it is used; the SoT
+// placeholder "TBD" counts as absent (ENV-008).
+func optional(key string) string {
+	v := strings.TrimSpace(os.Getenv(key))
+	if strings.EqualFold(v, "TBD") {
+		return ""
+	}
+	return v
 }

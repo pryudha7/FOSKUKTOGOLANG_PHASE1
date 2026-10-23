@@ -19,7 +19,7 @@ cd frontend && cp .env.example .env.local
 npm install && npm run dev            # serves https://localhost:3000 with a self-signed certificate
 ```
 
-Open `https://localhost:3000/PRWebDB1`. There is no operator administration yet: insert a role into `fos.roles` and an operator into `fos.operator` with a bcrypt `password_hash`.
+Open `https://localhost:3000/PRWebDB1` (Database login) or `/PRWebLDAP1` (LDAP login). There is no operator administration yet: insert a role into `fos.roles` and an operator into `fos.operator` with a bcrypt `password_hash`.
 
 Every configuration key is required; nothing has a default (SoT ENV-006). On Windows, start servers from PowerShell or set `MSYS_NO_PATHCONV=1`: Git Bash rewrites values such as `/PRWebDB1` into Windows paths.
 

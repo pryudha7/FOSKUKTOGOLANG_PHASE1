@@ -6,6 +6,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net"
@@ -28,6 +29,7 @@ var loginErrors = map[string]struct {
 	message string
 }{
 	"ERR-001": {http.StatusUnauthorized, "Informasi yang Anda masukkan tidak dikenali."},
+	"ERR-002": {http.StatusServiceUnavailable, "Layanan autentikasi sedang tidak tersedia. Silakan coba beberapa saat lagi."},
 	"ERR-003": {http.StatusServiceUnavailable, "Layanan sedang tidak tersedia. Silakan coba beberapa saat lagi."},
 }
 
@@ -37,9 +39,10 @@ type server struct {
 }
 
 func New(cfg config.Config, pool *pgxpool.Pool) http.Handler {
-	s := &server{cfg: cfg, auth: auth.NewService(pool)}
+	s := &server{cfg: cfg, auth: auth.NewService(pool, cfg.LDAP)}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST "+cfg.LoginPathDB, s.loginDatabase) // API-002
+	mux.HandleFunc("POST "+cfg.LoginPathLDAP, s.login(s.auth.LoginLDAP))   // API-001
+	mux.HandleFunc("POST "+cfg.LoginPathDB, s.login(s.auth.LoginDatabase)) // API-002
 	mux.HandleFunc("GET "+cfg.EndpointPathDesktop+"/api/me", s.me)
 	return s.requireHTTPS(mux)
 }
@@ -58,44 +61,46 @@ func writeOperator(w http.ResponseWriter, op auth.Operator) {
 	}{op.UserID, op.FullName})
 }
 
-// loginDatabase handles POST LOGIN_PATH_DB: username and password, no other
-// field (API-002).
-func (s *server) loginDatabase(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
+// login handles a credential submit to a login path: username and password,
+// no other field (API-001, API-002).
+func (s *server) login(authenticate func(context.Context, auth.Attempt) (auth.Operator, string, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		op, token, err := authenticate(r.Context(), auth.Attempt{
+			Username:  req.Username,
+			Password:  req.Password,
+			ClientIP:  s.clientIP(r),
+			UserAgent: r.UserAgent(),
+			Endpoint:  auth.EndpointDesktop,
+		})
+		var refusal *auth.LoginError
+		if errors.As(err, &refusal) {
+			e := loginErrors[refusal.Code]
+			writeJSON(w, e.status, struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			}{refusal.Code, e.message})
+			return
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     sessionCookie,
+			Value:    token,
+			Path:     s.cfg.EndpointPathDesktop,
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+		})
+		writeOperator(w, op)
 	}
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	op, token, err := s.auth.LoginDatabase(r.Context(), auth.Attempt{
-		Username:  req.Username,
-		Password:  req.Password,
-		ClientIP:  s.clientIP(r),
-		UserAgent: r.UserAgent(),
-		Endpoint:  auth.EndpointDesktop,
-	})
-	var refusal *auth.LoginError
-	if errors.As(err, &refusal) {
-		e := loginErrors[refusal.Code]
-		writeJSON(w, e.status, struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		}{refusal.Code, e.message})
-		return
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookie,
-		Value:    token,
-		Path:     s.cfg.EndpointPathDesktop,
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	})
-	writeOperator(w, op)
 }
 
 func (s *server) me(w http.ResponseWriter, r *http.Request) {

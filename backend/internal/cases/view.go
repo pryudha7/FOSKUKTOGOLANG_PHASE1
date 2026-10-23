@@ -222,6 +222,8 @@ type AssignmentPage struct {
 	PreScreening *PreScreeningPage
 	// Underlying is set for a Document Underlying Upload assignment.
 	Underlying *UnderlyingPage
+	// Review is set for the Team Lead's Pre Screening assignment.
+	Review *ReviewPage
 }
 
 // PreScreeningPage is the data UI-010 shows today: Nama Branch and the Tipe
@@ -240,6 +242,8 @@ type PreScreeningPage struct {
 	// Today and EarliestBirthDate bound the birth-date pickers, as the
 	// operator's dates (yyyy-mm-dd).
 	Today, EarliestBirthDate string
+	// NotesBanner is the latest Pre Screening decision, once there is one.
+	NotesBanner *NotesBanner
 }
 
 // Option is a BMV dropdown option.
@@ -307,6 +311,14 @@ func (s *Service) OpenAssignment(ctx context.Context, sess auth.Session, caseID 
 		}
 		p.Underlying = &page
 	}
+	if p.Name == AssignmentPreScreeningReview {
+		page, err := s.reviewPage(ctx, sess, caseID)
+		if err != nil {
+			return AssignmentPage{}, err
+		}
+		page.Editable = owner && p.Status != AssignmentCompleted
+		p.Review = &page
+	}
 	return p, nil
 }
 
@@ -334,7 +346,10 @@ func (s *Service) preScreeningPage(ctx context.Context, caseID string) (PreScree
 	if page.Customer, err = s.savedParty(ctx, caseID, partyCustomer); err != nil {
 		return PreScreeningPage{}, err
 	}
-	page.Spouse, err = s.savedParty(ctx, caseID, partySpouse)
+	if page.Spouse, err = s.savedParty(ctx, caseID, partySpouse); err != nil {
+		return PreScreeningPage{}, err
+	}
+	page.NotesBanner, err = s.notesBanner(ctx, caseID)
 	return page, err
 }
 

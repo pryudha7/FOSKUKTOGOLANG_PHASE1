@@ -198,12 +198,16 @@ func (s *server) openAssignment(ep endpoint) http.HandlerFunc {
 			Editable            bool         `json:"editable"`
 			Today               string       `json:"today"`
 			EarliestBirthDate   string       `json:"earliestBirthDate"`
+			NotesBanner         *notesJSON   `json:"notesBanner"`
 		}
 		var page *preScreeningJSON
 		if ps := p.PreScreening; ps != nil {
 			page = &preScreeningJSON{BranchName: ps.BranchName, CustomerType: ps.CustomerType, CustomerTypeOptions: toOptionsJSON(ps.CustomerTypeOptions),
 				Customer: personForm(ps.Customer), Spouse: personForm(ps.Spouse),
 				Editable: ps.Editable, Today: ps.Today, EarliestBirthDate: ps.EarliestBirthDate}
+			if ps.NotesBanner != nil {
+				page.NotesBanner = &notesJSON{ps.NotesBanner.Decision, ps.NotesBanner.Notes}
+			}
 			if ps.BranchMissing {
 				page.BranchError = &errorJSON{"ERR-006", caseErrors["ERR-006"].message}
 			}
@@ -214,6 +218,8 @@ func (s *server) openAssignment(ep endpoint) http.HandlerFunc {
 			body = page
 		case p.Underlying != nil:
 			body = toUnderlyingJSON(*p.Underlying)
+		case p.Review != nil:
+			body = toReviewJSON(*p.Review)
 		}
 		writeJSON(w, http.StatusOK, struct {
 			AssignmentID int64  `json:"assignmentId"`

@@ -11,4 +11,5 @@
 - [ ] Go shows for: worklist assigned to the operator; work queue of the operator; any active assignment for Authors (FR-CASE-009)
 - [ ] Opening mode Case does not change any assignment's status or first_opened_at
 - [ ] Decide who may open a case by Case ID (TBD-035a, TBD-003)
+- [ ] History Details: "History User Recommendation and Officer Activity" with the Recommendation Screen panel, one sub-accordion per Recommendation, oldest first, header "<nama> - <role>" (AC-FR-APP-010-11; moved from ticket 08)
 - [ ] Verified at the HTTP API seam against a real PostgreSQL, with external systems faked at the network boundary.

@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import type { Assignment, CaseFrame, PreScreeningPage, UnderlyingPage } from "./types";
+import type { Assignment, CaseFrame, PreScreeningPage, ReviewPage, UnderlyingPage } from "./types";
 import CaseInfoPanel, { CaseHeader } from "./CaseInfoPanel";
 import StageBar from "./StageBar";
 import AttachmentsPanel from "./AttachmentsPanel";
 import PreScreeningSubmission from "./PreScreeningSubmission";
 import UnderlyingDocumentUpload from "./UnderlyingDocumentUpload";
+import PreScreeningReview from "./PreScreeningReview";
 import { assignmentNames } from "./names";
 import styles from "./case.module.css";
 
@@ -72,6 +73,8 @@ export default function CaseView({
             <PreScreeningSubmission page={assignment.page as PreScreeningPage} assignment={ref} />
           ) : assignment.page && assignment.name === assignmentNames.underlyingDocumentUpload ? (
             <UnderlyingDocumentUpload page={assignment.page as UnderlyingPage} assignment={ref} onFilesChanged={load} />
+          ) : assignment.page && assignment.name === assignmentNames.preScreeningReview ? (
+            <PreScreeningReview page={assignment.page as ReviewPage} assignment={ref} />
           ) : (
             <section className={styles.card}>
               <h2 className={styles.cardTitle}>{assignment.name}</h2>

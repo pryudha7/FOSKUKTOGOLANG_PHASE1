@@ -50,6 +50,19 @@ export type PreScreeningPage = {
   // The operator's today and the earliest birth date, yyyy-mm-dd.
   today: string;
   earliestBirthDate: string;
+  // The latest Pre Screening decision once the case has one (FR-APP-010 rule 2).
+  notesBanner: { decision: string; notes: string } | null;
+};
+
+// One entry of History Pre-screening Notes; submittedAt is dd/MM/yy H:mm in
+// the operator's timezone, decidedBy a full name.
+export type Recommendation = { decidedBy: string; submittedAt: string; decision: string; notes: string };
+
+// UI-017 for the Team Lead.
+export type ReviewPage = {
+  decisionOptions: Option[];
+  history: Recommendation[]; // oldest first
+  editable: boolean;
 };
 
 export type StoredFile = { fileId: string; fileName: string };
@@ -98,5 +111,5 @@ export type Assignment = {
   status: string;
   // PreScreeningPage on Pre-Screening Submission, UnderlyingPage on
   // Document Underlying Upload.
-  page: PreScreeningPage | UnderlyingPage | null;
+  page: PreScreeningPage | UnderlyingPage | ReviewPage | null;
 };

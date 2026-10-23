@@ -65,6 +65,16 @@ export default function PreScreeningSubmission({ page, assignment }: { page: Pre
         <Breadcrumb steps={preScreeningSteps} active={0} onSelect={(i) => i === 1 && submit()} />
 
         <div className={styles.formPanel}>
+          {/* Gambar 29: the Team Lead's latest decision, above Nama Branch. */}
+          {page.notesBanner && (
+            <div className={styles.notesBanner} role="note">
+              <strong>Notes</strong>
+              <span className={styles.notesLabel}>Keputusan</span>
+              <span>{page.notesBanner.decision}</span>
+              <span className={styles.notesLabel}>Notes</span>
+              <span className={styles.notesText}>{page.notesBanner.notes}</span>
+            </div>
+          )}
           <Field label="Nama Branch" error={branchError}>
             <input className={styles.inputDisabled} value={page.branchName} disabled readOnly aria-label="Nama Branch" />
           </Field>

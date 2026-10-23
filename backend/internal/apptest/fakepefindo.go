@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // Pefindo API routes of the fake (FR-PSAPI-014 to FR-PSAPI-018).
@@ -83,7 +84,7 @@ func (f *FakePefindo) serve(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	path := r.URL.EscapedPath()
 	f.mu.Lock()
-	f.requests = append(f.requests, FakeRequest{r.Method, path, r.Header.Clone(), string(body)})
+	f.requests = append(f.requests, FakeRequest{Method: r.Method, Path: path, Header: r.Header.Clone(), Body: string(body), At: time.Now()})
 	reply := FakeReply{Status: 500}
 	for route, script := range f.scripts {
 		if strings.HasPrefix(path, route) && len(script) > 0 {

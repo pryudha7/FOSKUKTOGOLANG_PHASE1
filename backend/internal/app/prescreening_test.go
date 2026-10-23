@@ -65,7 +65,7 @@ func apiLogs(t *testing.T, h *apptest.Harness, caseID string) []apiLogRow {
 	rows, err := h.DB.Query(context.Background(), `
 		SELECT api_name, api_status, COALESCE(request, ''), COALESCE(response, ''), COALESCE(http_method, ''),
 		       COALESCE(request_url, ''), http_status_code, request_headers, response_headers, attempt_number, duration_milliseconds
-		FROM fos.connect_api_log WHERE case_id = $1 AND api_type = 'ConnectRest' ORDER BY submitted_at, ctid`, caseID) // ctid: insertion order of this append-only table, as the test clock stands still
+		FROM fos.connect_api_log WHERE case_id = $1 AND api_type = 'ConnectRest' ORDER BY submitted_at, xmin::text::bigint, ctid`, caseID) // the test clock stands still: order by writing transaction (xmin), then ctid within one; ctid alone is not insertion order
 	if err != nil {
 		t.Fatal(err)
 	}

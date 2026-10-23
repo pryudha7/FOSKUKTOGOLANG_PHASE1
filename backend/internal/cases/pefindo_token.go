@@ -50,8 +50,21 @@ func (e *Executor) tokenKey(ctx context.Context) (cipher.AEAD, string, error) {
 	return aead, ref, err
 }
 
-// storedToken decrypts the row's token; ok is false when there is none
-// usable (never requested, another key version, or not decryptable).
+// readToken reads and decrypts the stored token (lock: "" or " FOR
+// UPDATE"); ok is false when there is none usable (never requested, another
+// key version, or not decryptable).
+func readToken(ctx context.Context, q rowQuerier, lock string, aead cipher.AEAD, version string) (bearer, bool, error) {
+	var ciphertext, nonce []byte
+	var keyVersion *string
+	if err := q.QueryRow(ctx, `SELECT token_ciphertext, token_nonce, key_version FROM fos.integration_token WHERE provider = $1`+lock,
+		providerPefindo).Scan(&ciphertext, &nonce, &keyVersion); err != nil {
+		return bearer{}, false, err
+	}
+	t, ok := storedToken(aead, version, ciphertext, nonce, keyVersion)
+	return t, ok, nil
+}
+
+// storedToken decrypts a token row; ok is false when it is not usable.
 func storedToken(aead cipher.AEAD, version string, ciphertext, nonce []byte, keyVersion *string) (bearer, bool) {
 	if ciphertext == nil || value(keyVersion) != version || len(nonce) != aead.NonceSize() {
 		return bearer{}, false
@@ -69,14 +82,9 @@ func (e *Executor) pefindoToken(ctx context.Context) (bearer, error) {
 	if err != nil {
 		return bearer{}, err
 	}
-	var ciphertext, nonce []byte
-	var keyVersion *string
-	if err := e.s.db.QueryRow(ctx, `SELECT token_ciphertext, token_nonce, key_version FROM fos.integration_token WHERE provider = $1`,
-		providerPefindo).Scan(&ciphertext, &nonce, &keyVersion); err != nil {
-		return bearer{}, err
-	}
-	if t, ok := storedToken(aead, version, ciphertext, nonce, keyVersion); ok {
-		return t, nil
+	t, ok, err := readToken(ctx, e.s.db, ``, aead, version)
+	if err != nil || ok {
+		return t, err
 	}
 	return e.renewPefindoToken(ctx, nil)
 }
@@ -100,13 +108,12 @@ func (e *Executor) renewPefindoToken(ctx context.Context, used []byte) (bearer, 
 		return bearer{}, err
 	}
 	defer tx.Rollback(ctx)
-	var ciphertext, nonce []byte
-	var keyVersion *string
-	if err := tx.QueryRow(ctx, `SELECT token_ciphertext, token_nonce, key_version FROM fos.integration_token WHERE provider = $1 FOR UPDATE`,
-		providerPefindo).Scan(&ciphertext, &nonce, &keyVersion); err != nil {
-		return bearer{}, err
-	}
-	if t, ok := storedToken(aead, version, ciphertext, nonce, keyVersion); ok && !bytes.Equal(t.nonce, used) {
+	// DB-RULE-080 compares obtained_at; the nonce tells the renewed token
+	// apart the same way without depending on the clock (agreed for ticket 13).
+	if t, ok, err := readToken(ctx, tx, ` FOR UPDATE`, aead, version); err != nil || ok && !bytes.Equal(t.nonce, used) {
+		if err != nil {
+			return bearer{}, err
+		}
 		return t, tx.Commit(ctx)
 	}
 
@@ -162,18 +169,19 @@ func (e *Executor) tokenConfig(ctx context.Context) (apiConfig, string, error) {
 		return c, "", err
 	}
 	c.maskedHeaders = append(c.maskedHeaders, "Authorization")
-	if c.base, err = st.String(ctx, "api/pefindo/baseurl"); err != nil {
+	a := pefindoTokenAPI
+	if c.base, err = st.String(ctx, "api/"+a.base+"/baseurl"); err != nil {
 		return c, "", err
 	}
-	if c.path, err = st.String(ctx, "api/pefindotoken/path"); err != nil {
+	if c.path, err = st.String(ctx, "api/"+a.settings+"/path"); err != nil {
 		return c, "", err
 	}
-	timeoutMS, err := st.Int(ctx, "api/pefindotoken/timeout_ms")
+	timeoutMS, err := st.Int(ctx, "api/"+a.settings+"/timeout_ms")
 	if err != nil {
 		return c, "", err
 	}
 	c.timeout = time.Duration(timeoutMS) * time.Millisecond
-	ref, err := st.String(ctx, "secret/pefindotoken/authorization_ref")
+	ref, err := st.String(ctx, "secret/"+a.settings+"/authorization_ref")
 	if err != nil {
 		return c, "", err
 	}

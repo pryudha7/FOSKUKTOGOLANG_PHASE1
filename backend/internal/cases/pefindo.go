@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"mime"
 	"net/http"
 	"net/url"
@@ -40,14 +41,17 @@ const (
 
 // Pefindo answer codes.
 const (
-	pefindoFound         = "01"
-	pefindoTokenExpired  = "06"
-	pefindoNotFound      = "31"
-	pefindoStillScoring  = "32"
-	pefindoBigReport     = "36"
-	pefindoMediaTypePDF  = "application/pdf"
-	pefindoRejectedGrade = "E1 E2 E3"
+	pefindoFound        = "01"
+	pefindoTokenExpired = "06"
+	pefindoNotFound     = "31"
+	pefindoBigReport    = "36"
 )
+
+// mediaTypePDF is a Download PDF answer that is the file (FR-PSAPI-018).
+const mediaTypePDF = "application/pdf"
+
+// pefindoRejectedGrades reject on Get Report (FR-PSAPI-017 Reject 2).
+var pefindoRejectedGrades = map[string]bool{"E1": true, "E2": true, "E3": true}
 
 // pefindoSubject is what differs between the Customer's Pefindo and the
 // Spouse's: the API names (same settings) and the PDF slot and name.
@@ -76,22 +80,31 @@ var pefindoSubjects = map[string]pefindoSubject{
 	subjectSpouse:   newPefindoSubject(subjectSpouse, "PefindoPasangan", docPefindoSpouse, " - Spouse"),
 }
 
-// apiNamed is the subject's API with that api_name; "" is Search, the first.
-func (p pefindoSubject) apiNamed(name string) outboundAPI {
-	for _, a := range []outboundAPI{p.generate, p.download, p.report} {
+// apiNamed is the subject's API with that api_name; "" is Search, the
+// first. An unknown name (e.g. a renamed API) is a system failure, never a
+// restart of the chain.
+func (p pefindoSubject) apiNamed(name string) (outboundAPI, error) {
+	if name == "" {
+		return p.search, nil
+	}
+	for _, a := range []outboundAPI{p.search, p.generate, p.download, p.report} {
 		if a.logName == name {
-			return a
+			return a, nil
 		}
 	}
-	return p.search
+	return outboundAPI{}, fmt.Errorf("the run is on an unknown Pefindo API %q", name)
 }
 
 func (e *Executor) pefindoCheck(p pefindoSubject) check {
 	return check{
 		apiName: p.search.logName, criterion: pefindoCriterion,
 		try: func(ctx context.Context, r runRef) (attempt, error) { return e.tryPefindo(ctx, r, p) },
-		retry: func(ctx context.Context, api string) (int, time.Duration, error) {
-			return e.retrySettings(p.apiNamed(api))(ctx, api)
+		retry: func(ctx context.Context, name string) (int, time.Duration, error) {
+			api, err := p.apiNamed(name)
+			if err != nil {
+				return 0, 0, err
+			}
+			return e.retrySettings(api)(ctx, name)
 		},
 	}
 }
@@ -113,14 +126,14 @@ func (e *Executor) tryPefindo(ctx context.Context, r runRef, p pefindoSubject) (
 	if p.code == subjectSpouse && customerType != customerTypeIndividual {
 		return attempt{outcome: outcomeSkip}, nil
 	}
-	party := partySpouse
+	customerRow := partySpouse
 	if p.code == subjectCustomer {
-		party = customerParty(customerType)
+		customerRow = customerParty(customerType)
 	}
 	var idNumber, npwp, name *string
 	var birth *time.Time
 	err = e.s.db.QueryRow(ctx, `SELECT id_number, npwp, full_name, birth_date FROM fos.customer WHERE case_id = $1 AND customer_type = $2`,
-		r.caseID, party).Scan(&idNumber, &npwp, &name, &birth)
+		r.caseID, customerRow).Scan(&idNumber, &npwp, &name, &birth)
 	if isNotFound(err) && p.code == subjectSpouse {
 		return attempt{outcome: outcomeSkip}, nil // no Spouse data: no Pefindo Pasangan
 	}
@@ -131,43 +144,58 @@ func (e *Executor) tryPefindo(ctx context.Context, r runRef, p pefindoSubject) (
 	if err := e.s.db.QueryRow(ctx, `SELECT customer_code FROM fos.work WHERE case_id = $1`, r.caseID).Scan(&customerRef); err != nil {
 		return attempt{}, err
 	}
-	who := pefindoParty{idType: "KTP", idNo: value(idNumber), name: value(name), customerRef: value(customerRef)}
+	party := pefindoParty{idType: "KTP", idNo: value(idNumber), name: value(name), customerRef: value(customerRef)}
 	if customerType == customerTypeBusinessEntity {
-		who.business, who.idType, who.idNo = true, "NPWP", value(npwp)
+		party.business, party.idType, party.idNo = true, "NPWP", value(npwp)
 	} else if birth != nil {
-		who.birthDate = birth.Format("2006-01-02")
+		party.birthDate = birth.Format("2006-01-02")
 	}
 
-	api := p.apiNamed(r.api)
+	api, err := p.apiNamed(r.api)
+	if err != nil {
+		return attempt{}, err
+	}
 	cfg, err := e.apiConfig(ctx, api)
 	if err != nil {
 		return attempt{}, err
 	}
 	cfg.maskedHeaders = append(cfg.maskedHeaders, "Authorization") // the bearer token (DB-RULE-081)
 	log := &apiLog{name: api.logName, submittedAt: e.s.now(), method: http.MethodGet, attempt: r.attempt}
+	// Search needs every field of its body (FR-PSAPI-014 Body).
 	missing := ""
 	switch {
-	case who.idNo == "":
-		missing = "the " + who.idType + " is empty"
-	case who.customerRef == "":
+	case party.idNo == "":
+		missing = "the " + party.idType + " is empty"
+	case party.customerRef == "":
 		missing = "the customer code is empty"
-	case who.name == "":
+	case party.name == "":
 		missing = "the name is empty"
-	case !who.business && who.birthDate == "":
+	case !party.business && party.birthDate == "":
 		missing = "the birth date is empty"
 	}
 	if missing != "" {
 		return failed(log, errors.New("Pefindo request data missing: "+missing)), nil
 	}
+	call := pefindoAttempt{cfg: cfg, log: log, run: r, subject: p, party: party}
 	switch api {
 	case p.search:
-		return e.pefindoSearch(ctx, cfg, log, p, who)
+		return e.pefindoSearch(ctx, call)
 	case p.generate:
-		return e.pefindoGenerate(ctx, cfg, log, r, p, who)
+		return e.pefindoGenerate(ctx, call)
 	case p.download:
-		return e.pefindoDownload(ctx, cfg, log, r, p, who)
+		return e.pefindoDownload(ctx, call)
 	}
-	return e.pefindoReport(ctx, cfg, log, r, p)
+	return e.pefindoReport(ctx, call)
+}
+
+// pefindoAttempt is one attempt of a Pefindo API: its configuration and log
+// row, the run, the subject and its identity.
+type pefindoAttempt struct {
+	cfg     apiConfig
+	log     *apiLog
+	run     runRef
+	subject pefindoSubject
+	party   pefindoParty
 }
 
 // pefindoAnswer is a Pefindo API's answer: its body, its code ("" when the
@@ -252,7 +280,8 @@ func judged(log *apiLog, a *pefindoAnswer, o outcome) attempt {
 	return attempt{outcome: o, log: log, immediate: a != nil && a.code == pefindoTokenExpired && o == outcomeFail}
 }
 
-func (e *Executor) pefindoSearch(ctx context.Context, cfg apiConfig, log *apiLog, p pefindoSubject, who pefindoParty) (attempt, error) {
+func (e *Executor) pefindoSearch(ctx context.Context, c pefindoAttempt) (attempt, error) {
+	log, party := c.log, c.party
 	productID, err := e.s.settings.String(ctx, "api/pefindo/product_id")
 	if err != nil {
 		return attempt{}, err
@@ -264,7 +293,7 @@ func (e *Executor) pefindoSearch(ctx context.Context, cfg apiConfig, log *apiLog
 		Name        string `json:"name"`
 	}
 	kind := "PERSONAL"
-	if who.business {
+	if party.business {
 		kind = "CORPORATE"
 	}
 	body, _ := json.Marshal(struct {
@@ -273,9 +302,9 @@ func (e *Executor) pefindoSearch(ctx context.Context, cfg apiConfig, log *apiLog
 		ReferenceCode string  `json:"reference_code"`
 		Type          string  `json:"type"`
 		Params        []param `json:"params"`
-	}{"12", productID, who.customerRef, kind, []param{{who.birthDate, who.idNo, who.idType, who.name}}})
+	}{"12", productID, party.customerRef, kind, []param{{party.birthDate, party.idNo, party.idType, party.name}}})
 	log.method, log.request = http.MethodPost, string(body)
-	a, err := e.callPefindo(ctx, cfg, log, cfg.path, body)
+	a, err := e.callPefindo(ctx, c.cfg, log, c.cfg.path, body)
 	if err != nil || a == nil {
 		return judged(log, a, outcomeFail), err
 	}
@@ -288,7 +317,7 @@ func (e *Executor) pefindoSearch(ctx context.Context, cfg apiConfig, log *apiLog
 	}
 	var resp struct {
 		Data []struct {
-			Similarity float64         `json:"similarity_score"`
+			Similarity json.RawMessage `json:"similarity_score"`
 			IDPefindo  json.RawMessage `json:"id_pefindo"`
 		} `json:"data"`
 		InquiryID json.RawMessage `json:"inquiry_id"`
@@ -296,10 +325,15 @@ func (e *Executor) pefindoSearch(ctx context.Context, cfg apiConfig, log *apiLog
 	if json.Unmarshal(a.body, &resp) != nil {
 		return judged(log, a, outcomeFail), nil
 	}
-	best := -1
+	// The highest similarity_score, a number or a string (agreed for ticket 13).
+	best, bestScore := -1, 0.0
 	for i, d := range resp.Data {
-		if jsonText(d.IDPefindo) != "" && (best < 0 || d.Similarity > resp.Data[best].Similarity) {
-			best = i
+		score, err := strconv.ParseFloat(jsonText(d.Similarity), 64)
+		if err != nil || jsonText(d.IDPefindo) == "" {
+			continue
+		}
+		if best < 0 || score > bestScore {
+			best, bestScore = i, score
 		}
 	}
 	if best < 0 || jsonText(resp.InquiryID) == "" {
@@ -308,7 +342,7 @@ func (e *Executor) pefindoSearch(ctx context.Context, cfg apiConfig, log *apiLog
 	// The EventID is made only for code 01 (FR-PSAPI-014 Data yang disimpan).
 	log.eventID, log.pefindoID, log.inquiryID = uuid.NewString(), jsonText(resp.Data[best].IDPefindo), jsonText(resp.InquiryID)
 	at := judged(log, a, outcomeSuccess)
-	at.nextAPI = p.generate.logName
+	at.nextAPI = c.subject.generate.logName
 	return at, nil
 }
 
@@ -328,16 +362,13 @@ func (e *Executor) lastPefindoSearch(ctx context.Context, caseID string, p pefin
 	return s, nil
 }
 
-func (e *Executor) pefindoGenerate(ctx context.Context, cfg apiConfig, log *apiLog, r runRef, p pefindoSubject, who pefindoParty) (attempt, error) {
-	search, err := e.lastPefindoSearch(ctx, r.caseID, p)
+func (e *Executor) pefindoGenerate(ctx context.Context, c pefindoAttempt) (attempt, error) {
+	log, party := c.log, c.party
+	search, err := e.lastPefindoSearch(ctx, c.run.caseID, c.subject)
 	if err != nil {
 		return attempt{}, err
 	}
 	language, err := e.s.settings.String(ctx, "api/pefindogeneratereport/language")
-	if err != nil {
-		return attempt{}, err
-	}
-	gapMS, err := e.s.settings.Int(ctx, "process/pefindo/generate_to_download_gap_ms")
 	if err != nil {
 		return attempt{}, err
 	}
@@ -351,9 +382,9 @@ func (e *Executor) pefindoGenerate(ctx context.Context, cfg apiConfig, log *apiL
 		InquiryID string `json:"inquiry_id"`
 		Language  string `json:"language"`
 		IDs       []id   `json:"ids"`
-	}{search.eventID, search.inquiryID, language, []id{{who.idNo, search.pefindoID, who.idType}}})
+	}{search.eventID, search.inquiryID, language, []id{{party.idNo, search.pefindoID, party.idType}}})
 	log.method, log.request = http.MethodPost, string(body)
-	a, err := e.callPefindo(ctx, cfg, log, cfg.path, body)
+	a, err := e.callPefindo(ctx, c.cfg, log, c.cfg.path, body)
 	if err != nil || a == nil {
 		return judged(log, a, outcomeFail), err
 	}
@@ -361,44 +392,55 @@ func (e *Executor) pefindoGenerate(ctx context.Context, cfg apiConfig, log *apiL
 		return judged(log, a, outcomeFail), nil
 	}
 	at := judged(log, a, outcomeSuccess)
-	at.nextAPI, at.pause = p.download.logName, time.Duration(gapMS)*time.Millisecond
+	at.nextAPI = c.subject.download.logName
 	return at, nil
 }
 
-// eventPath is an API path with the Search's EventID.
-func eventPath(cfg apiConfig, api outboundAPI, eventID string) (string, error) {
-	if !strings.Contains(cfg.path, pefindoEventID) {
-		return "", fmt.Errorf("api/%s/path has no %s", api.settings, pefindoEventID)
+// callWithEvent calls a GET API whose path carries the subject's Search
+// EventID (Download PDF, Get Report).
+func (e *Executor) callWithEvent(ctx context.Context, c pefindoAttempt, api outboundAPI) (*pefindoAnswer, error) {
+	search, err := e.lastPefindoSearch(ctx, c.run.caseID, c.subject)
+	if err != nil {
+		return nil, err
 	}
-	return strings.Replace(cfg.path, pefindoEventID, url.PathEscape(eventID), 1), nil
+	path := c.cfg.path
+	if !c.cfg.simulate {
+		if !strings.Contains(path, pefindoEventID) {
+			return nil, fmt.Errorf("api/%s/path has no %s", api.settings, pefindoEventID)
+		}
+		path = strings.Replace(path, pefindoEventID, url.PathEscape(search.eventID), 1)
+	}
+	return e.callPefindo(ctx, c.cfg, c.log, path, nil)
 }
 
-func (e *Executor) pefindoDownload(ctx context.Context, cfg apiConfig, log *apiLog, r runRef, p pefindoSubject, who pefindoParty) (attempt, error) {
-	search, err := e.lastPefindoSearch(ctx, r.caseID, p)
-	if err != nil {
-		return attempt{}, err
-	}
-	path := cfg.path
-	if !cfg.simulate {
-		if path, err = eventPath(cfg, p.download, search.eventID); err != nil {
-			return attempt{}, err
-		}
-	}
-	cfg.unbounded = true // no size limit on the PDF (agreed for ticket 13)
-	a, err := e.callPefindo(ctx, cfg, log, path, nil)
-	if err != nil || a == nil {
-		return judged(log, a, outcomeFail), err
-	}
-	if a.mediaType == pefindoMediaTypePDF {
-		// The log keeps a description, never the file (DB-RULE-086).
-		log.response = fmt.Sprintf("[%s, %d bytes]", pefindoMediaTypePDF, len(a.body))
-		by, err := lastReviewer(ctx, e.s.db, r.caseID)
+func (e *Executor) pefindoDownload(ctx context.Context, c pefindoAttempt) (attempt, error) {
+	log := c.log
+	// The wait after Generate Report (FR-PSAPI-016) comes before the first
+	// attempt, so a run resumed by another executor waits it too.
+	if c.run.attempt == 1 {
+		gapMS, err := e.s.settings.Int(ctx, "process/pefindo/generate_to_download_gap_ms")
 		if err != nil {
 			return attempt{}, err
 		}
-		_, err = e.s.storeGenerated(ctx, r.caseID, generatedDoc{
-			category: categoryResponse, docType: p.pdfDoc, fileName: "Pefindo Report - " + who.customerRef + p.pdfSuffix + ".pdf",
-			contentType: pefindoMediaTypePDF, data: a.body, createdBy: by,
+		if !e.wait(ctx, time.Duration(gapMS)*time.Millisecond) {
+			return attempt{}, ctx.Err()
+		}
+	}
+	c.cfg.unbounded = true // no size limit on the PDF (agreed for ticket 13)
+	a, err := e.callWithEvent(ctx, c, c.subject.download)
+	if err != nil || a == nil {
+		return judged(log, a, outcomeFail), err
+	}
+	if a.mediaType == mediaTypePDF {
+		// The log keeps a description, never the file (DB-RULE-086).
+		log.response = fmt.Sprintf("[%s, %d bytes]", mediaTypePDF, len(a.body))
+		by, err := lastReviewer(ctx, e.s.db, c.run.caseID)
+		if err != nil {
+			return attempt{}, err
+		}
+		_, err = e.s.storeGenerated(ctx, c.run.caseID, generatedDoc{
+			category: categoryResponse, docType: c.subject.pdfDoc, fileName: "Pefindo Report - " + c.party.customerRef + c.subject.pdfSuffix + ".pdf",
+			contentType: mediaTypePDF, data: a.body, createdBy: by,
 		})
 		if errors.Is(err, ErrStorageFailed) {
 			return attempt{}, err // GCS not configured: a system failure (as for SLIK)
@@ -408,13 +450,12 @@ func (e *Executor) pefindoDownload(ctx context.Context, cfg apiConfig, log *apiL
 			return judged(log, a, outcomeFail), nil
 		}
 		at := judged(log, a, outcomeSuccess)
-		at.nextAPI = p.report.logName
+		at.nextAPI = c.subject.report.logName
 		return at, nil
 	}
-	switch {
-	case a.code == pefindoNotFound || a.code == pefindoBigReport || allNines(a.code):
+	if a.code == pefindoNotFound || a.code == pefindoBigReport || allNines(a.code) {
 		at := judged(log, a, outcomeSuccess) // no PDF to store
-		at.nextAPI = p.report.logName
+		at.nextAPI = c.subject.report.logName
 		return at, nil
 	}
 	return judged(log, a, outcomeFail), nil // 32, 06, other codes, neither PDF nor JSON
@@ -438,18 +479,9 @@ type pefindoScore struct {
 	period time.Time
 }
 
-func (e *Executor) pefindoReport(ctx context.Context, cfg apiConfig, log *apiLog, r runRef, p pefindoSubject) (attempt, error) {
-	search, err := e.lastPefindoSearch(ctx, r.caseID, p)
-	if err != nil {
-		return attempt{}, err
-	}
-	path := cfg.path
-	if !cfg.simulate {
-		if path, err = eventPath(cfg, p.report, search.eventID); err != nil {
-			return attempt{}, err
-		}
-	}
-	a, err := e.callPefindo(ctx, cfg, log, path, nil)
+func (e *Executor) pefindoReport(ctx context.Context, c pefindoAttempt) (attempt, error) {
+	log := c.log
+	a, err := e.callWithEvent(ctx, c, c.subject.report)
 	if err != nil || a == nil {
 		return judged(log, a, outcomeFail), err
 	}
@@ -469,7 +501,8 @@ func (e *Executor) pefindoReport(ctx context.Context, cfg apiConfig, log *apiLog
 	}
 	hasReport := len(resp.Report) > 0 && string(resp.Report) != "null"
 	// Code 9s is stored and judged only with a report and scoring; 01 and 36
-	// with either (FR-PSAPI-017 rule 2, Data yang disimpan).
+	// are judged on any scoring and stored only with a report (FR-PSAPI-017
+	// rule 2, Data yang disimpan).
 	if allNines(a.code) && (!hasReport || len(resp.Scoring) == 0) || !hasReport && len(resp.Scoring) == 0 {
 		return judged(log, a, outcomeSuccess), nil
 	}
@@ -488,20 +521,26 @@ func (e *Executor) pefindoReport(ctx context.Context, cfg apiConfig, log *apiLog
 	}
 	o := outcomeSuccess
 	if latest != nil {
-		grade := strings.ToUpper(strings.ReplaceAll(latest.RiskGrade, " ", ""))
-		if grade != "" && strings.Contains(" "+pefindoRejectedGrade+" ", " "+grade+" ") {
+		if pefindoRejectedGrades[strings.ToUpper(strings.ReplaceAll(latest.RiskGrade, " ", ""))] {
 			o = outcomeRejected
 		}
 	}
 	at := judged(log, a, o)
-	report := storedReport{subject: p.code, search: search, code: a.code, report: resp.Report, scoring: resp.Scoring, latest: latest, receivedAt: e.s.now()}
-	at.apply = func(ctx context.Context, tx pgx.Tx) error { return e.storePefindoReport(ctx, tx, r.caseID, report) }
+	if !hasReport {
+		return at, nil
+	}
+	search, err := e.lastPefindoSearch(ctx, c.run.caseID, c.subject)
+	if err != nil {
+		return attempt{}, err
+	}
+	report := reportToStore{subject: c.subject.code, search: search, code: a.code, report: resp.Report, scoring: resp.Scoring, latest: latest, receivedAt: e.s.now()}
+	at.apply = func(ctx context.Context, tx pgx.Tx) error { return e.storePefindoReport(ctx, tx, c.run.caseID, report) }
 	at.failIfNotApplied = true // DB-RULE-075
 	return at, nil
 }
 
-// storedReport is a Get Report result to store (§9.22, §9.23, §9.40).
-type storedReport struct {
+// reportToStore is a Get Report result to store (§9.22, §9.23, §9.40).
+type reportToStore struct {
 	subject    string
 	search     pefindoSearchResult
 	code       string
@@ -513,7 +552,7 @@ type storedReport struct {
 
 // storePefindoReport replaces the subject's report and its scoring in tx,
 // before the Reject is decided (DB-RULE-074, DB-RULE-075).
-func (e *Executor) storePefindoReport(ctx context.Context, tx pgx.Tx, caseID string, sr storedReport) error {
+func (e *Executor) storePefindoReport(ctx context.Context, tx pgx.Tx, caseID string, sr reportToStore) error {
 	for _, q := range []string{
 		`DELETE FROM fos.pefindo_scoring_reason WHERE pefindo_scoring_id IN (SELECT s.pefindo_scoring_id FROM fos.pefindo_scoring s
 			JOIN fos.pefindo_report r USING (pefindo_report_id) WHERE r.case_id = $1 AND r.subject_type = $2)`,
@@ -542,7 +581,7 @@ func (e *Executor) storePefindoReport(ctx context.Context, tx pgx.Tx, caseID str
 	_ = json.Unmarshal(sr.report, &report) // a report not shaped as expected keeps only report_json
 	var latestPeriod *time.Time
 	var latestGrade *string
-	var latestScore *int64
+	var latestScore *int32
 	if sr.latest != nil {
 		latestPeriod, latestGrade, latestScore = &sr.latest.period, nullText(sr.latest.RiskGrade), jsonInt(sr.latest.Score)
 	}
@@ -568,7 +607,7 @@ func (e *Executor) storePefindoReport(ctx context.Context, tx pgx.Tx, caseID str
 				risk_description, probability_of_default)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8::numeric) RETURNING pefindo_scoring_id`,
 			id, nullText(jsonText(s.IDPefindo)), s.period, jsonInt(s.Score), nullText(s.RiskGrade),
-			nullText(first(s.RiskGradeDesc, s.RiskGradeDescAlt)), nullText(first(s.RiskDesc, s.RiskDescAlt)), jsonDecimal(s.POD)).Scan(&scoringID); err != nil {
+			nullText(coalesce(s.RiskGradeDesc, s.RiskGradeDescAlt)), nullText(coalesce(s.RiskDesc, s.RiskDescAlt)), jsonDecimal(s.POD)).Scan(&scoringID); err != nil {
 			return err
 		}
 		descs := s.ReasonDesc
@@ -593,7 +632,8 @@ func (e *Executor) storePefindoReport(ctx context.Context, tx pgx.Tx, caseID str
 	return nil
 }
 
-func first(a, b string) string {
+// coalesce is a, or b when a is empty.
+func coalesce(a, b string) string {
 	if a != "" {
 		return a
 	}
@@ -615,15 +655,21 @@ func jsonOrNil(raw json.RawMessage) any {
 	return string(raw)
 }
 
-// jsonInt reads an integer sent as a number or a string; NULL otherwise
-// (agreed for ticket 13).
-func jsonInt(raw json.RawMessage) *int64 {
-	f, err := strconv.ParseFloat(jsonText(raw), 64)
-	if err != nil || f != float64(int64(f)) {
-		return nil
+// jsonInt reads an INTEGER sent as a number or a string; NULL when it is
+// not a whole number within INTEGER (agreed for ticket 13).
+func jsonInt(raw json.RawMessage) *int32 {
+	t := jsonText(raw)
+	n, err := strconv.ParseInt(t, 10, 32)
+	if err != nil {
+		// A whole number written with a fraction, e.g. 600.0.
+		f, ferr := strconv.ParseFloat(t, 64)
+		if ferr != nil || f != math.Trunc(f) || f < math.MinInt32 || f > math.MaxInt32 {
+			return nil
+		}
+		n = int64(f)
 	}
-	n := int64(f)
-	return &n
+	v := int32(n)
+	return &v
 }
 
 // jsonDecimal reads a decimal sent as a number or a string; NULL otherwise.

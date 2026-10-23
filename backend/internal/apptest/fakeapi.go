@@ -29,11 +29,12 @@ type FakeReply struct {
 	ContentType string
 }
 
-// FakeRequest is what the fake received.
+// FakeRequest is what the fake received, and when.
 type FakeRequest struct {
 	Method, Path string
 	Header       http.Header
 	Body         string
+	At           time.Time
 }
 
 // StartFakeAPI starts a fake with an initial script.
@@ -63,7 +64,7 @@ func (f *FakeAPI) Calls() []FakeRequest {
 func (f *FakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	f.mu.Lock()
-	f.requests = append(f.requests, FakeRequest{r.Method, r.URL.EscapedPath(), r.Header.Clone(), string(body)})
+	f.requests = append(f.requests, FakeRequest{Method: r.Method, Path: r.URL.EscapedPath(), Header: r.Header.Clone(), Body: string(body), At: time.Now()})
 	reply := FakeReply{Status: 500}
 	if len(f.replies) > 0 {
 		reply = f.replies[0]

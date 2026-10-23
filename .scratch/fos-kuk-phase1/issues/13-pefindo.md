@@ -45,3 +45,15 @@ Implementation notes (2026-10-24):
 - Mutation checks (each fails a test): no token merge; last array element instead of latest period; no immediate retry on 06; report save failure not turned into Fail; current_api ignored on resume; first Search hit instead of highest similarity; 9s codes not passing; PDF not recognised; Business Entity sent as PERSONAL; token not masked in the log; only E1 rejecting; no criterion in the reason.
 - No UI check: the Pefindo screens are ticket 14.
 
+Review fixes (2026-10-24, agreed with the user):
+
+- The wait after Generate Report is taken before the first Download PDF attempt, so a run resumed by another executor waits it too.
+- An unknown current_api (e.g. a renamed API) stops the run broken instead of restarting the chain at Search.
+- Integers in the report are parsed as integers (a whole number with a fraction is accepted); one outside INTEGER is stored NULL. similarity_score may be a number or a string.
+- A code 01/36 answer with scoring but no report object is judged on its scoring and stores no pefindo_report row ("response-nya berisi report").
+- An empty name or birth date (Individual) is a Fail for missing request data too: Search needs every field of its body (extends point 5).
+- DB-RULE-080 is implemented with the token's nonce instead of obtained_at (same intent, clock independent); asked of the SoT owner in the open domain questions.
+- Kept as is: the token row lock is held during getToken (DB-RULE-080); any failure to save a Get Report result is a Fail (DB-RULE-075); a missing Customer row is a Fail for missing request data (as ticket 09).
+- A Pefindo reject of a Business Entity records it on the Rejected List with its establishment_date (FR-PSAPI-007); test fixtures now carry it.
+- Tests added: the Download PDF wait and Get Report's own retry gap (fake call times); report shapes (scoring without report, string similarity, out-of-range score); unknown API. Test log helpers order by writing transaction (xmin) then ctid: ctid alone is not insertion order and made the ordering flaky.
+

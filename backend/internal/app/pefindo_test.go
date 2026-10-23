@@ -28,7 +28,7 @@ func pefindoBusiness(t *testing.T, scripts map[string][]apptest.FakeReply) (*app
 	h, _, _, caseID := checksWith(t, dukcapilOK, dhnOK, func(h *apptest.Harness, caseID string) {
 		h.UsePefindo(t, fp)
 		exec(t, h, `UPDATE fos.work SET customer_type = 'Badan Usaha' WHERE case_id = $1`, caseID)
-		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name) VALUES ($1, 'Badan Usaha', $2, 'PT Contoh')`, caseID, companyNPWP)
+		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name, establishment_date) VALUES ($1, 'Badan Usaha', $2, 'PT Contoh', '2010-05-01')`, caseID, companyNPWP)
 	})
 	waitRunEnd(t, h, caseID)
 	return h, fp, caseID
@@ -180,7 +180,7 @@ func pefindoSearches(t *testing.T, h *apptest.Harness, caseID string) map[string
 	out := map[string][3]string{}
 	rows, err := h.DB.Query(context.Background(), `
 		SELECT api_name, COALESCE(event_id, ''), COALESCE(pefindo_id, ''), COALESCE(inquiry_id, '') FROM fos.connect_api_log
-		WHERE case_id = $1 AND api_name IN ('Pefindo', 'PefindoPasangan') ORDER BY submitted_at, ctid`, caseID)
+		WHERE case_id = $1 AND api_name IN ('Pefindo', 'PefindoPasangan') ORDER BY submitted_at, xmin::text::bigint, ctid`, caseID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +359,7 @@ func TestPefindoExpiredTokenIsRenewedAndRetriedAtOnce(t *testing.T) {
 		h.UsePefindo(t, fp)
 		exec(t, h, `UPDATE fos.dynamic_system_settings SET value = '600000' WHERE purpose = 'api/pefindo/retry_gap_ms'`)
 		exec(t, h, `UPDATE fos.work SET customer_type = 'Badan Usaha' WHERE case_id = $1`, caseID)
-		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name) VALUES ($1, 'Badan Usaha', $2, 'PT Contoh')`, caseID, companyNPWP)
+		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name, establishment_date) VALUES ($1, 'Badan Usaha', $2, 'PT Contoh', '2010-05-01')`, caseID, companyNPWP)
 	})
 	waitRunEnd(t, h, caseID)
 	if got := run(t, h, caseID); got.State != "STOPPED_FAILED" || caseStatus(t, h, caseID) != "Failed-PrescreeningConnection" {
@@ -369,7 +369,7 @@ func TestPefindoExpiredTokenIsRenewedAndRetriedAtOnce(t *testing.T) {
 		t.Fatalf("logs = %v", got)
 	}
 	var tokens []string
-	rows, err := h.DB.Query(context.Background(), `SELECT api_status FROM fos.connect_api_log WHERE api_name = 'PefindoToken' AND case_id IS NULL ORDER BY submitted_at, ctid`)
+	rows, err := h.DB.Query(context.Background(), `SELECT api_status FROM fos.connect_api_log WHERE api_name = 'PefindoToken' AND case_id IS NULL ORDER BY submitted_at, xmin::text::bigint, ctid`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +399,7 @@ func TestPefindoStillScoringFailsAndRetryResumesAtTheFailedAPI(t *testing.T) {
 	h, _, _, caseID := checksWith(t, dukcapilOK, dhnOK, func(h *apptest.Harness, caseID string) {
 		h.UsePefindo(t, fp)
 		exec(t, h, `UPDATE fos.work SET customer_type = 'Badan Usaha' WHERE case_id = $1`, caseID)
-		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name) VALUES ($1, 'Badan Usaha', $2, 'PT Contoh')`, caseID, companyNPWP)
+		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name, establishment_date) VALUES ($1, 'Badan Usaha', $2, 'PT Contoh', '2010-05-01')`, caseID, companyNPWP)
 	})
 	waitRunEnd(t, h, caseID)
 	want := "Pefindo Success,PefindoGenerateReport Success,PefindoDownloadPDF Fail,PefindoDownloadPDF Success," +
@@ -493,7 +493,7 @@ func TestPefindoReportNotSavedFailsTheAttempt(t *testing.T) {
 		h.UsePefindo(t, fp)
 		exec(t, h, `ALTER TABLE fos.pefindo_report ADD CONSTRAINT refuse CHECK (report_code <> '01')`)
 		exec(t, h, `UPDATE fos.work SET customer_type = 'Badan Usaha' WHERE case_id = $1`, caseID)
-		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name) VALUES ($1, 'Badan Usaha', $2, 'PT Contoh')`, caseID, companyNPWP)
+		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name, establishment_date) VALUES ($1, 'Badan Usaha', $2, 'PT Contoh', '2010-05-01')`, caseID, companyNPWP)
 	})
 	waitRunEnd(t, h, caseID)
 	if got := run(t, h, caseID); got.State != "STOPPED_FAILED" || caseStatus(t, h, caseID) != "Failed-PrescreeningConnection" {
@@ -513,7 +513,7 @@ func TestPefindoWithoutTheTokenKeyStopsBroken(t *testing.T) {
 		h.UsePefindo(t, fp)
 		t.Setenv("INTEGRATION_TOKEN_KEY", "")
 		exec(t, h, `UPDATE fos.work SET customer_type = 'Badan Usaha' WHERE case_id = $1`, caseID)
-		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name) VALUES ($1, 'Badan Usaha', $2, 'PT Contoh')`, caseID, companyNPWP)
+		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name, establishment_date) VALUES ($1, 'Badan Usaha', $2, 'PT Contoh', '2010-05-01')`, caseID, companyNPWP)
 	})
 	waitRunEnd(t, h, caseID)
 	if got := run(t, h, caseID); got.State != "STOPPED_BROKEN" || got.Step != "Pefindo" || len(fp.Calls()) != 0 {
@@ -534,7 +534,7 @@ func TestPefindoTokenRequestsMerge(t *testing.T) {
 	h, _, _, caseID := checksWith(t, dukcapilOK, dhnOK, func(h *apptest.Harness, caseID string) {
 		h.UsePefindo(t, fp)
 		exec(t, h, `UPDATE fos.work SET customer_type = 'Badan Usaha' WHERE case_id = $1`, caseID)
-		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name) VALUES ($1, 'Badan Usaha', $2, 'PT Contoh')`, caseID, companyNPWP)
+		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name, establishment_date) VALUES ($1, 'Badan Usaha', $2, 'PT Contoh', '2010-05-01')`, caseID, companyNPWP)
 		var err error
 		if tx, err = h.DB.Begin(ctx); err != nil {
 			t.Fatal(err)
@@ -575,7 +575,7 @@ func TestPefindoSimulation(t *testing.T) {
 		h.UsePefindo(t, fp)
 		exec(t, h, `UPDATE fos.dynamic_system_settings SET value = 'true' WHERE purpose = 'api/pefindo/simulate'`)
 		exec(t, h, `UPDATE fos.work SET customer_type = 'Badan Usaha' WHERE case_id = $1`, caseID)
-		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name) VALUES ($1, 'Badan Usaha', $2, 'PT Contoh')`, caseID, companyNPWP)
+		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name, establishment_date) VALUES ($1, 'Badan Usaha', $2, 'PT Contoh', '2010-05-01')`, caseID, companyNPWP)
 	})
 	waitRunEnd(t, h, caseID)
 	if got := run(t, h, caseID); got.State != "COMPLETED" || len(fp.Calls()) != 0 {
@@ -585,5 +585,88 @@ func TestPefindoSimulation(t *testing.T) {
 	last := logs[len(logs)-1]
 	if last.Name != "Pefindo" || last.Status != "Success" || !strings.Contains(last.Response, `"code":"31"`) {
 		t.Fatalf("log = %+v", last)
+	}
+}
+
+// pefindoBusinessWith is pefindoBusiness with extra setup before Sesuai.
+func pefindoBusinessWith(t *testing.T, scripts map[string][]apptest.FakeReply, setup func(h *apptest.Harness, caseID string)) (*apptest.Harness, *apptest.FakePefindo, string) {
+	t.Helper()
+	fp := apptest.StartFakePefindo(t, scripts)
+	h, _, _, caseID := checksWith(t, dukcapilOK, dhnOK, func(h *apptest.Harness, caseID string) {
+		h.UsePefindo(t, fp)
+		exec(t, h, `UPDATE fos.work SET customer_type = 'Badan Usaha' WHERE case_id = $1`, caseID)
+		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name, establishment_date) VALUES ($1, 'Badan Usaha', $2, 'PT Contoh', '2010-05-01')`, caseID, companyNPWP)
+		setup(h, caseID)
+	})
+	waitRunEnd(t, h, caseID)
+	return h, fp, caseID
+}
+
+// AC-FR-PSAPI-016-02, AC-FR-PSAPI-017-02: Download PDF waits
+// process/pefindo/generate_to_download_gap_ms after Generate Report; a code
+// 32 on Get Report waits Get Report's own retry gap, not Search's.
+func TestPefindoWaitsItsGaps(t *testing.T) {
+	scripts := pefindoPassScripts()
+	scripts[apptest.PefindoReport] = []apptest.FakeReply{apptest.PefindoScoring, reportReady("01", scoring("2025-07-15", "C2"))}
+	_, fp, _ := pefindoBusinessWith(t, scripts, func(h *apptest.Harness, caseID string) {
+		exec(t, h, `UPDATE fos.dynamic_system_settings SET value = '400' WHERE purpose IN ('process/pefindo/generate_to_download_gap_ms', 'api/pefindogetreport/retry_gap_ms')`)
+	})
+	generate, download, reports := pefindoCalls(fp, apptest.PefindoGenerate), pefindoCalls(fp, apptest.PefindoDownload), pefindoCalls(fp, apptest.PefindoReport)
+	if len(generate) != 1 || len(download) != 1 || len(reports) != 2 {
+		t.Fatalf("calls: %d generate, %d download, %d reports", len(generate), len(download), len(reports))
+	}
+	if gap := download[0].At.Sub(generate[0].At); gap < 400*time.Millisecond {
+		t.Fatalf("Download PDF %v after Generate Report", gap)
+	}
+	if gap := reports[1].At.Sub(reports[0].At); gap < 400*time.Millisecond {
+		t.Fatalf("Get Report retried after %v", gap)
+	}
+}
+
+// Review fixes (agreed): a Get Report with scoring but no report is judged
+// and stores nothing; similarity_score may be a string; a score outside
+// INTEGER is stored NULL.
+func TestPefindoReportShapes(t *testing.T) {
+	scripts := pefindoPassScripts()
+	scripts[apptest.PefindoSearch] = []apptest.FakeReply{apptest.PefindoFound(
+		`{"similarity_score":"70","id_pefindo":"111"}`, `{"similarity_score":"95.5","id_pefindo":"222"}`, `{"similarity_score":90,"id_pefindo":"333"}`)}
+	scripts[apptest.PefindoReport] = []apptest.FakeReply{{Status: 200, Body: `{"code":"36","status":"Success","scoring":[{"period":"2025-07-15","risk_grade":"E2"}]}`}}
+	h, _, caseID := pefindoBusiness(t, scripts)
+	if got := run(t, h, caseID); got.State != "STOPPED_REJECTED" {
+		t.Fatalf("run = %+v", got)
+	}
+	if n := count(t, h, `SELECT count(*) FROM fos.pefindo_report WHERE case_id = $1`, caseID); n != 0 {
+		t.Fatal("report row stored without a report")
+	}
+	if s := pefindoSearches(t, h, caseID)["Pefindo"]; s[1] != "222" {
+		t.Fatalf("search = %v", s)
+	}
+
+	scripts = pefindoPassScripts()
+	scripts[apptest.PefindoReport] = []apptest.FakeReply{reportReady("01", map[string]any{"period": "2025-07-15", "risk_grade": "C1", "score": 99999999999})}
+	h, _, caseID = pefindoBusiness(t, scripts)
+	if n := count(t, h, `SELECT count(*) FROM fos.pefindo_report r JOIN fos.pefindo_scoring s USING (pefindo_report_id) WHERE r.case_id = $1 AND r.latest_score IS NULL AND s.score IS NULL`, caseID); n != 1 {
+		t.Fatalf("out-of-range score: run %+v", run(t, h, caseID))
+	}
+}
+
+// Review fix (agreed): a run on an unknown Pefindo API stops broken instead
+// of starting the chain again.
+func TestPefindoUnknownAPIStopsBroken(t *testing.T) {
+	h, fp, caseID := pefindoBusiness(t, pefindoPassScripts())
+	calls := len(fp.Calls())
+	exec(t, h, `UPDATE fos.prescreening_runs SET state = 'STOPPED_FAILED', current_step = 'Pefindo', current_api = 'PefindoOldName' WHERE case_id = $1`, caseID)
+	exec(t, h, `UPDATE fos.work SET case_status = 'Failed-PrescreeningConnection' WHERE case_id = $1`, caseID)
+	exec(t, h, `INSERT INTO fos.assignments (case_id, assignment_name, assignment_type, assigned_user_id, assignment_status, created_at) VALUES ($1, 'Pre Screening', 'worklist', 'TL01', 'baru', now())`, caseID)
+	as := assignments(t, h, caseID)
+	retry := as[len(as)-1]
+	tl := relogin(t, h, "TL01")
+	tl.OpenAssignment(t, caseID, retry.ID)
+	if r := tl.Do(t, http.MethodPost, submitPath(caseID, retry.ID, "retry"), nil); r.Status != http.StatusNoContent {
+		t.Fatalf("retry = %d %s", r.Status, r.Raw)
+	}
+	eventually(t, "the run to stop", func() bool { return run(t, h, caseID).State == "STOPPED_BROKEN" })
+	if len(fp.Calls()) != calls {
+		t.Fatal("Pefindo called again")
 	}
 }

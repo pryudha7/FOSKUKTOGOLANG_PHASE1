@@ -77,10 +77,9 @@ type attempt struct {
 	outcome outcome
 	log     *apiLog
 	apply   func(context.Context, pgx.Tx) error
-	// A step of several APIs (Pefindo) goes on at nextAPI after a pass,
-	// waiting pause first; a pass with no nextAPI ends the step.
+	// A step of several APIs (Pefindo) goes on at nextAPI after a pass; a
+	// pass with no nextAPI ends the step.
 	nextAPI string
-	pause   time.Duration
 	// immediate repeats a failed attempt without the retry gap (FR-PSAPI-015).
 	immediate bool
 	// failIfNotApplied turns a pass whose apply cannot be saved into a Fail
@@ -332,7 +331,7 @@ func (e *Executor) settle(ctx context.Context, r runRef, c check, a attempt) boo
 	switch a.outcome {
 	case outcomeSuccess, outcomeSkip:
 		if a.nextAPI != "" {
-			return e.recordAttempt(ctx, r, a, r.step, a.nextAPI, 1) && e.wait(ctx, a.pause)
+			return e.recordAttempt(ctx, r, a, r.step, a.nextAPI, 1)
 		}
 		return e.advance(ctx, r, a)
 	case outcomeRejected:

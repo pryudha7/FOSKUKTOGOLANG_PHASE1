@@ -233,7 +233,7 @@ func pbsLogs(t *testing.T, h *apptest.Harness, caseID string) []string {
 	t.Helper()
 	rows, err := h.DB.Query(context.Background(), `
 		SELECT api_status || ' ' || COALESCE(response, '') FROM fos.connect_api_log
-		WHERE case_id = $1 AND api_name = 'SLIKPBSResponse' AND api_type = 'Service Rest' ORDER BY submitted_at, ctid`, caseID)
+		WHERE case_id = $1 AND api_name = 'SLIKPBSResponse' AND api_type = 'Service Rest' ORDER BY submitted_at, xmin::text::bigint, ctid`, caseID)
 	if err != nil {
 		t.Fatal(err)
 	}

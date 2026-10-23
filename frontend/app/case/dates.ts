@@ -52,11 +52,6 @@ export function firstColumn(y: number, m: number): number {
   return (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7;
 }
 
-export function today(): YMD {
-  const now = new Date();
-  return { y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate() };
-}
-
 export function compare(a: YMD, b: YMD): number {
   return a.y - b.y || a.m - b.m || a.d - b.d;
 }

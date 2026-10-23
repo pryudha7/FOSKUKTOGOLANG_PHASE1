@@ -19,7 +19,7 @@ func (p person) body() map[string]string {
 }
 
 func preScreening(customerType string, personal, spouse person) map[string]any {
-	return map[string]any{"customerType": customerType, "personal": personal.body(), "spouse": spouse.body()}
+	return map[string]any{"customerType": customerType, "customer": personal.body(), "spouse": spouse.body()}
 }
 
 func submitPath(caseID string, assignmentID any, action string) string {
@@ -188,34 +188,43 @@ func TestPreScreeningSubmissionValidation(t *testing.T) {
 		// Without Tipe Nasabah no data section is shown, so only it is reported.
 		{"no Tipe Nasabah", "", none, none, []fieldError{{"form", "Tipe Nasabah", required, "Tipe Nasabah wajib diisi"}}},
 		{"Data Pribadi empty", "Perorangan", none, none, []fieldError{
-			{"personal", "NIK", required, "NIK wajib diisi"},
-			{"personal", "Nama", required, "Nama wajib diisi"},
-			{"personal", "Tanggal Lahir", required, "Tanggal Lahir wajib diisi"},
+			{"customer", "NIK", required, "NIK wajib diisi"},
+			{"customer", "Nama", required, "Nama wajib diisi"},
+			{"customer", "Tanggal Lahir", required, "Tanggal Lahir wajib diisi"},
 		}},
 		{"NIK of 15 digits", "Perorangan", person{"317101123456789", ok.Name, ok.BirthDate}, none,
-			[]fieldError{{"personal", "NIK", "ERR-007", badNIK}}},
+			[]fieldError{{"customer", "NIK", "ERR-007", badNIK}}},
 		{"NIK with a letter", "Perorangan", person{"317101123456789A", ok.Name, ok.BirthDate}, none,
-			[]fieldError{{"personal", "NIK", "ERR-007", badNIK}}},
+			[]fieldError{{"customer", "NIK", "ERR-007", badNIK}}},
 		{"name with digits", "Perorangan", person{ok.NIK, "John123", ok.BirthDate}, none,
-			[]fieldError{{"personal", "Nama", "ERR-008", badName}}},
+			[]fieldError{{"customer", "Nama", "ERR-008", badName}}},
 		{"name of 31 characters", "Perorangan", person{ok.NIK, strings.Repeat("a", 31), ok.BirthDate}, none,
-			[]fieldError{{"personal", "Nama", "ERR-013", tooLong}}},
+			[]fieldError{{"customer", "Nama", "ERR-013", tooLong}}},
 		{"aged 16", "Perorangan", person{ok.NIK, ok.Name, yearsAgo(h, 17, 1)}, none,
-			[]fieldError{{"personal", "Tanggal Lahir", "ERR-009", tooYoung}}},
+			[]fieldError{{"customer", "Tanggal Lahir", "ERR-009", tooYoung}}},
 		{"not a date", "Perorangan", person{ok.NIK, ok.Name, "1999-02-30"}, none,
-			[]fieldError{{"personal", "Tanggal Lahir", "DATE_INVALID", badDate}}},
+			[]fieldError{{"customer", "Tanggal Lahir", "DATE_INVALID", badDate}}},
 		{"born tomorrow", "Perorangan", person{ok.NIK, ok.Name, yearsAgo(h, 0, 1)}, none,
-			[]fieldError{{"personal", "Tanggal Lahir", "DATE_OUT_OF_RANGE", outRange}}},
+			[]fieldError{{"customer", "Tanggal Lahir", "DATE_OUT_OF_RANGE", outRange}}},
 		{"over 100 years ago", "Perorangan", person{ok.NIK, ok.Name, yearsAgo(h, 100, -1)}, none,
-			[]fieldError{{"personal", "Tanggal Lahir", "DATE_OUT_OF_RANGE", outRange}}},
+			[]fieldError{{"customer", "Tanggal Lahir", "DATE_OUT_OF_RANGE", outRange}}},
 		{"spouse name only", "Perorangan", ok, person{"", "Siti Aminah", ""}, []fieldError{
 			{"spouse", "NIK", required, "NIK wajib diisi"},
 			{"spouse", "Tanggal Lahir", required, "Tanggal Lahir wajib diisi"},
 		}},
 		{"spouse NIK equals own NIK", "Perorangan", ok, person{ok.NIK, "Siti Aminah", yearsAgo(h, 28, 0)}, []fieldError{
-			{"personal", "NIK", "ERR-019", sameNIK},
+			{"customer", "NIK", "ERR-019", sameNIK},
 			{"spouse", "NIK", "ERR-019", sameNIK},
 		}},
+		// ERR-019 needs only both NIKs valid, whatever else fails on the spouse.
+		{"spouse NIK equal and spouse name invalid", "Perorangan", ok, person{ok.NIK, "Siti123", yearsAgo(h, 28, 0)}, []fieldError{
+			{"customer", "NIK", "ERR-019", sameNIK},
+			{"spouse", "NIK", "ERR-019", sameNIK},
+			{"spouse", "Nama", "ERR-008", badName},
+		}},
+		// Spaces alone are empty: required for Data Pribadi, absent for Data Pasangan.
+		{"name of spaces", "Perorangan", person{ok.NIK, "   ", ok.BirthDate}, person{" ", "  ", ""},
+			[]fieldError{{"customer", "Nama", required, "Nama wajib diisi"}}},
 		{"spouse aged 16", "Perorangan", ok, person{"3171019876543210", "Siti Aminah", yearsAgo(h, 16, 0)},
 			[]fieldError{{"spouse", "Tanggal Lahir", "ERR-009", tooYoung}}},
 	}
@@ -278,7 +287,7 @@ func TestPreScreeningSubmissionRefusesUnsupportedRequests(t *testing.T) {
 		"Badan Usaha":   preScreening("Badan Usaha", validPersonal(h), person{}),
 		"Koperasi":      preScreening("Koperasi", validPersonal(h), person{}),
 		"not an option": preScreening("Lainnya", validPersonal(h), person{}),
-		"foreign field": map[string]any{"customerType": "Perorangan", "personal": validPersonal(h).body(), "spouse": person{}.body(), "npwp": "1"},
+		"foreign field": map[string]any{"customerType": "Perorangan", "customer": validPersonal(h).body(), "spouse": person{}.body(), "npwp": "1"},
 	} {
 		if r := c.Do(t, http.MethodPost, submitPath(caseID, assignmentID, "submit"), body); r.Status != http.StatusBadRequest {
 			t.Fatalf("%s: status = %d %s, want 400", name, r.Status, r.Raw)
@@ -325,8 +334,8 @@ func TestBackToPreScreeningSubmissionAndResubmit(t *testing.T) {
 	}
 	again := back.Body["assignmentId"]
 	page := c.OpenAssignment(t, caseID, again)
-	if field(t, page, "page", "customerType") != "Perorangan" || field(t, page, "page", "personal", "nik") != "3171011234567890" ||
-		field(t, page, "page", "personal", "birthDate") != yearsAgo(h, 30, 0) || field(t, page, "page", "spouse", "name") != "Siti Aminah" {
+	if field(t, page, "page", "customerType") != "Perorangan" || field(t, page, "page", "customer", "nik") != "3171011234567890" ||
+		field(t, page, "page", "customer", "birthDate") != yearsAgo(h, 30, 0) || field(t, page, "page", "spouse", "name") != "Siti Aminah" {
 		t.Fatalf("page = %s", page.Raw)
 	}
 
@@ -350,5 +359,22 @@ func TestBackIsOnlyFromDocumentUnderlyingUpload(t *testing.T) {
 	c, caseID, assignmentID := newCase(t, h)
 	if r := c.Do(t, http.MethodPost, submitPath(caseID, assignmentID, "back"), nil); r.Status != http.StatusBadRequest {
 		t.Fatalf("back from Pre-Screening Submission = %d, want 400", r.Status)
+	}
+}
+
+// The page tells the form whether it may submit and the birth-date bounds
+// in the operator's dates (agreed after review).
+func TestPreScreeningPageEditabilityAndDateBounds(t *testing.T) {
+	h := caseHarness(t)
+	c, caseID, assignmentID := newCase(t, h)
+	page := c.OpenAssignment(t, caseID, assignmentID)
+	if field(t, page, "page", "editable") != true || field(t, page, "page", "today") != yearsAgo(h, 0, 0) ||
+		field(t, page, "page", "earliestBirthDate") != yearsAgo(h, 100, 0) {
+		t.Fatalf("page = %s", page.Raw)
+	}
+	h.SeedMapping(t, apptest.Mapping{Role: "Ops Authors", AccessGroup: "Authors", WorkGroup: "Default"})
+	authors := loggedIn(t, h, apptest.Operator{UserID: "AU01", RoleCode: "Ops Authors"})
+	if got := field(t, authors.OpenAssignment(t, caseID, assignmentID), "page", "editable"); got != false {
+		t.Fatalf("Authors editable = %v, want false", got)
 	}
 }

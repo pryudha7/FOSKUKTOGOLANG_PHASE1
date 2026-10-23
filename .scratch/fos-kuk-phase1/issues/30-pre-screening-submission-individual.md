@@ -26,6 +26,14 @@
 - `fos.customer` holds all §9.28 columns; Pre-Screening writes the "Nasabah" row and, only when Data Pasangan is filled, the "Pasangan" row; a resubmit updates them and an emptied Data Pasangan deletes the "Pasangan" row. Tipe Nasabah goes to `work.customer_type` as its description.
 - With Tipe Nasabah not chosen, only its ERR-010 is reported (no data section is shown yet).
 
-**API:** `POST <desktop>/api/cases/{caseId}/assignments/{id}/submit` (Pre-Screening Submission; body `customerType`, `personal`, `spouse` with `nik`, `name`, `birthDate` yyyy-mm-dd; 422 `{errors: [{section, field, code, message}]}`), `POST …/back` (Document Underlying Upload).
+**After review (agreed):**
+
+- ERR-019 is reported whenever both NIKs are valid and equal, alongside any other spouse error; surrounding spaces are trimmed, so a field of spaces is empty.
+- Failures other than validation show the ERR-003 text in the banner; until ticket 31 only Perorangan can be chosen in Tipe Nasabah (other options are listed but disabled).
+- Banner lines for Data Pasangan start with "Data Pasangan - " (like "Pengurus <n> - "); Data Pribadi has no prefix.
+- The page carries `editable` (false for an Authors look: read-only, no Next) and the operator's `today` / `earliestBirthDate`, which bound the birth-date picker.
+- Field errors carry a stable `key` (`branch`, `customerType`, `nik`, `name`, `birthDate`) besides the label; the Data Pribadi section is `customer` in the API.
+
+**API:** `POST <desktop>/api/cases/{caseId}/assignments/{id}/submit` (Pre-Screening Submission; body `customerType`, `customer`, `spouse` with `nik`, `name`, `birthDate` yyyy-mm-dd; 422 `{errors: [{section, key, field, code, message}]}`), `POST …/back` (Document Underlying Upload).
 
 **Verification:** HTTP API tests cover AC-FR-APP-002-04/06/07/08/11/12/21/23/24 (Perorangan parts), AC-FR-APP-003-02/03, AC-FR-ASSIGN-001-04/05/06. Headless Chrome checked the form, error banner and field errors (Gambar 13), the date field and picker (Gambar 12, BR-UI-011), Next to Document Underlying Upload and Back.

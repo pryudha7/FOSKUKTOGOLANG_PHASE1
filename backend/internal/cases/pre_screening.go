@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -13,15 +14,15 @@ import (
 )
 
 const (
-	AssignmentDocumentUnderlyingUpload = "Document Underlying Upload"
+	AssignmentUnderlyingDocumentUpload = "Document Underlying Upload"
 
-	// Customer types of the customer rows (§9.28).
-	customerNasabah  = "Nasabah"
-	customerPasangan = "Pasangan"
+	// customer_type values of the customer rows (§9.28).
+	partyCustomer = "Nasabah"
+	partySpouse   = "Pasangan"
 
 	// The Tipe Nasabah description whose form this package implements
 	// (Badan Usaha: ticket 31; other types: TBD-029a).
-	tipePerorangan = "Perorangan"
+	customerTypeIndividual = "Perorangan"
 )
 
 var (
@@ -41,17 +42,38 @@ type Person struct {
 
 func (p Person) empty() bool { return p.NIK == "" && p.Name == "" && p.BirthDate == "" }
 
-// PreScreeningForm is the Pre-Screening Submission form (FR-APP-002).
+// trimmed drops surrounding spaces, so a field of spaces counts as empty.
+func (p Person) trimmed() Person {
+	return Person{strings.TrimSpace(p.NIK), strings.TrimSpace(p.Name), strings.TrimSpace(p.BirthDate)}
+}
+
+// PreScreeningForm is the Pre-Screening Submission form (FR-APP-002):
+// Customer is Data Pribadi, Spouse is Data Pasangan.
 type PreScreeningForm struct {
 	CustomerType string
-	Personal     Person
+	Customer     Person
 	Spouse       Person
 }
 
-// FieldError is one validation failure: the form section, the field label
-// as shown in the banner, the SoT error code and the message.
+// Form sections and field keys of a FieldError.
+const (
+	SectionForm     = "form"
+	SectionCustomer = "customer"
+	SectionSpouse   = "spouse"
+
+	KeyBranch       = "branch"
+	KeyCustomerType = "customerType"
+	KeyNIK          = "nik"
+	KeyName         = "name"
+	KeyBirthDate    = "birthDate"
+)
+
+// FieldError is one validation failure: the form section, a stable field
+// key, the field label as shown in the banner, the SoT error code and the
+// message.
 type FieldError struct {
-	Section string // form, personal or spouse
+	Section string
+	Key     string
 	Field   string
 	Code    string
 	Message string
@@ -76,8 +98,15 @@ const (
 	msgOutRange = "Tanggal Lahir di luar rentang yang diizinkan"
 )
 
-func required(section, field string) FieldError {
-	return FieldError{section, field, "ERR-010", field + " wajib diisi"}
+// Field labels as shown on UI-010.
+const (
+	labelNIK       = "NIK"
+	labelName      = "Nama"
+	labelBirthDate = "Tanggal Lahir"
+)
+
+func required(section, key, label string) FieldError {
+	return FieldError{section, key, label, "ERR-010", label + " wajib diisi"}
 }
 
 var (
@@ -92,33 +121,52 @@ func validatePerson(section string, p Person, today time.Time) []FieldError {
 	var errs []FieldError
 	switch {
 	case p.NIK == "":
-		errs = append(errs, required(section, "NIK"))
+		errs = append(errs, required(section, KeyNIK, labelNIK))
 	case !nikPattern.MatchString(p.NIK):
-		errs = append(errs, FieldError{section, "NIK", "ERR-007", msgNIK})
+		errs = append(errs, FieldError{section, KeyNIK, labelNIK, "ERR-007", msgNIK})
 	}
 	switch {
 	case p.Name == "":
-		errs = append(errs, required(section, "Nama"))
+		errs = append(errs, required(section, KeyName, labelName))
 	case utf8.RuneCountInString(p.Name) > 30:
-		errs = append(errs, FieldError{section, "Nama", "ERR-013", msgNameLen})
+		errs = append(errs, FieldError{section, KeyName, labelName, "ERR-013", msgNameLen})
 	case !namePattern.MatchString(p.Name):
-		errs = append(errs, FieldError{section, "Nama", "ERR-008", msgName})
+		errs = append(errs, FieldError{section, KeyName, labelName, "ERR-008", msgName})
 	}
 	if p.BirthDate == "" {
-		return append(errs, required(section, "Tanggal Lahir"))
+		return append(errs, required(section, KeyBirthDate, labelBirthDate))
 	}
 	born, err := time.Parse("2006-01-02", p.BirthDate)
 	switch {
 	case err != nil:
-		errs = append(errs, FieldError{section, "Tanggal Lahir", "DATE_INVALID", msgBadDate})
-	// Range up to 100 years back and today at the latest (TBD-023g, agreed).
-	case born.After(today) || born.Before(today.AddDate(-100, 0, 0)):
-		errs = append(errs, FieldError{section, "Tanggal Lahir", "DATE_OUT_OF_RANGE", msgOutRange})
+		errs = append(errs, FieldError{section, KeyBirthDate, labelBirthDate, "DATE_INVALID", msgBadDate})
+	case born.After(today) || born.Before(EarliestBirthDate(today)):
+		errs = append(errs, FieldError{section, KeyBirthDate, labelBirthDate, "DATE_OUT_OF_RANGE", msgOutRange})
 	// At least 17 full years on today's date.
 	case born.After(today.AddDate(-17, 0, 0)):
-		errs = append(errs, FieldError{section, "Tanggal Lahir", "ERR-009", msgAge})
+		errs = append(errs, FieldError{section, KeyBirthDate, labelBirthDate, "ERR-009", msgAge})
 	}
 	return errs
+}
+
+// EarliestBirthDate bounds Tanggal Lahir: from 100 years before today, to
+// today (TBD-023g, agreed).
+func EarliestBirthDate(today time.Time) time.Time { return today.AddDate(-100, 0, 0) }
+
+// operatorToday is the operator's current date (BR-UI-003), at midnight UTC.
+func (s *Service) operatorToday(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, userID string) (time.Time, error) {
+	var timezone string
+	if err := q.QueryRow(ctx, `SELECT timezone FROM fos.operator WHERE user_id = $1`, userID).Scan(&timezone); err != nil {
+		return time.Time{}, err
+	}
+	loc, err := operatorLocation(timezone)
+	if err != nil {
+		return time.Time{}, err
+	}
+	y, m, d := s.now().In(loc).Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC), nil
 }
 
 // openAssignment is an assignment loaded for a submit by its owner.
@@ -191,32 +239,28 @@ func (s *Service) SubmitPreScreening(ctx context.Context, sess auth.Session, cas
 		return 0, ErrUnsupported
 	}
 
-	var (
-		stored, branch *string
-		timezone       string
-	)
+	var stored, branch *string
 	if err := tx.QueryRow(ctx, `
-		SELECT w.customer_type, b.description, o.timezone
+		SELECT w.customer_type, b.description
 		FROM fos.work w
-		JOIN fos.operator o ON o.user_id = $2
 		LEFT JOIN fos.business_mapping_value b ON b.type = 'BRANCH' AND b.sub_type = '' AND b.code = w.branch_code
-		WHERE w.case_id = $1`, caseID, sess.UserID).Scan(&stored, &branch, &timezone); err != nil {
+		WHERE w.case_id = $1`, caseID).Scan(&stored, &branch); err != nil {
 		return 0, err
 	}
-	loc, err := operatorLocation(timezone)
+	today, err := s.operatorToday(ctx, tx, sess.UserID)
 	if err != nil {
 		return 0, err
 	}
-	y, m, d := s.now().In(loc).Date()
-	today := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	f.CustomerType = strings.TrimSpace(f.CustomerType)
+	f.Customer, f.Spouse = f.Customer.trimmed(), f.Spouse.trimmed()
 
 	var errs []FieldError
 	if branch == nil {
-		errs = append(errs, FieldError{"form", "Nama Branch", "ERR-006", msgBranch})
+		errs = append(errs, FieldError{SectionForm, KeyBranch, "Nama Branch", "ERR-006", msgBranch})
 	}
 	switch {
 	case f.CustomerType == "":
-		errs = append(errs, required("form", "Tipe Nasabah"))
+		errs = append(errs, required(SectionForm, KeyCustomerType, "Tipe Nasabah"))
 		return 0, &ValidationError{errs}
 	// Tipe Nasabah is fixed after the first submit (FR-APP-002).
 	case stored != nil && *stored != f.CustomerType:
@@ -226,19 +270,22 @@ func (s *Service) SubmitPreScreening(ctx context.Context, sess auth.Session, cas
 	if err != nil {
 		return 0, err
 	}
-	if !hasDescription(options, f.CustomerType) || f.CustomerType != tipePerorangan {
+	if !hasDescription(options, f.CustomerType) || f.CustomerType != customerTypeIndividual {
 		return 0, ErrUnsupported
 	}
 
-	errs = append(errs, validatePerson("personal", f.Personal, today)...)
+	customerErrs := validatePerson(SectionCustomer, f.Customer, today)
+	var spouseErrs []FieldError
 	if !f.Spouse.empty() {
-		spouseErrs := validatePerson("spouse", f.Spouse, today)
-		if len(spouseErrs) == 0 && f.Personal.NIK == f.Spouse.NIK {
-			errs = append(errs, FieldError{"personal", "NIK", "ERR-019", msgSameNIK})
-			spouseErrs = append(spouseErrs, FieldError{"spouse", "NIK", "ERR-019", msgSameNIK})
+		spouseErrs = validatePerson(SectionSpouse, f.Spouse, today)
+		// ERR-019 needs only both NIKs to be valid, whatever else fails;
+		// both fields are marked (AC-FR-APP-002-21).
+		if nikPattern.MatchString(f.Customer.NIK) && f.Customer.NIK == f.Spouse.NIK {
+			customerErrs = append([]FieldError{{SectionCustomer, KeyNIK, labelNIK, "ERR-019", msgSameNIK}}, customerErrs...)
+			spouseErrs = append([]FieldError{{SectionSpouse, KeyNIK, labelNIK, "ERR-019", msgSameNIK}}, spouseErrs...)
 		}
-		errs = append(errs, spouseErrs...)
 	}
+	errs = append(append(errs, customerErrs...), spouseErrs...)
 	if len(errs) > 0 {
 		return 0, &ValidationError{errs}
 	}
@@ -246,18 +293,18 @@ func (s *Service) SubmitPreScreening(ctx context.Context, sess auth.Session, cas
 	if _, err := tx.Exec(ctx, `UPDATE fos.work SET customer_type = $2 WHERE case_id = $1`, caseID, f.CustomerType); err != nil {
 		return 0, err
 	}
-	if err := saveParty(ctx, tx, caseID, customerNasabah, f.Personal); err != nil {
+	if err := saveParty(ctx, tx, caseID, partyCustomer, f.Customer); err != nil {
 		return 0, err
 	}
 	if f.Spouse.empty() {
-		if _, err := tx.Exec(ctx, `DELETE FROM fos.customer WHERE case_id = $1 AND customer_type = $2`, caseID, customerPasangan); err != nil {
+		if _, err := tx.Exec(ctx, `DELETE FROM fos.customer WHERE case_id = $1 AND customer_type = $2`, caseID, partySpouse); err != nil {
 			return 0, err
 		}
-	} else if err := saveParty(ctx, tx, caseID, customerPasangan, f.Spouse); err != nil {
+	} else if err := saveParty(ctx, tx, caseID, partySpouse, f.Spouse); err != nil {
 		return 0, err
 	}
 
-	next, err := s.moveTo(ctx, tx, sess, caseID, a.id, AssignmentDocumentUnderlyingUpload)
+	next, err := s.moveTo(ctx, tx, sess, caseID, a.id, AssignmentUnderlyingDocumentUpload)
 	if err != nil {
 		return 0, err
 	}
@@ -277,7 +324,7 @@ func (s *Service) BackToPreScreening(ctx context.Context, sess auth.Session, cas
 	if err != nil {
 		return 0, err
 	}
-	if a.name != AssignmentDocumentUnderlyingUpload {
+	if a.name != AssignmentUnderlyingDocumentUpload {
 		return 0, ErrUnsupported
 	}
 	next, err := s.moveTo(ctx, tx, sess, caseID, a.id, AssignmentPreScreeningSubmission)

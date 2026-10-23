@@ -10,7 +10,6 @@ import {
   monthsShort,
   parseISO,
   toISO,
-  today,
   typedToISO,
   weekdays,
   type YMD,
@@ -26,14 +25,21 @@ export default function DateField({
   value,
   onChange,
   invalid,
-  maxToday = false,
+  min,
+  max,
+  today,
+  disabled = false,
   ariaLabel,
 }: {
   value: string;
   onChange: (iso: string) => void;
   invalid?: boolean;
-  // Tanggal Akta Pendirian: no date after today can be picked.
-  maxToday?: boolean;
+  // Dates the picker offers, yyyy-mm-dd (typing is validated by the server).
+  min?: string;
+  max?: string;
+  // The operator's today, yyyy-mm-dd, for "Today" and the opening month.
+  today: string;
+  disabled?: boolean;
   ariaLabel: string;
 }) {
   const [focused, setFocused] = useState(false);
@@ -53,6 +59,7 @@ export default function DateField({
         className={`${invalid ? styles.inputInvalid : styles.input} ${showLong ? styles.dateHidden : ""}`}
         aria-label={ariaLabel}
         value={typed}
+        disabled={disabled}
         onFocus={() => setFocused(true)}
         onChange={(e) => {
           setTyped(e.target.value);
@@ -65,13 +72,21 @@ export default function DateField({
           {isoToLong(value)}
         </span>
       )}
-      <button type="button" className={styles.calendarButton} aria-label="Pilih tanggal" onClick={() => setPicking(!picking)}>
+      <button
+        type="button"
+        className={styles.calendarButton}
+        aria-label="Pilih tanggal"
+        disabled={disabled}
+        onClick={() => setPicking(!picking)}
+      >
         <CalendarIcon />
       </button>
       {picking && (
         <DatePicker
           selected={parseISO(value)}
-          maxToday={maxToday}
+          min={min ? parseISO(min) : null}
+          max={max ? parseISO(max) : null}
+          today={parseISO(today)!}
           onPick={(d) => {
             onChange(toISO(d));
             setPicking(false);
@@ -88,16 +103,19 @@ export default function DateField({
 // "Today" / "Close" in the footer.
 function DatePicker({
   selected,
-  maxToday,
+  min,
+  max,
+  today: now,
   onPick,
   onClose,
 }: {
   selected: YMD | null;
-  maxToday: boolean;
+  min: YMD | null;
+  max: YMD | null;
+  today: YMD;
   onPick: (d: YMD) => void;
   onClose: () => void;
 }) {
-  const now = today();
   const [view, setView] = useState({ y: selected?.y ?? now.y, m: selected?.m ?? now.m });
   const ref = useRef<HTMLDivElement>(null);
 
@@ -125,7 +143,7 @@ function DatePicker({
   for (let d = 1; cells.length % 7 !== 0 || cells.length < 42; d++) {
     cells.push({ day: { ...next, d }, inMonth: false });
   }
-  const disabled = (d: YMD) => maxToday && compare(d, now) > 0;
+  const disabled = (d: YMD) => (min !== null && compare(d, min) < 0) || (max !== null && compare(d, max) > 0);
   const years = Array.from({ length: 121 }, (_, i) => now.y - 110 + i);
 
   return (
@@ -168,7 +186,7 @@ function DatePicker({
         })}
       </div>
       <div className={styles.dpFooter}>
-        <button type="button" className={styles.dpToday} onClick={() => onPick(now)}>
+        <button type="button" className={styles.dpToday} disabled={disabled(now)} onClick={() => onPick(now)}>
           Today
         </button>
         <button type="button" className={styles.dpClose} onClick={onClose}>

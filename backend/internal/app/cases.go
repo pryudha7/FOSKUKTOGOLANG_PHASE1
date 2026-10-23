@@ -167,22 +167,13 @@ func (s *server) openAssignment(ep endpoint) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		id, err := strconv.ParseInt(r.PathValue("assignmentId"), 10, 64)
-		if err != nil {
+		caseID, id, ok := pathAssignment(r)
+		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		p, err := s.cases.OpenAssignment(r.Context(), sess, r.PathValue("caseId"), id)
-		switch {
-		case errors.Is(err, cases.ErrNotFound):
-			w.WriteHeader(http.StatusNotFound)
-			return
-		case errors.Is(err, cases.ErrForbidden):
-			w.WriteHeader(http.StatusForbidden)
-			return
-		case err != nil:
-			slog.Error("open assignment failed", "error", err)
-			w.WriteHeader(http.StatusInternalServerError)
+		p, err := s.cases.OpenAssignment(r.Context(), sess, caseID, id)
+		if writeAssignmentError(w, "open assignment", err) {
 			return
 		}
 		type optionJSON struct {
@@ -194,13 +185,17 @@ func (s *server) openAssignment(ep endpoint) http.HandlerFunc {
 			BranchError         *errorJSON   `json:"branchError"`
 			CustomerType        string       `json:"customerType"`
 			CustomerTypeOptions []optionJSON `json:"customerTypeOptions"`
-			Personal            personForm   `json:"personal"`
+			Customer            personForm   `json:"customer"`
 			Spouse              personForm   `json:"spouse"`
+			Editable            bool         `json:"editable"`
+			Today               string       `json:"today"`
+			EarliestBirthDate   string       `json:"earliestBirthDate"`
 		}
 		var page *preScreeningJSON
 		if ps := p.PreScreening; ps != nil {
 			page = &preScreeningJSON{BranchName: ps.BranchName, CustomerType: ps.CustomerType, CustomerTypeOptions: []optionJSON{},
-				Personal: personForm(ps.Personal), Spouse: personForm(ps.Spouse)}
+				Customer: personForm(ps.Customer), Spouse: personForm(ps.Spouse),
+				Editable: ps.Editable, Today: ps.Today, EarliestBirthDate: ps.EarliestBirthDate}
 			if ps.BranchMissing {
 				page.BranchError = &errorJSON{"ERR-006", caseErrors["ERR-006"].message}
 			}
@@ -224,14 +219,17 @@ type personForm struct {
 	BirthDate string `json:"birthDate"`
 }
 
-// writeMoveResult answers a submit or back: the opened next assignment, the
-// validation errors (422), or the refusal.
-func writeMoveResult(w http.ResponseWriter, next int64, err error) {
+// writeAssignmentError answers a failed assignment request and reports
+// whether err was a failure: validation errors (422) or a refusal.
+func writeAssignmentError(w http.ResponseWriter, action string, err error) bool {
 	var invalid *cases.ValidationError
 	switch {
+	case err == nil:
+		return false
 	case errors.As(err, &invalid):
 		type fieldErrorJSON struct {
 			Section string `json:"section"`
+			Key     string `json:"key"`
 			Field   string `json:"field"`
 			Code    string `json:"code"`
 			Message string `json:"message"`
@@ -251,14 +249,21 @@ func writeMoveResult(w http.ResponseWriter, next int64, err error) {
 		w.WriteHeader(http.StatusConflict)
 	case errors.Is(err, cases.ErrUnsupported):
 		w.WriteHeader(http.StatusBadRequest)
-	case err != nil:
-		slog.Error("move assignment failed", "error", err)
-		w.WriteHeader(http.StatusInternalServerError)
 	default:
-		writeJSON(w, http.StatusOK, struct {
-			AssignmentID int64 `json:"assignmentId"`
-		}{next})
+		slog.Error(action+" failed", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
 	}
+	return true
+}
+
+// writeMoveResult answers a submit or back with the opened next assignment.
+func writeMoveResult(w http.ResponseWriter, next int64, err error) {
+	if writeAssignmentError(w, "move assignment", err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		AssignmentID int64 `json:"assignmentId"`
+	}{next})
 }
 
 // pathAssignment reads {caseId} and {assignmentId}.
@@ -283,7 +288,7 @@ func (s *server) submitAssignment(ep endpoint) http.HandlerFunc {
 		}
 		var req struct {
 			CustomerType string     `json:"customerType"`
-			Personal     personForm `json:"personal"`
+			Customer     personForm `json:"customer"`
 			Spouse       personForm `json:"spouse"`
 		}
 		dec := json.NewDecoder(r.Body)
@@ -294,7 +299,7 @@ func (s *server) submitAssignment(ep endpoint) http.HandlerFunc {
 		}
 		next, err := s.cases.SubmitPreScreening(r.Context(), sess, caseID, id, cases.PreScreeningForm{
 			CustomerType: req.CustomerType,
-			Personal:     cases.Person(req.Personal),
+			Customer:     cases.Person(req.Customer),
 			Spouse:       cases.Person(req.Spouse),
 		})
 		writeMoveResult(w, next, err)

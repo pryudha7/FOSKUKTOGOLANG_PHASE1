@@ -7,7 +7,8 @@ import CaseInfoPanel, { CaseHeader } from "./CaseInfoPanel";
 import StageBar from "./StageBar";
 import AttachmentsPanel from "./AttachmentsPanel";
 import PreScreeningSubmission from "./PreScreeningSubmission";
-import DocumentUnderlyingUpload from "./DocumentUnderlyingUpload";
+import UnderlyingDocumentUpload from "./UnderlyingDocumentUpload";
+import { assignmentNames } from "./names";
 import styles from "./case.module.css";
 
 // UI-013 Case View, mode Assignment: case info on the left, Stage Bar and
@@ -48,6 +49,7 @@ export default function CaseView({
   if (!frame || !assignment) {
     return <div aria-busy="true" />;
   }
+  const ref = { endpointPath, caseId, assignmentId };
   return (
     <div className={styles.caseView}>
       {!infoHidden && <CaseInfoPanel frame={frame} onHide={() => setInfoHidden(true)} />}
@@ -63,9 +65,9 @@ export default function CaseView({
         <StageBar stages={frame.stages} lifecycle={frame.lifecycle} />
         <div className={styles.main}>
           {assignment.page ? (
-            <PreScreeningSubmission page={assignment.page} endpointPath={endpointPath} caseId={caseId} assignmentId={assignmentId} />
-          ) : assignment.name === "Document Underlying Upload" ? (
-            <DocumentUnderlyingUpload endpointPath={endpointPath} caseId={caseId} assignmentId={assignmentId} />
+            <PreScreeningSubmission page={assignment.page} assignment={ref} />
+          ) : assignment.name === assignmentNames.underlyingDocumentUpload ? (
+            <UnderlyingDocumentUpload assignment={ref} />
           ) : (
             <section className={styles.card}>
               <h2 className={styles.cardTitle}>{assignment.name}</h2>

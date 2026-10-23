@@ -33,12 +33,20 @@ export type PreScreeningPage = {
   branchError: { code: string; message: string } | null;
   customerType: string;
   customerTypeOptions: Option[];
-  personal: PersonForm;
-  spouse: PersonForm;
+  customer: PersonForm; // Data Pribadi
+  spouse: PersonForm; // Data Pasangan
+  // False for an Authors look at someone else's assignment: read-only.
+  editable: boolean;
+  // The operator's today and the earliest birth date, yyyy-mm-dd.
+  today: string;
+  earliestBirthDate: string;
 };
 
-// A validation failure returned with 422 by a submit.
-export type FieldError = { section: string; field: string; code: string; message: string };
+export type Section = "form" | "customer" | "spouse";
+
+// A validation failure returned with 422 by a submit: key is the stable
+// field key, field the label shown in the banner.
+export type FieldError = { section: Section; key: string; field: string; code: string; message: string };
 
 export type Assignment = {
   assignmentId: number;

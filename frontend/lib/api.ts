@@ -28,6 +28,34 @@ export function assignmentPath(endpointPath: string, caseId: string, assignmentI
   return `${endpointPath}/case/${encodeURIComponent(caseId)}/assignment/${assignmentId}`;
 }
 
+// An assignment of a case on an endpoint.
+export type AssignmentRef = { endpointPath: string; caseId: string; assignmentId: number };
+
+export type MoveResult<E> =
+  | { kind: "moved" } // the browser is opening the next assignment
+  | { kind: "invalid"; errors: E[] }
+  | { kind: "failed" };
+
+// moveAssignment posts a tabbed-flow move (submit or back) and, when it
+// passes, opens the next assignment directly (FR-APP-003 rule 6).
+export async function moveAssignment<E>(ref: AssignmentRef, action: "submit" | "back", body?: unknown): Promise<MoveResult<E>> {
+  const url = `${ref.endpointPath}/api/cases/${encodeURIComponent(ref.caseId)}/assignments/${ref.assignmentId}/${action}`;
+  const res = await apiFetch(url, {
+    method: "POST",
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  }).catch(() => null);
+  if (res?.ok) {
+    const next = (await res.json()) as { assignmentId: number };
+    window.location.assign(assignmentPath(ref.endpointPath, ref.caseId, next.assignmentId));
+    return { kind: "moved" };
+  }
+  if (res?.status === 422) {
+    return { kind: "invalid", errors: ((await res.json()) as { errors: E[] }).errors };
+  }
+  return { kind: "failed" };
+}
+
 // Ends the endpoint's session on the server, then opens its login page.
 export async function logOff(endpointPath: string, loginPath: string): Promise<void> {
   await apiFetch(`${endpointPath}/api/logout`, { method: "POST" }).catch(() => undefined);

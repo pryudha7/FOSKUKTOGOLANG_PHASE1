@@ -1,123 +1,111 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { apiFetch, assignmentPath } from "@/lib/api";
-import { useOperator } from "@/app/session/SessionContext";
-import type { FieldError, PersonForm, PreScreeningPage } from "./types";
+import { moveAssignment, type AssignmentRef } from "@/lib/api";
+import type { FieldError, PersonForm, PreScreeningPage, Section } from "./types";
+import AssignmentHeader from "./AssignmentHeader";
 import DateField from "./DateField";
 import ErrorBanner from "./ErrorBanner";
 import Breadcrumb, { preScreeningSteps } from "./Breadcrumb";
+import { customerTypeIndividual, unavailableMessage } from "./names";
 import styles from "./case.module.css";
 
 const emptyPerson: PersonForm = { nik: "", name: "", birthDate: "" };
 
+type ErrorOf = (section: Section, key: string) => FieldError | undefined;
+
 // UI-010 Pre - Screening Submission, Perorangan form (FR-APP-002). Next and
 // the breadcrumb submit the form; errors show only then (AC-FR-APP-002-20).
-// The Badan Usaha form arrives in ticket 31.
-export default function PreScreeningSubmission({
-  page,
-  endpointPath,
-  caseId,
-  assignmentId,
-}: {
-  page: PreScreeningPage;
-  endpointPath: string;
-  caseId: string;
-  assignmentId: number;
-}) {
-  const me = useOperator();
-  const fixed = page.customerType !== ""; // disabled after submit (FR-APP-002)
+// The Badan Usaha form arrives in ticket 31. An Authors look at someone
+// else's assignment is read-only (agreed).
+export default function PreScreeningSubmission({ page, assignment }: { page: PreScreeningPage; assignment: AssignmentRef }) {
+  const customerTypeLocked = page.customerType !== ""; // after the first submit (FR-APP-002)
+  const readOnly = !page.editable;
   const [customerType, setCustomerType] = useState(page.customerType);
-  const [personal, setPersonal] = useState<PersonForm>(page.personal);
+  const [customer, setCustomer] = useState<PersonForm>(page.customer);
   const [spouse, setSpouse] = useState<PersonForm>(page.spouse);
   const [errors, setErrors] = useState<FieldError[]>([]);
+  const [failed, setFailed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Changing Tipe Nasabah before submit clears every data field and error.
   function changeType(t: string) {
     setCustomerType(t);
-    setPersonal(emptyPerson);
+    setCustomer(emptyPerson);
     setSpouse(emptyPerson);
     setErrors([]);
   }
 
   async function submit() {
-    if (submitting) {
+    if (submitting || readOnly) {
       return;
     }
     setSubmitting(true);
-    const res = await apiFetch(`${endpointPath}/api/cases/${encodeURIComponent(caseId)}/assignments/${assignmentId}/submit`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ customerType, personal, spouse }),
-    }).catch(() => null);
-    if (res?.ok) {
-      const body = (await res.json()) as { assignmentId: number };
-      window.location.assign(assignmentPath(endpointPath, caseId, body.assignmentId));
+    setFailed(false);
+    const result = await moveAssignment<FieldError>(assignment, "submit", { customerType, customer, spouse });
+    if (result.kind === "moved") {
       return;
     }
-    if (res?.status === 422) {
-      setErrors(((await res.json()) as { errors: FieldError[] }).errors);
-    }
+    setErrors(result.kind === "invalid" ? result.errors : []);
+    setFailed(result.kind === "failed");
     setSubmitting(false);
   }
 
-  const errorOf = (section: string, field: string) => errors.find((e) => e.section === section && e.field === field);
-  const branchError = errorOf("form", "Nama Branch") ?? (page.branchError ? { message: page.branchError.message } : undefined);
+  const errorOf: ErrorOf = (section, key) => errors.find((e) => e.section === section && e.key === key);
+  const branchError = errorOf("form", "branch")?.message ?? page.branchError?.message;
+  const typeError = errorOf("form", "customerType");
 
   return (
     <div className={styles.assignmentArea}>
-      <ErrorBanner errors={errors} />
+      <ErrorBanner errors={errors} message={failed ? unavailableMessage : undefined} />
       <section className={styles.card}>
-        <header className={styles.assignmentHeader}>
-          {/* UI-010: the avatar shows the logged-in operator's initial. */}
-          <span className={styles.assignmentAvatar} aria-hidden="true">
-            {me.fullName.trim().charAt(0).toUpperCase()}
-          </span>
-          <h2 className={styles.cardTitle}>Pre - Screening Submission</h2>
-        </header>
+        <AssignmentHeader title="Pre - Screening Submission" />
 
         <Breadcrumb steps={preScreeningSteps} active={0} onSelect={(i) => i === 1 && submit()} />
 
         <div className={styles.formPanel}>
-          <Field label="Nama Branch" error={branchError?.message}>
+          <Field label="Nama Branch" error={branchError}>
             <input className={styles.inputDisabled} value={page.branchName} disabled readOnly aria-label="Nama Branch" />
           </Field>
-          <Field label="Tipe Nasabah" required error={errorOf("form", "Tipe Nasabah")?.message}>
+          <Field label="Tipe Nasabah" required error={typeError?.message}>
             <select
               aria-label="Tipe Nasabah"
-              className={fixed ? styles.inputDisabled : errorOf("form", "Tipe Nasabah") ? styles.inputInvalid : styles.input}
+              className={customerTypeLocked || readOnly ? styles.inputDisabled : typeError ? styles.inputInvalid : styles.input}
               value={customerType}
-              disabled={fixed}
+              disabled={customerTypeLocked || readOnly}
               onChange={(e) => changeType(e.target.value)}
             >
               <option value="" disabled>
                 Pilih Tipe Nasabah
               </option>
+              {/* Only the Perorangan form exists yet (agreed): other types are
+                  listed but cannot be chosen until ticket 31 / TBD-029a. */}
               {page.customerTypeOptions.map((o) => (
-                <option key={o.code} value={o.description}>
+                <option key={o.code} value={o.description} disabled={o.description !== customerTypeIndividual}>
                   {o.description}
                 </option>
               ))}
             </select>
           </Field>
 
-          {customerType === "Perorangan" && (
+          {customerType === customerTypeIndividual && (
             <>
-              <PersonSection title="Data Pribadi" section="personal" required value={personal} onChange={setPersonal} errorOf={errorOf} />
-              <PersonSection title="Data Pasangan" section="spouse" value={spouse} onChange={setSpouse} errorOf={errorOf} />
+              <PersonSection title="Data Pribadi" section="customer" required value={customer} onChange={setCustomer} errorOf={errorOf} page={page} />
+              <PersonSection title="Data Pasangan" section="spouse" value={spouse} onChange={setSpouse} errorOf={errorOf} page={page} />
             </>
           )}
         </div>
 
         <footer className={styles.buttons}>
           {/* Close returns to the Dashboard without saving (TBD-023b/c, agreed). */}
-          <button type="button" className={styles.close} onClick={() => window.location.assign(endpointPath)}>
+          <button type="button" className={styles.close} onClick={() => window.location.assign(assignment.endpointPath)}>
             Close
           </button>
-          <button type="button" className={styles.next} disabled={submitting} onClick={submit}>
-            Next
-          </button>
+          {!readOnly && (
+            <button type="button" className={styles.next} disabled={submitting} onClick={submit}>
+              Next
+            </button>
+          )}
         </footer>
       </section>
     </div>
@@ -131,33 +119,39 @@ function PersonSection({
   value,
   onChange,
   errorOf,
+  page,
 }: {
   title: string;
-  section: "personal" | "spouse";
+  section: Section;
   required?: boolean;
   value: PersonForm;
   onChange: (p: PersonForm) => void;
-  errorOf: (section: string, field: string) => FieldError | undefined;
+  errorOf: ErrorOf;
+  page: PreScreeningPage;
 }) {
-  const nik = errorOf(section, "NIK");
-  const name = errorOf(section, "Nama");
-  const born = errorOf(section, "Tanggal Lahir");
+  const readOnly = !page.editable;
+  const nik = errorOf(section, "nik");
+  const name = errorOf(section, "name");
+  const born = errorOf(section, "birthDate");
+  const inputClass = (invalid: boolean) => (readOnly ? styles.inputDisabled : invalid ? styles.inputInvalid : styles.input);
   return (
     <>
       <h3 className={styles.sectionTitle}>{title}</h3>
       <Field label="NIK" required={required} error={nik?.message}>
         <input
           aria-label={`${title} NIK`}
-          className={nik ? styles.inputInvalid : styles.input}
+          className={inputClass(!!nik)}
           value={value.nik}
+          disabled={readOnly}
           onChange={(e) => onChange({ ...value, nik: e.target.value })}
         />
       </Field>
       <Field label="Nama" required={required} error={name?.message}>
         <input
           aria-label={`${title} Nama`}
-          className={name ? styles.inputInvalid : styles.input}
+          className={inputClass(!!name)}
           value={value.name}
+          disabled={readOnly}
           onChange={(e) => onChange({ ...value, name: e.target.value })}
         />
       </Field>
@@ -166,6 +160,10 @@ function PersonSection({
           ariaLabel={`${title} Tanggal Lahir`}
           value={value.birthDate}
           invalid={!!born}
+          disabled={readOnly}
+          min={page.earliestBirthDate}
+          max={page.today}
+          today={page.today}
           onChange={(birthDate) => onChange({ ...value, birthDate })}
         />
       </Field>

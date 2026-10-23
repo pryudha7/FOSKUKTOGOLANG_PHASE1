@@ -141,6 +141,8 @@ func collect[T any](ctx context.Context, s *Service, scan func(pgx.Rows) (T, err
 	return out, rows.Err()
 }
 
+const dateISO = "2006-01-02"
+
 func value(p *string) string {
 	if p == nil {
 		return ""
@@ -184,8 +186,14 @@ type PreScreeningPage struct {
 	BranchMissing       bool
 	CustomerType        string
 	CustomerTypeOptions []Option
-	// Personal and Spouse are the saved Data Pribadi and Data Pasangan.
-	Personal, Spouse Person
+	// Customer and Spouse are the saved Data Pribadi and Data Pasangan.
+	Customer, Spouse Person
+	// Editable: the operator may submit (the worklist owner on an open
+	// assignment); an Authors look is read-only (agreed).
+	Editable bool
+	// Today and EarliestBirthDate bound the birth-date pickers, as the
+	// operator's dates (yyyy-mm-dd).
+	Today, EarliestBirthDate string
 }
 
 // Option is a BMV dropdown option.
@@ -238,6 +246,12 @@ func (s *Service) OpenAssignment(ctx context.Context, sess auth.Session, caseID 
 		if err != nil {
 			return AssignmentPage{}, err
 		}
+		page.Editable = owner && p.Status != AssignmentCompleted
+		today, err := s.operatorToday(ctx, s.db, sess.UserID)
+		if err != nil {
+			return AssignmentPage{}, err
+		}
+		page.Today, page.EarliestBirthDate = today.Format(dateISO), EarliestBirthDate(today).Format(dateISO)
 		p.PreScreening = &page
 	}
 	return p, nil
@@ -264,10 +278,10 @@ func (s *Service) preScreeningPage(ctx context.Context, caseID string) (PreScree
 	if page.CustomerTypeOptions, err = s.options(ctx, "CUSTOMER_TYPE"); err != nil {
 		return PreScreeningPage{}, err
 	}
-	if page.Personal, err = s.savedParty(ctx, caseID, customerNasabah); err != nil {
+	if page.Customer, err = s.savedParty(ctx, caseID, partyCustomer); err != nil {
 		return PreScreeningPage{}, err
 	}
-	page.Spouse, err = s.savedParty(ctx, caseID, customerPasangan)
+	page.Spouse, err = s.savedParty(ctx, caseID, partySpouse)
 	return page, err
 }
 

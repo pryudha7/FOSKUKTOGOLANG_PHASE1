@@ -73,7 +73,8 @@ func (e *Executor) slikCheck(subject slikSubject) check {
 		try: func(ctx context.Context, r runRef) (attempt, error) {
 			return e.trySLIK(ctx, r.caseID, r.attempt, subject)
 		},
-		retry: e.retrySettings(subject.api),
+		retry:    e.retrySettings(subject.api),
+		bypassed: e.slikBypass,
 	}
 }
 

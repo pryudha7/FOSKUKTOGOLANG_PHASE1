@@ -37,6 +37,7 @@ type reviewJSON struct {
 	History         []recommendationJSON `json:"history"`
 	Editable        bool                 `json:"editable"`
 	Retry           *retryJSON           `json:"retry"`
+	SLIKTimeout     *retryJSON           `json:"slikTimeout"`
 }
 
 func toReviewJSON(p cases.ReviewPage) reviewJSON {
@@ -44,11 +45,17 @@ func toReviewJSON(p cases.ReviewPage) reviewJSON {
 	for _, r := range p.History {
 		out.History = append(out.History, recommendationJSON(r))
 	}
-	if p.Retry != nil {
-		out.Retry = &retryJSON{Logs: []apiLogJSON{}}
-		for _, l := range p.Retry.Logs {
-			out.Retry.Logs = append(out.Retry.Logs, apiLogJSON(l))
-		}
+	out.Retry, out.SLIKTimeout = toRetryJSON(p.Retry), toRetryJSON(p.SLIKTimeout)
+	return out
+}
+
+func toRetryJSON(v *cases.RetryView) *retryJSON {
+	if v == nil {
+		return nil
+	}
+	out := &retryJSON{Logs: []apiLogJSON{}}
+	for _, l := range v.Logs {
+		out.Logs = append(out.Logs, apiLogJSON(l))
 	}
 	return out
 }

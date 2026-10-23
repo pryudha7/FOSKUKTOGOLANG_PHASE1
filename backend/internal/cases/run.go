@@ -97,6 +97,9 @@ type check struct {
 	// retry gives the maximum retries and gap of the step's API
 	// (FR-PSAPI-002); api is "" on a step of one API.
 	retry func(ctx context.Context, api string) (int, time.Duration, error)
+	// bypassed, when set, reports whether a retry of the step is replaced by
+	// a Bypass (SLIK, FR-PSAPI-019).
+	bypassed func(ctx context.Context) (bool, error)
 }
 
 // runRef is a run loaded for execution: its step, the API inside the step
@@ -196,10 +199,12 @@ func (e *Executor) launch(runID int64) {
 	}()
 }
 
-// sweep takes over RUNNING runs whose heartbeat is older than staleAfter, on
-// a step that exists, atomically (DB-RULE-047), and executes them.
+// sweep times out SLIK waits past their deadline (FR-PSAPI-011), then takes
+// over RUNNING runs whose heartbeat is older than staleAfter, on a step that
+// exists, atomically (DB-RULE-047), and executes them.
 func (e *Executor) sweep() {
 	ctx := e.ctx
+	e.expireSLIKWaits(ctx)
 	implemented := make([]string, 0, len(e.checks))
 	for name := range e.checks {
 		implemented = append(implemented, name)
@@ -351,6 +356,17 @@ func (e *Executor) settle(ctx context.Context, r runRef, c check, a attempt) boo
 	if r.attempt >= 1+max {
 		e.finish(ctx, r, a.log, e.fail)
 		return false
+	}
+	if c.bypassed != nil {
+		on, err := c.bypassed(ctx)
+		if err != nil {
+			e.stopBroken(ctx, r, err)
+			return false
+		}
+		if on {
+			e.bypass(ctx, r, a.log)
+			return false
+		}
 	}
 	if !e.recordAttempt(ctx, r, attempt{log: a.log}, r.step, r.api, r.attempt+1) {
 		return false

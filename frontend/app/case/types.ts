@@ -68,6 +68,9 @@ export type ReviewPage = {
   editable: boolean;
   // Set after a Check Failure: the Retry view, without decision fields.
   retry: { logs: APILogEntry[] } | null;
+  // Set after Manual SLIK Entry (Timeout SLIK variant): the SLIK log rows
+  // above the history and the decision fields.
+  slikTimeout: { logs: APILogEntry[] } | null;
 };
 
 export type StoredFile = { fileId: string; fileName: string };

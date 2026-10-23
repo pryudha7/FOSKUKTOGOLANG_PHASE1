@@ -27,6 +27,7 @@ const (
 	KeySearchType     = "searchType"
 	KeySegmentation   = "segmentation"
 	KeyTotalSize      = "totalSize"
+	KeySLIKDocument   = "slikDocument"
 	KeyTeamLead       = "teamLead"
 )
 
@@ -144,6 +145,22 @@ func (s *Service) CreateUnderlying(ctx context.Context, sess auth.Session, caseI
 		return 0, err
 	}
 	errs = append(errs, missing...)
+	// After a SLIK timeout or bypass the Customer's SLIK document is required,
+	// mandatory or not (FR-FILE-004 rule 7, ERR-036; agreed for ticket 12).
+	manual, _, err := inManualSLIKEntry(ctx, tx, caseID)
+	if err != nil {
+		return 0, err
+	}
+	if manual {
+		var uploaded bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM fos.case_document WHERE case_id = $1 AND document_category = $2 AND document_type = $3)`,
+			caseID, categoryPreScreening, docSLIK).Scan(&uploaded); err != nil {
+			return 0, err
+		}
+		if !uploaded {
+			errs = append(errs, FieldError{SectionForm, KeySLIKDocument, "", "ERR-036", msgSLIKDocument})
+		}
+	}
 	if len(errs) > 0 {
 		return 0, &ValidationError{errs}
 	}

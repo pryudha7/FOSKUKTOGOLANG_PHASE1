@@ -18,7 +18,9 @@ const notesMaxLength = 1000;
 // passes back to the Dashboard (FR-APP-010); Close leaves without saving
 // (TBD-040a, agreed). Errors show as on UI-010 (agreed). After a Check
 // Failure it is the Retry view (Gambar 35): the failed API's log and Submit
-// to call it again (FR-PSAPI-001 rule 5).
+// to call it again (FR-PSAPI-001 rule 5). After Manual SLIK Entry the SLIK
+// log rows show above the history, without the Retry text (Varian Timeout
+// SLIK, FR-PSAPI-011 Process 6).
 export default function PreScreeningReview({ page, assignment }: { page: ReviewPage; assignment: AssignmentRef }) {
   const [decisionCode, setDecisionCode] = useState("");
   const [notes, setNotes] = useState("");
@@ -68,6 +70,12 @@ export default function PreScreeningReview({ page, assignment }: { page: ReviewP
               Please retry by click on submit button
             </p>
             <APILogTable logs={page.retry.logs} />
+          </div>
+        )}
+        {page.slikTimeout && (
+          <div className={styles.formPanel}>
+            <h3 className={styles.panelTitle}>API Log History</h3>
+            <APILogTable logs={page.slikTimeout.logs} />
           </div>
         )}
         {page.history.length > 0 && (

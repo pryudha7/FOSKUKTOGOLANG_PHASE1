@@ -48,6 +48,9 @@ type ReviewPage struct {
 	// Retry is set when the case returned after a Check Failure (UI-017
 	// Varian Retry); the page then has no decision fields.
 	Retry *RetryView
+	// SLIKTimeout is set after Manual SLIK Entry (UI-017 Varian Timeout
+	// SLIK): the SLIK rows of the run, above the history and the decision.
+	SLIKTimeout *RetryView
 }
 
 // RetryView lists the failed check's attempts of its last cycle (UI-020
@@ -121,18 +124,10 @@ func (s *Service) reviewPage(ctx context.Context, sess auth.Session, caseID stri
 		return ReviewPage{}, err
 	}
 	retrying, err := s.retrying(ctx, s.db, caseID)
-	if err != nil || !retrying {
-		return page, err
-	}
-	// The failed step's attempts of the newest run, its last cycle only.
-	var step string
-	var attempts int
-	var started time.Time
-	if err := s.db.QueryRow(ctx, `SELECT current_step, attempt, started_at FROM fos.prescreening_runs WHERE run_id = `+latestRun+` AND state = $2`,
-		caseID, runStoppedFailed).Scan(&step, &attempts, &started); err != nil && !isNotFound(err) {
+	if err != nil {
 		return ReviewPage{}, err
 	}
-	logs, err := collect(ctx, s, func(r pgx.Rows) (APILogEntry, error) {
+	logEntry := func(r pgx.Rows) (APILogEntry, error) {
 		var (
 			l  APILogEntry
 			at time.Time
@@ -140,14 +135,48 @@ func (s *Service) reviewPage(ctx context.Context, sess auth.Session, caseID stri
 		err := r.Scan(&l.Name, &at, &l.Status, &l.Request, &l.Response)
 		l.SubmittedAt = submittedAt(at.In(loc))
 		return l, err
-	}, `
+	}
+	if !retrying {
+		manual, started, err := inManualSLIKEntry(ctx, s.db, caseID)
+		if err != nil || !manual {
+			return page, err
+		}
+		// The run's SLIK rows: requests, results and the timeout or Bypass row
+		// (agreed for TBD-048g).
+		logs, err := collect(ctx, s, logEntry, `
+			SELECT api_name, submitted_at, api_status, COALESCE(request, ''), COALESCE(response, '')
+			FROM fos.connect_api_log
+			WHERE case_id = $1 AND api_name IN ($2, $3, $4) AND submitted_at >= $5
+			ORDER BY submitted_at, attempt_number`, caseID, slikSubjects[subjectCustomer].api.logName, slikSubjects[subjectSpouse].api.logName, apiPBSResponse, started)
+		if err != nil {
+			return ReviewPage{}, err
+		}
+		if logs == nil {
+			logs = []APILogEntry{}
+		}
+		page.SLIKTimeout = &RetryView{Logs: logs}
+		return page, nil
+	}
+	// The failed API's attempts of the newest run, its last cycle only: the
+	// API inside the step when it has several (Pefindo), else the step's.
+	var step, api string
+	var attempts int
+	var started time.Time
+	if err := s.db.QueryRow(ctx, `SELECT current_step, COALESCE(current_api, ''), attempt, started_at FROM fos.prescreening_runs WHERE run_id = `+latestRun+` AND state = $2`,
+		caseID, runStoppedFailed).Scan(&step, &api, &attempts, &started); err != nil && !isNotFound(err) {
+		return ReviewPage{}, err
+	}
+	if api == "" {
+		api = s.runs.apiNameOf(step)
+	}
+	logs, err := collect(ctx, s, logEntry, `
 		SELECT * FROM (
 			SELECT api_name, submitted_at, api_status, COALESCE(request, ''), COALESCE(response, '')
 			FROM fos.connect_api_log
 			WHERE case_id = $1 AND api_name = $2 AND submitted_at >= $3
 			ORDER BY submitted_at DESC, attempt_number DESC
 			LIMIT $4
-		) last ORDER BY submitted_at`, caseID, s.runs.apiNameOf(step), started, attempts)
+		) last ORDER BY submitted_at`, caseID, api, started, attempts)
 	if err != nil {
 		return ReviewPage{}, err
 	}
@@ -251,7 +280,16 @@ func (s *Service) SubmitReview(ctx context.Context, sess auth.Session, caseID st
 		if _, err := tx.Exec(ctx, `UPDATE fos.work SET case_status = $2 WHERE case_id = $1`, caseID, CaseStatusPendingPreScreening); err != nil {
 			return err
 		}
-		if runID, err = s.runs.startRun(ctx, tx, caseID); err != nil {
+		// After Manual SLIK Entry the run goes on at Pefindo (agreed for ticket 12).
+		manual, _, err := inManualSLIKEntry(ctx, tx, caseID)
+		if err != nil {
+			return err
+		}
+		start := s.runs.startRun
+		if manual {
+			start = s.runs.resumeAfterManualSLIK
+		}
+		if runID, err = start(ctx, tx, caseID); err != nil {
 			return err
 		}
 	}

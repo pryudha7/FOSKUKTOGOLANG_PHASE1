@@ -14,3 +14,5 @@
 - [ ] Form switching resets every field (AC-FR-APP-002-25/26/27)
 - [ ] Document Underlying Upload for Badan Usaha (UI-011 Varian Badan Usaha, AC-UI-011-13/14, AC-FR-FILE-004-08, AC-FR-FILE-005-02): seed DOCPRE-1 and its Document Mapping Value rows, banner 100 MB, SLIK Worst Collect 0-5 (ERR-010, ERR-028), Create with 100 MB limit (moved from ticket 07)
 - [ ] Verified at the HTTP API seam against a real PostgreSQL, with external systems faked at the network boundary.
+
+Moved here from ticket 12 (2026-10-24): AC-FR-PSAPI-011-03, the SLIK Worst Collect field on an Individual case's Document Underlying Upload after a SLIK timeout (PROPOSED; whether it is required: TBD-044e), the same field as the Business Entity variant.

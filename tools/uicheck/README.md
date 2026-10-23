@@ -20,6 +20,7 @@ Before running: start PostgreSQL, the backend and `next start -p 13000` (see the
 | `review.js` | Team Lead Pre Screening: form, errors, Tidak Sesuai, Notes banner on the returned Pre-Screening Submission, History Pre-screening Notes (ticket 08); also needs operator TL01 |
 | `retry.js` | Sesuai starts the Pre-Screening Check; Dukcapil on a closed port fails four times; the Team Lead's Retry view (Gambar 35) and its Submit (ticket 09); needs `api/dukcapil/baseurl` set to a closed port and `DUKCAPIL_APIKEY` in the backend environment |
 | `duu.js` | Document Underlying Upload: document list, Upload Document modal, document icon download, attachments panel, ERR-035 popup (ticket 07) |
+| `slik.js` | Manual SLIK Entry after a SLIK timeout (set up through psql): ERR-036 banner on Create until the SLIK document is uploaded, then the Team Lead's Pre Screening with API Log History above History Pre-screening Notes and the decision (ticket 12); needs what `create.js`, `review.js` and `duu.js` need |
 
 No UI check for ticket 13 either: its screens (UI-021 Pefindo) are ticket 14.
 

@@ -12,3 +12,5 @@
 - [ ] Verified at the HTTP API seam against a real PostgreSQL, with external systems faked at the network boundary.
 
 Split out of ticket 11 (2026-10-23). Blocking questions before work: the PDF library (a new dependency), fonts (TBD-045), CustomerCode in the file name (TBD-044).
+
+Moved here from ticket 12 (2026-10-24): AC-FR-PSAPI-010-06, the copy of the automatic SLIK PDF into Dokumen Pre-Screening when Document Underlying Upload reopens (DB-RULE-097 (1)).

@@ -203,7 +203,8 @@ func TestSLIKRequestsCustomerThenSpouse(t *testing.T) {
 	}
 }
 
-// AC-FR-PSAPI-008-02, -03, -04: a 4000 is a Fail retried with the same kode
+// AC-FR-PSAPI-008-02, -03, -04, AC-FR-PSAPI-019-02 (bypass off): a 4000 is
+// a Fail retried with the same kode
 // reff, the same ZIP and no new slik_report; without a Spouse only SLIK runs.
 func TestSLIKFailRetriesWithTheSameKodeReff(t *testing.T) {
 	h, fs, caseID := slikCase(t, false, apptest.SLIKInvalid, apptest.SLIKAccepted)

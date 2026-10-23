@@ -417,7 +417,17 @@ func TestPefindoStillScoringFailsAndRetryResumesAtTheFailedAPI(t *testing.T) {
 	as := assignments(t, h, caseID)
 	retry := as[len(as)-1]
 	tl := relogin(t, h, "TL01")
-	tl.OpenAssignment(t, caseID, retry.ID)
+	// The Retry view lists the failed API's attempts (agreed for ticket 12).
+	p := tl.OpenAssignment(t, caseID, retry.ID)
+	rows, _ := field(t, p, "page", "retry", "logs").([]any)
+	if len(rows) != 4 {
+		t.Fatalf("retry rows = %s", p.Raw)
+	}
+	for _, row := range rows {
+		if row.(map[string]any)["name"] != "PefindoGetReport" {
+			t.Fatalf("retry rows = %s", p.Raw)
+		}
+	}
 	fp.Script(apptest.PefindoReport, reportReady("36"))
 	if r := tl.Do(t, http.MethodPost, submitPath(caseID, retry.ID, "retry"), nil); r.Status != http.StatusNoContent {
 		t.Fatalf("retry = %d %s", r.Status, r.Raw)

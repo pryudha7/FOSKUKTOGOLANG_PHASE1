@@ -13,11 +13,15 @@ export default function DesktopShell({
   endpointPath,
   loginPath,
   current,
+  layout = "page",
   children,
 }: {
   endpointPath: string;
   loginPath: string;
   current: MenuKey;
+  // "case": Case View fills the content area edge to edge with no "FOS"
+  // title, as on Gambar 17.
+  layout?: "page" | "case";
   children?: ReactNode;
 }) {
   const me = useSession(endpointPath, loginPath);
@@ -29,9 +33,9 @@ export default function DesktopShell({
       <div className={styles.sidebarSlot}>
         <Sidebar me={me} endpointPath={endpointPath} current={current} />
       </div>
-      <main className={styles.content}>
+      <main className={layout === "case" ? styles.contentCase : styles.content}>
         {/* UI-008: "FOS" title at the top left of the content area. */}
-        <h1 className={styles.title}>FOS</h1>
+        {layout === "page" && <h1 className={styles.title}>FOS</h1>}
         {children}
       </main>
       {me.idle && <IdleWarning endpointPath={endpointPath} loginPath={me.loginPath} idle={me.idle} />}

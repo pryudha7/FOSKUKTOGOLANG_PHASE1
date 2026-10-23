@@ -2,7 +2,7 @@
 
 **What to build:** On Financing Submission the Branch Officer moves between Pre-Screening Submission and Document Underlying Upload, uploads, views and downloads Underlying Documents (stored in GCS), and sees the Nomor Memo generated for the SLIK request.
 
-**Blocked by:** 05: Create Financing Case + Pre-Screening Submission
+**Blocked by:** 30: Pre-Screening Submission: Individual
 
 **Status:** ready-for-agent
 

@@ -2,7 +2,7 @@
 
 **What to build:** Opening an assignment locks it to that operator; another operator cannot work it until the lock is released after 30 idle minutes, or an Author force-unlocks it.
 
-**Blocked by:** 05: Create Financing Case + Pre-Screening Submission
+**Blocked by:** 05: Create Financing Case + Case View frame
 
 **Status:** ready-for-agent
 

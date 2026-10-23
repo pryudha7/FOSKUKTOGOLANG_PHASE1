@@ -17,8 +17,16 @@ export type Me = {
   idle: { warnAfterSeconds: number; logoffAfterSeconds: number } | null;
   loginPath: string;
   // Parent case types the operator may create (FR-NAV-003); empty hides Create.
-  caseTypes: string[];
+  caseTypes: CaseType[];
 };
+
+// code is the stored case type (e.g. "Loan Financing"); label is shown ("Financing").
+export type CaseType = { code: string; label: string };
+
+// Case View routes on the desktop endpoint (FR-CASE-008).
+export function assignmentPath(endpointPath: string, caseId: string, assignmentId: number): string {
+  return `${endpointPath}/case/${encodeURIComponent(caseId)}/assignment/${assignmentId}`;
+}
 
 // Ends the endpoint's session on the server, then opens its login page.
 export async function logOff(endpointPath: string, loginPath: string): Promise<void> {

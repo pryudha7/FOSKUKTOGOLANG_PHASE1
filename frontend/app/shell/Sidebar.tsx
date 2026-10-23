@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { logOff, type Me } from "@/lib/api";
+import { apiFetch, assignmentPath, logOff, type CaseType, type Me } from "@/lib/api";
 import Avatar from "./Avatar";
 import {
   ChevronIcon,
@@ -15,7 +15,8 @@ import {
 } from "./icons";
 import styles from "./shell.module.css";
 
-export type MenuKey = "home";
+// The current menu, if the page belongs to one (Case View belongs to none).
+export type MenuKey = "home" | null;
 
 // UI-008 sidebar: collapsed by default, expanded while hovered or focused
 // (agreed for TBD-019). Menus whose destination is TBD-019 are shown but do
@@ -51,7 +52,7 @@ export default function Sidebar({
         {me.caseTypes.length > 0 && (
           <li>
             {/* Remounted per expansion, so Create starts closed each time. */}
-            <CreateMenu key={String(expanded)} caseTypes={me.caseTypes} expanded={expanded} />
+            <CreateMenu key={String(expanded)} caseTypes={me.caseTypes} expanded={expanded} endpointPath={endpointPath} />
           </li>
         )}
         <li>
@@ -112,8 +113,37 @@ function MenuButton({
 
 // FR-NAV-003: closed shows + and a right arrow; open shows X, a down arrow
 // and the parent case types underneath (UI-008, Gambar 7 and 8).
-function CreateMenu({ caseTypes, expanded }: { caseTypes: string[]; expanded: boolean }) {
+function CreateMenu({
+  caseTypes,
+  expanded,
+  endpointPath,
+}: {
+  caseTypes: CaseType[];
+  expanded: boolean;
+  endpointPath: string;
+}) {
   const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  // FR-APP-001: choosing a case type creates the case at once (TBD-023a,
+  // agreed) and opens its first assignment in Case View.
+  async function create(caseType: CaseType) {
+    if (creating) {
+      return;
+    }
+    setCreating(true);
+    const res = await apiFetch(`${endpointPath}/api/cases`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ caseType: caseType.code }),
+    }).catch(() => null);
+    if (res?.status === 201) {
+      const body = (await res.json()) as { caseId: string; assignmentId: number };
+      window.location.assign(assignmentPath(endpointPath, body.caseId, body.assignmentId));
+      return;
+    }
+    setCreating(false);
+  }
   return (
     <>
       <button
@@ -135,10 +165,9 @@ function CreateMenu({ caseTypes, expanded }: { caseTypes: string[]; expanded: bo
       {open && expanded && (
         <ul className={styles.submenu}>
           {caseTypes.map((caseType) => (
-            <li key={caseType}>
-              {/* Starting a Financing Case (FR-APP-001) arrives in ticket 05. */}
-              <button type="button" className={styles.submenuItem}>
-                {caseType}
+            <li key={caseType.code}>
+              <button type="button" className={styles.submenuItem} disabled={creating} onClick={() => create(caseType)}>
+                {caseType.label}
               </button>
             </li>
           ))}

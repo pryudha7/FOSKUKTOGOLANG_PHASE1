@@ -25,12 +25,13 @@ export function middleware(req: NextRequest) {
     if (pathname.startsWith(`${ep.path}/api/`)) {
       return toBackend();
     }
-    if (pathname === ep.path) {
-      return NextResponse.rewrite(new URL(ep.route, req.url));
+    // The endpoint home and its pages, e.g. <desktop>/case/LF-1/assignment/7.
+    if (pathname === ep.path || pathname.startsWith(`${ep.path}/`)) {
+      return NextResponse.rewrite(new URL(ep.route + pathname.slice(ep.path.length) + search, req.url));
     }
   }
   // The internal routes are reachable only through their configured paths.
-  if (pathname === "/login" || all.some((ep) => ep.route === pathname)) {
+  if (pathname === "/login" || all.some((ep) => pathname === ep.route || pathname.startsWith(`${ep.route}/`))) {
     return new NextResponse(null, { status: 404 });
   }
   return NextResponse.next();

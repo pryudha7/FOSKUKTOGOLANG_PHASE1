@@ -2,7 +2,7 @@
 
 **What to build:** After login, operators see their latest activity and their worklist and work queue assignments.
 
-**Blocked by:** 05: Create Financing Case + Pre-Screening Submission
+**Blocked by:** 05: Create Financing Case + Case View frame
 
 **Status:** ready-for-agent
 

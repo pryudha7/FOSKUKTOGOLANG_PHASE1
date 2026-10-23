@@ -13,9 +13,10 @@ import (
 // Financing; child case types such as Phone Verification are never offered.
 func TestCreatableCaseTypesFollowTheRole(t *testing.T) {
 	h := apptest.New(t)
+	financing := map[string]any{"code": "Loan Financing", "label": "Financing"}
 	for role, want := range map[string][]any{
-		"AO":  {"Financing"},
-		"SAO": {"Financing"},
+		"AO":  {financing},
+		"SAO": {financing},
 		"TL":  {},
 		"BM":  {},
 		"FAO": {},
@@ -41,7 +42,8 @@ func TestCreateFollowsRoleCodeNotName(t *testing.T) {
 		VALUES ('SAO-COPY', 'SAO', TRUE, now(), now())`); err != nil {
 		t.Fatal(err)
 	}
-	for role, want := range map[string][]any{"AO": {"Financing"}, "SAO-COPY": {}} {
+	financing := map[string]any{"code": "Loan Financing", "label": "Financing"}
+	for role, want := range map[string][]any{"AO": {financing}, "SAO-COPY": {}} {
 		me := loggedIn(t, h, apptest.Operator{UserID: "U-" + role, RoleCode: role}).Me(t)
 		if got, _ := me.Body["caseTypes"].([]any); !reflect.DeepEqual(got, want) {
 			t.Fatalf("role code %s: caseTypes = %v, want %v", role, me.Body["caseTypes"], want)

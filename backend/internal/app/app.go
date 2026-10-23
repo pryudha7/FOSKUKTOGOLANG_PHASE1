@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"fos/internal/auth"
+	"fos/internal/cases"
 	"fos/internal/config"
 )
 
@@ -45,8 +46,9 @@ type endpoint struct {
 }
 
 type server struct {
-	cfg  config.Config
-	auth *auth.Service
+	cfg   config.Config
+	auth  *auth.Service
+	cases *cases.Service
 }
 
 // Option adjusts how the app is built.
@@ -62,7 +64,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, opts ...Option) http.Handler {
 	for _, f := range opts {
 		f(&o)
 	}
-	s := &server{cfg: cfg, auth: auth.NewService(pool, cfg.LDAP, o.now)}
+	s := &server{cfg: cfg, auth: auth.NewService(pool, cfg.LDAP, o.now), cases: cases.NewService(pool, o.now)}
 	mux := http.NewServeMux()
 	for _, ep := range []endpoint{
 		{id: auth.EndpointDesktop, path: cfg.EndpointPathDesktop},
@@ -73,6 +75,11 @@ func New(cfg config.Config, pool *pgxpool.Pool, opts ...Option) http.Handler {
 		mux.HandleFunc("GET "+ep.path+"/api/me", s.me(ep))
 		mux.HandleFunc("POST "+ep.path+"/api/logout", s.logout(ep))
 	}
+	// Case functions are desktop-only; mobile functions are TBD-017.
+	desktop := endpoint{id: auth.EndpointDesktop, path: cfg.EndpointPathDesktop}
+	mux.HandleFunc("POST "+desktop.path+"/api/cases", s.createCase(desktop))
+	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}", s.caseFrame(desktop))
+	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}", s.openAssignment(desktop))
 	return s.requireHTTPS(mux)
 }
 
@@ -152,18 +159,6 @@ func toNamedJSON(n *auth.Named) *namedJSON {
 	return &namedJSON{n.Code, n.Name}
 }
 
-// creatableCaseTypes lists the parent case types an operator may create
-// (FR-NAV-003). Only the AO and SAO roles create cases (DEC-029, DEC-030),
-// matched on the stable role_code (§9.3) so renaming a role keeps the rule.
-// "Financing" is the label of the Financing Case, the one parent case type
-// today; child case types are never listed.
-func creatableCaseTypes(role auth.Named) []string {
-	if role.Code == "AO" || role.Code == "SAO" {
-		return []string{"Financing"}
-	}
-	return []string{}
-}
-
 // idleJSON states the FR-ACCESS-005 timings, so the UI holds no copy of them.
 type idleJSON struct {
 	WarnAfterSeconds   int `json:"warnAfterSeconds"`
@@ -189,19 +184,19 @@ func (s *server) me(ep endpoint) http.HandlerFunc {
 			idle = &idleJSON{int(auth.IdleWarning.Seconds()), int(auth.IdleTimeout.Seconds())}
 		}
 		writeJSON(w, http.StatusOK, struct {
-			UserID      string     `json:"userId"`
-			FullName    string     `json:"fullName"`
-			Role        *namedJSON `json:"role"`
-			AccessGroup *namedJSON `json:"accessGroup"`
-			WorkGroup   *namedJSON `json:"workGroup"`
-			WorkQueue   *namedJSON `json:"workQueue"`
-			Idle        *idleJSON  `json:"idle"`
-			LoginPath   string     `json:"loginPath"`
-			CaseTypes   []string   `json:"caseTypes"`
+			UserID      string         `json:"userId"`
+			FullName    string         `json:"fullName"`
+			Role        *namedJSON     `json:"role"`
+			AccessGroup *namedJSON     `json:"accessGroup"`
+			WorkGroup   *namedJSON     `json:"workGroup"`
+			WorkQueue   *namedJSON     `json:"workQueue"`
+			Idle        *idleJSON      `json:"idle"`
+			LoginPath   string         `json:"loginPath"`
+			CaseTypes   []caseTypeJSON `json:"caseTypes"`
 		}{
 			sess.UserID, sess.FullName, toNamedJSON(&sess.Role),
 			toNamedJSON(sess.AccessGroup), toNamedJSON(sess.WorkGroup), toNamedJSON(sess.WorkQueue),
-			idle, s.loginPath(ep, sess.Method), creatableCaseTypes(sess.Role),
+			idle, s.loginPath(ep, sess.Method), toCaseTypesJSON(cases.CreatableCaseTypes(sess.Role)),
 		})
 	}
 }

@@ -148,6 +148,13 @@ func (c *FakeClock) Now() time.Time {
 	return c.now
 }
 
+// Set moves the clock to t.
+func (c *FakeClock) Set(t time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = t.UTC()
+}
+
 func (c *FakeClock) Advance(d time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -162,6 +169,9 @@ type Operator struct {
 	RoleCode string
 	// MobileAccess is the operator's mobile access checklist (FR-ACCESS-003).
 	MobileAccess bool
+	BranchCode   string
+	ReportTo     string // User ID of the Team Lead (pyReportTo)
+	Timezone     string // defaults to the column default, GMT+7
 }
 
 // SeedOperator inserts an operator (and its role, if missing) directly; there
@@ -187,11 +197,24 @@ func (h *Harness) SeedOperator(t *testing.T, op Operator) {
 		t.Fatalf("seed role: %v", err)
 	}
 	_, err = h.DB.Exec(ctx, `
-		INSERT INTO fos.operator (user_id, password_hash, full_name, role_code, mobile_access, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, now() AT TIME ZONE 'UTC', now() AT TIME ZONE 'UTC')`,
-		op.UserID, string(hash), op.FullName, op.RoleCode, op.MobileAccess)
+		INSERT INTO fos.operator (user_id, password_hash, full_name, role_code, mobile_access, branch_code, report_to, timezone, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), NULLIF($7, ''), COALESCE(NULLIF($8, ''), 'GMT+7'),
+			now() AT TIME ZONE 'UTC', now() AT TIME ZONE 'UTC')`,
+		op.UserID, string(hash), op.FullName, op.RoleCode, op.MobileAccess, op.BranchCode, op.ReportTo, op.Timezone)
 	if err != nil {
 		t.Fatalf("seed operator: %v", err)
+	}
+}
+
+// SeedBMV inserts a Business Mapping Value row (sub_type ”). An empty
+// status is stored as ” to exercise DB-RULE-092.
+func (h *Harness) SeedBMV(t *testing.T, bmvType, code, description string, sortOrder int, status string) {
+	t.Helper()
+	if _, err := h.DB.Exec(context.Background(), `
+		INSERT INTO fos.business_mapping_value (code, type, sub_type, description, sort_order, status, created_at, created_by, updated_at, updated_by)
+		VALUES ($1, $2, '', $3, $4, $5, now() AT TIME ZONE 'UTC', 'test', now() AT TIME ZONE 'UTC', 'test')`,
+		code, bmvType, description, sortOrder, status); err != nil {
+		t.Fatalf("seed BMV: %v", err)
 	}
 }
 
@@ -347,6 +370,24 @@ func (c *Client) MeAt(t *testing.T, endpointPath string) Response {
 func (c *Client) Logout(t *testing.T, endpointPath string) Response {
 	t.Helper()
 	return c.Do(t, http.MethodPost, endpointPath+"/api/logout", nil)
+}
+
+// CreateCase starts a case of the given type (FR-APP-001).
+func (c *Client) CreateCase(t *testing.T, caseType string) Response {
+	t.Helper()
+	return c.Do(t, http.MethodPost, EndpointPathDesktop+"/api/cases", map[string]string{"caseType": caseType})
+}
+
+// Case returns the Case View frame of a case (FR-CASE-004/005/006/007).
+func (c *Client) Case(t *testing.T, caseID string) Response {
+	t.Helper()
+	return c.Do(t, http.MethodGet, EndpointPathDesktop+"/api/cases/"+caseID, nil)
+}
+
+// OpenAssignment opens an assignment in mode Assignment (FR-CASE-008).
+func (c *Client) OpenAssignment(t *testing.T, caseID string, assignmentID any) Response {
+	t.Helper()
+	return c.Do(t, http.MethodGet, fmt.Sprintf("%s/api/cases/%s/assignments/%v", EndpointPathDesktop, caseID, assignmentID), nil)
 }
 
 // LoginMobileDatabase submits Database-path credentials on the mobile

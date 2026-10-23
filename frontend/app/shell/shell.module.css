@@ -201,6 +201,12 @@
   padding: 16px 24px;
 }
 
+.contentCase {
+  flex: 1;
+  min-width: 0;
+  padding: 0 0 0 0;
+}
+
 .title {
   margin: 0 0 16px;
   font-size: 20px;

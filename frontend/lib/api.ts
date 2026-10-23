@@ -16,6 +16,8 @@ export type Me = {
   // FR-ACCESS-005 timings, or null when the operator is exempt.
   idle: { warnAfterSeconds: number; logoffAfterSeconds: number } | null;
   loginPath: string;
+  // Parent case types the operator may create (FR-NAV-003); empty hides Create.
+  caseTypes: string[];
 };
 
 // Ends the endpoint's session on the server, then opens its login page.

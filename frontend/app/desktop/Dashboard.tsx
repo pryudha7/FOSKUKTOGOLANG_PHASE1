@@ -1,15 +1,9 @@
 "use client";
 
-import { useSession } from "@/app/session/useSession";
-import IdleWarning from "@/app/session/IdleWarning";
+import DesktopShell from "@/app/shell/DesktopShell";
 
-// Empty Dashboard shell for an authenticated desktop operator; its
-// components arrive in later tickets.
+// UI-009 Dashboard inside the main layout; Home is the current menu. Its
+// components arrive in later tickets (FR-DASH-002 to FR-DASH-004).
 export default function Dashboard({ endpointPath, loginPath }: { endpointPath: string; loginPath: string }) {
-  const me = useSession(endpointPath, loginPath);
-  return (
-    <main aria-busy={!me}>
-      {me?.idle && <IdleWarning endpointPath={endpointPath} loginPath={me.loginPath} idle={me.idle} />}
-    </main>
-  );
+  return <DesktopShell endpointPath={endpointPath} loginPath={loginPath} current="home" />;
 }

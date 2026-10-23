@@ -152,6 +152,17 @@ func toNamedJSON(n *auth.Named) *namedJSON {
 	return &namedJSON{n.Code, n.Name}
 }
 
+// creatableCaseTypes lists the parent case types an operator may create
+// (FR-NAV-003). Only the AO and SAO roles create cases (DEC-029, DEC-030);
+// "Financing" is the display label of Loan Financing, the one parent case
+// type today. Child case types are never listed.
+func creatableCaseTypes(role auth.Named) []string {
+	if role.Name == "AO" || role.Name == "SAO" {
+		return []string{"Financing"}
+	}
+	return []string{}
+}
+
 // idleJSON states the FR-ACCESS-005 timings, so the UI holds no copy of them.
 type idleJSON struct {
 	WarnAfterSeconds   int `json:"warnAfterSeconds"`
@@ -185,10 +196,11 @@ func (s *server) me(ep endpoint) http.HandlerFunc {
 			WorkQueue   *namedJSON `json:"workQueue"`
 			Idle        *idleJSON  `json:"idle"`
 			LoginPath   string     `json:"loginPath"`
+			CaseTypes   []string   `json:"caseTypes"`
 		}{
 			sess.UserID, sess.FullName, toNamedJSON(&sess.Role),
 			toNamedJSON(sess.AccessGroup), toNamedJSON(sess.WorkGroup), toNamedJSON(sess.WorkQueue),
-			idle, s.loginPath(ep, sess.Method),
+			idle, s.loginPath(ep, sess.Method), creatableCaseTypes(sess.Role),
 		})
 	}
 }

@@ -87,6 +87,26 @@ func TestLoginOverPlainHTTPIsRefused(t *testing.T) {
 	if len(login.Header.Values("Set-Cookie")) != 0 {
 		t.Fatalf("a cookie was set over plain HTTP")
 	}
+	if login.Raw != "" {
+		t.Fatalf("body = %q, want none: the request is not processed", login.Raw)
+	}
+	if rows := loginLog(t, h); len(rows) != 0 {
+		t.Fatalf("login_log rows = %d, want 0 for an unprocessed request", len(rows))
+	}
+}
+
+// DB-RULE-071: every attempt that reaches the server is logged, including
+// one the client should have stopped for an empty field.
+func TestEmptyCredentialsReachingTheServerAreRefusedAndLogged(t *testing.T) {
+	h := seededHarness(t)
+	login := h.NewClient().LoginDatabase(t, "AO001", "")
+	if login.Status != http.StatusUnauthorized || login.Body["code"] != "ERR-001" {
+		t.Fatalf("status %d body %v, want 401 ERR-001", login.Status, login.Body)
+	}
+	rows := loginLog(t, h)
+	if len(rows) != 1 || rows[0].Result != "FAIL" || deref(rows[0].ErrorCode) != "ERR-001" {
+		t.Fatalf("login_log = %+v, want one FAIL row with ERR-001", rows)
+	}
 }
 
 // AC-FR-LOGIN-004-01: the password never comes back in a response.

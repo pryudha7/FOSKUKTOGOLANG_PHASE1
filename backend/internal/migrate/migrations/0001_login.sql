@@ -20,7 +20,7 @@ CREATE TABLE fos.operator (
     role_code     VARCHAR NOT NULL REFERENCES fos.roles (role_code), -- DB-RULE-001: exactly one role
     branch_code   VARCHAR,
     report_to     VARCHAR,                                            -- User ID of the Team Lead
-    timezone      VARCHAR NOT NULL DEFAULT 'Asia/Jakarta',            -- GMT+7
+    timezone      VARCHAR NOT NULL DEFAULT 'GMT+7',                   -- format per ENT-005 (TBD-030 open)
     mobile_access BOOLEAN NOT NULL DEFAULT FALSE,
     created_at    TIMESTAMP NOT NULL,
     updated_at    TIMESTAMP NOT NULL

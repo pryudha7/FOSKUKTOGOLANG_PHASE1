@@ -5,5 +5,5 @@ import LoginForm from "./LoginForm";
 export const dynamic = "force-dynamic";
 
 export default function LoginPage() {
-  return <LoginForm endpointPath={requireEnv("ENDPOINT_PATH_DESKTOP")} />;
+  return <LoginForm loginPath={requireEnv("LOGIN_PATH_DB")} endpointPath={requireEnv("ENDPOINT_PATH_DESKTOP")} />;
 }

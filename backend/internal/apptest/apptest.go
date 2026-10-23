@@ -81,7 +81,13 @@ type Harness struct {
 
 // New starts the backend on a fresh database. Requests made through the
 // harness arrive as HTTPS forwarded by a trusted proxy unless stated otherwise.
-func New(t *testing.T) *Harness {
+// Each configure function may adjust the configuration before the app starts,
+// e.g. to point an integration URL at a fake server:
+//
+//	fake := httptest.NewServer(handler)
+//	t.Cleanup(fake.Close)
+//	h := apptest.New(t, func(c *config.Config) { c.SomeAPIURL = fake.URL })
+func New(t *testing.T, configure ...func(*config.Config)) *Harness {
 	t.Helper()
 	containerOnce.Do(startContainer)
 	if containerErr != nil {
@@ -105,6 +111,9 @@ func New(t *testing.T) *Harness {
 		LoginPathDB:         LoginPathDB,
 		EndpointPathDesktop: EndpointPathDesktop,
 		TrustedProxyCIDRs:   []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32"), netip.MustParsePrefix("::1/128")},
+	}
+	for _, f := range configure {
+		f(&cfg)
 	}
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -244,11 +253,12 @@ func (c *Client) Do(t *testing.T, method, path string, body any) Response {
 	return out
 }
 
-// LoginDatabase submits the Database-path login.
+// LoginDatabase submits credentials to LOGIN_PATH_DB (API-002): username and
+// password only.
 func (c *Client) LoginDatabase(t *testing.T, username, password string) Response {
 	t.Helper()
-	return c.Do(t, http.MethodPost, EndpointPathDesktop+"/api/auth/login",
-		map[string]string{"method": "DATABASE", "username": username, "password": password})
+	return c.Do(t, http.MethodPost, LoginPathDB,
+		map[string]string{"username": username, "password": password})
 }
 
 // Me returns the operator of the current session.

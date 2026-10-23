@@ -16,25 +16,22 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Method is the login path used (ENV-003).
-type Method string
-
-const (
-	MethodDatabase Method = "DATABASE"
-	MethodLDAP     Method = "LDAP"
-)
-
 // Endpoint is the channel a session belongs to (FR-ACCESS-004).
 type Endpoint string
 
 const EndpointDesktop Endpoint = "DESKTOP"
 
+// LoginError is a login refusal carrying its SoT error code (§12).
+type LoginError struct{ Code string }
+
+func (e *LoginError) Error() string { return "login refused: " + e.Code }
+
 var (
 	// ErrInvalidCredential is ERR-001: wrong username or password, unknown
 	// user, or unregistered operator. Callers must not tell these apart.
-	ErrInvalidCredential = errors.New("invalid credential")
+	ErrInvalidCredential = &LoginError{Code: "ERR-001"}
 	// ErrDatabaseUnavailable is ERR-003.
-	ErrDatabaseUnavailable = errors.New("database unavailable")
+	ErrDatabaseUnavailable = &LoginError{Code: "ERR-003"}
 )
 
 // Operator is the authenticated operator.
@@ -45,7 +42,6 @@ type Operator struct {
 
 // Attempt is one login attempt as received by the server.
 type Attempt struct {
-	Method    Method
 	Username  string
 	Password  string
 	ClientIP  string
@@ -68,8 +64,8 @@ var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("dummy-password"), bcrypt.
 
 // LoginDatabase authenticates against the FOS operator database
 // (FR-LOGIN-003) and, on success, opens a session whose token is returned.
+// Every attempt is written to login_log (DB-RULE-071).
 func (s *Service) LoginDatabase(ctx context.Context, a Attempt) (Operator, string, error) {
-	a.Method = MethodDatabase
 	var (
 		op   Operator
 		hash string
@@ -80,24 +76,27 @@ func (s *Service) LoginDatabase(ctx context.Context, a Attempt) (Operator, strin
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(a.Password))
-		s.logAttempt(ctx, a, "", failInvalidCredential)
-		return Operator{}, "", ErrInvalidCredential
+		return s.refuse(ctx, a, "", ErrInvalidCredential)
 	case err != nil:
 		slog.Error("operator lookup failed", "error", err)
-		return Operator{}, "", ErrDatabaseUnavailable
+		return s.refuse(ctx, a, "", ErrDatabaseUnavailable)
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(a.Password)) != nil {
-		s.logAttempt(ctx, a, op.UserID, failInvalidCredential)
-		return Operator{}, "", ErrInvalidCredential
+		return s.refuse(ctx, a, op.UserID, ErrInvalidCredential)
 	}
 
 	token, err := s.openSession(ctx, op.UserID, a.Endpoint)
 	if err != nil {
 		slog.Error("open session failed", "error", err)
-		return Operator{}, "", ErrDatabaseUnavailable
+		return s.refuse(ctx, a, op.UserID, ErrDatabaseUnavailable)
 	}
-	s.logAttempt(ctx, a, op.UserID, "")
+	s.logAttempt(ctx, a, op.UserID, nil)
 	return op, token, nil
+}
+
+func (s *Service) refuse(ctx context.Context, a Attempt, operatorUserID string, e *LoginError) (Operator, string, error) {
+	s.logAttempt(ctx, a, operatorUserID, e)
+	return Operator{}, "", e
 }
 
 // SessionOperator returns the operator owning a live session token.
@@ -130,21 +129,24 @@ func hashToken(token string) []byte {
 	return sum[:]
 }
 
-// fail_reason values (SoT §9.21).
-const failInvalidCredential = "INVALID_CREDENTIAL"
+// failReasons maps a refusal to its login_log fail_reason (SoT §9.21). The
+// SoT defines no reason for ERR-003, so it stays NULL.
+var failReasons = map[*LoginError]string{
+	ErrInvalidCredential: "INVALID_CREDENTIAL",
+}
 
-// logAttempt writes one login_log row (FR-LOGIN-006). A write failure never
-// changes the login outcome (DB-RULE-072).
-func (s *Service) logAttempt(ctx context.Context, a Attempt, operatorUserID, failReason string) {
-	result, errorCode := "SUCCESS", ""
-	if failReason != "" {
-		result, errorCode = "FAIL", "ERR-001"
+// logAttempt writes one login_log row (FR-LOGIN-006); refusal is nil on
+// success. A write failure never changes the login outcome (DB-RULE-072).
+func (s *Service) logAttempt(ctx context.Context, a Attempt, operatorUserID string, refusal *LoginError) {
+	result, failReason, errorCode := "SUCCESS", "", ""
+	if refusal != nil {
+		result, failReason, errorCode = "FAIL", failReasons[refusal], refusal.Code
 	}
 	_, err := s.db.Exec(ctx, `
 		INSERT INTO fos.login_log
 			(login_id, operator_user_id, auth_method, result, fail_reason, error_code, client_ip, user_agent, attempted_at)
-		VALUES ($1, NULLIF($2, ''), $3, $4, NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), $9)`,
-		a.Username, operatorUserID, string(a.Method), result, failReason, errorCode, a.ClientIP, a.UserAgent, s.now())
+		VALUES ($1, NULLIF($2, ''), 'DATABASE', $3, NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), $8)`,
+		a.Username, operatorUserID, result, failReason, errorCode, a.ClientIP, a.UserAgent, s.now())
 	if err != nil {
 		slog.Error("LOGIN_LOG_WRITE_FAILED", "error", err)
 	}

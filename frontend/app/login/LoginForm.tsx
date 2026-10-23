@@ -3,10 +3,13 @@
 import { useState, type FormEvent } from "react";
 import styles from "./login.module.css";
 
+// Shown when the backend cannot be reached or gives no SoT error (§12).
+const unavailableMessage = "Layanan sedang tidak tersedia. Silakan coba beberapa saat lagi.";
+
 // UI-001: Logo, title, [error banner], Username, Password, Login. Nothing else.
 // The password lives only in component state: never in the URL or browser
 // storage (FR-LOGIN-004).
-export default function LoginForm({ endpointPath }: { endpointPath: string }) {
+export default function LoginForm({ loginPath, endpointPath }: { loginPath: string; endpointPath: string }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -21,19 +24,20 @@ export default function LoginForm({ endpointPath }: { endpointPath: string }) {
     }
     setSubmitting(true);
     try {
-      const res = await fetch(`${endpointPath}/api/auth/login`, {
+      // API-002: POST LOGIN_PATH_DB with username and password only.
+      const res = await fetch(loginPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ method: "DATABASE", username, password }),
+        body: JSON.stringify({ username, password }),
       });
       if (res.ok) {
         window.location.assign(endpointPath);
         return;
       }
       const body = (await res.json().catch(() => null)) as { message?: string } | null;
-      fail(body?.message ?? "Layanan sedang tidak tersedia. Silakan coba beberapa saat lagi.");
+      fail(body?.message ?? unavailableMessage);
     } catch {
-      fail("Layanan sedang tidak tersedia. Silakan coba beberapa saat lagi.");
+      fail(unavailableMessage);
     }
   }
 

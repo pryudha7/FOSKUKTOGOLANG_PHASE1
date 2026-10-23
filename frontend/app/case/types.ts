@@ -61,16 +61,32 @@ export type DocumentCategory = {
   documents: { documentType: string; mandatory: boolean; file: StoredFile | null }[];
 };
 
+// SLIK Request Data (UI-011, Perorangan): BMV codes and Alamat Nasabah.
+export type SLIKRequest = {
+  requestPurpose: string;
+  facilityOption: string;
+  address: string;
+  searchType: string;
+  segmentation: string;
+};
+
 export type UnderlyingPage = {
   customerType: string;
   memoNumber: string; // empty until it can be formed (FR-APP-008)
+  // Perorangan only: the saved values and each dropdown's options.
+  slik: {
+    values: SLIKRequest;
+    options: Record<"requestPurpose" | "facilityOption" | "searchType" | "segmentation", Option[]>;
+  } | null;
   totalLimitMb: number;
   categories: DocumentCategory[];
   listError: { code: string; message: string } | null; // ERR-027
   editable: boolean;
 };
 
-export type Section = "form" | "customer" | "spouse" | "upload";
+// "documents" errors (ERR-026) belong to a document row, keyed
+// "<category>/<document type>", and are not banner items.
+export type Section = "form" | "customer" | "spouse" | "upload" | "slik" | "documents";
 
 // A validation failure returned with 422 by a submit: key is the stable
 // field key, field the label shown in the banner.

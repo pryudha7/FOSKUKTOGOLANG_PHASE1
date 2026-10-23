@@ -1,23 +1,27 @@
 "use client";
 
-import { useState } from "react";
-import { moveAssignment, type AssignmentRef } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { apiFetch, moveAssignment, type AssignmentRef } from "@/lib/api";
 import AssignmentHeader from "./AssignmentHeader";
 import Breadcrumb, { preScreeningSteps } from "./Breadcrumb";
 import ErrorBanner from "./ErrorBanner";
+import Field from "./Field";
 import NoAccessPopup from "./NoAccessPopup";
 import UploadDocumentModal from "./UploadDocumentModal";
 import { downloadFile } from "./documents";
 import { customerTypeIndividual, unavailableMessage } from "./names";
-import type { DocumentCategory, StoredFile, UnderlyingPage } from "./types";
+import type { DocumentCategory, FieldError, Option, SLIKRequest, StoredFile, UnderlyingPage } from "./types";
 import styles from "./case.module.css";
 
 type UploadTarget = { category: DocumentCategory; documentType: string };
 
-// UI-011 Document Underlying Upload (Gambar 15, 16, 23): the document list
-// with upload and download, and SLIK Request Data with the Nomor Memo. The
-// other SLIK fields and what Create does arrive in ticket 33; until then
-// Create shows disabled.
+// Alamat Nasabah's limit; the server checks it again (ERR-029).
+const addressMaxLength = 350;
+
+// UI-011 Document Underlying Upload (Gambar 15, 16, 23, 24): the document
+// list with upload and download, SLIK Request Data, and Create, which on
+// success hands the case to the Team Lead and returns to the Dashboard
+// (FR-FILE-004, FR-APP-009). Errors stay until Create is pressed again.
 export default function UnderlyingDocumentUpload({
   page,
   assignment,
@@ -31,6 +35,38 @@ export default function UnderlyingDocumentUpload({
   const [failed, setFailed] = useState(false);
   const [uploading, setUploading] = useState<UploadTarget | null>(null);
   const [noAccess, setNoAccess] = useState(false);
+  const [slik, setSLIK] = useState<SLIKRequest>(
+    page.slik?.values ?? { requestPurpose: "", facilityOption: "", address: "", searchType: "", segmentation: "" },
+  );
+  const [errors, setErrors] = useState<FieldError[]>([]);
+  const [creating, setCreating] = useState(false);
+
+  async function create() {
+    if (creating || !page.editable) {
+      return;
+    }
+    setCreating(true);
+    setFailed(false);
+    const url = `${assignment.endpointPath}/api/cases/${encodeURIComponent(assignment.caseId)}/assignments/${assignment.assignmentId}/create`;
+    const res = await apiFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(slik),
+    }).catch(() => null);
+    if (res?.ok) {
+      window.location.assign(assignment.endpointPath);
+      return;
+    }
+    if (res?.status === 422) {
+      setErrors(((await res.json()) as { errors: FieldError[] }).errors);
+    } else {
+      setErrors([]);
+      setFailed(true);
+    }
+    setCreating(false);
+  }
+
+  const slikError = (key: string) => errors.find((e) => e.section === "slik" && e.key === key);
 
   async function back() {
     if (moving) {
@@ -52,7 +88,10 @@ export default function UnderlyingDocumentUpload({
 
   return (
     <div className={styles.assignmentArea}>
-      <ErrorBanner errors={[]} message={page.listError?.message ?? (failed ? unavailableMessage : undefined)} />
+      <ErrorBanner
+        errors={errors.filter((e) => e.section !== "documents")}
+        message={page.listError?.message ?? (failed ? unavailableMessage : undefined)}
+      />
       <section className={styles.card}>
         <AssignmentHeader title="Document Underlying Upload" />
         <Breadcrumb steps={preScreeningSteps} active={1} onSelect={(i) => i === 0 && page.editable && back()} />
@@ -77,20 +116,67 @@ export default function UnderlyingDocumentUpload({
               key={c.code}
               category={c}
               editable={page.editable}
+              missing={errors.filter((e) => e.section === "documents" && e.key.startsWith(`${c.code}/`)).map((e) => e.field)}
               onUpload={(documentType) => setUploading({ category: c, documentType })}
               onDownload={download}
             />
           ))}
         </div>
         {/* Badan Usaha shows SLIK Worst Collect instead (ticket 31). */}
-        {page.customerType === customerTypeIndividual && (
+        {page.customerType === customerTypeIndividual && page.slik && (
           <>
             <h3 className={styles.sectionTitle}>SLIK Request Data</h3>
             <div className={styles.formPanel}>
+              <SLIKSelect
+                label="Tujuan Permintaan"
+                placeholder="Pilih Tujuan Permintaan"
+                options={page.slik.options.requestPurpose}
+                value={slik.requestPurpose}
+                error={slikError("requestPurpose")?.message}
+                disabled={!page.editable}
+                onChange={(v) => setSLIK({ ...slik, requestPurpose: v })}
+              />
+              <SLIKSelect
+                label="Pilihan Fasilitas"
+                placeholder="Pilih Fasilitas"
+                options={page.slik.options.facilityOption}
+                value={slik.facilityOption}
+                error={slikError("facilityOption")?.message}
+                disabled={!page.editable}
+                onChange={(v) => setSLIK({ ...slik, facilityOption: v })}
+              />
               <div className={styles.field}>
                 <span className={styles.fieldLabel}>Nomor Memo</span>
                 <span className={styles.readOnlyValue}>{page.memoNumber}</span>
               </div>
+              <Field label="Alamat Nasabah" required error={slikError("address")?.message}>
+                <textarea
+                  aria-label="Alamat Nasabah"
+                  className={!page.editable ? styles.textareaDisabled : slikError("address") ? styles.textareaInvalid : styles.textarea}
+                  maxLength={addressMaxLength}
+                  value={slik.address}
+                  disabled={!page.editable}
+                  onChange={(e) => setSLIK({ ...slik, address: e.target.value })}
+                />
+              </Field>
+              <SLIKSelect
+                label="Tipe Pencarian"
+                placeholder="Pilih Tipe Pencarian"
+                options={page.slik.options.searchType}
+                value={slik.searchType}
+                error={slikError("searchType")?.message}
+                disabled={!page.editable}
+                onChange={(v) => setSLIK({ ...slik, searchType: v })}
+              />
+              <SLIKSelect
+                label="Segmentasi"
+                placeholder="Pilih Segmentasi"
+                options={page.slik.options.segmentation}
+                value={slik.segmentation}
+                error={slikError("segmentation")?.message}
+                disabled={!page.editable}
+                onChange={(v) => setSLIK({ ...slik, segmentation: v })}
+              />
             </div>
           </>
         )}
@@ -106,7 +192,7 @@ export default function UnderlyingDocumentUpload({
             )}
           </span>
           {page.editable && (
-            <button type="button" className={styles.next} disabled>
+            <button type="button" className={styles.next} disabled={creating} onClick={create}>
               Create
             </button>
           )}
@@ -129,25 +215,82 @@ export default function UnderlyingDocumentUpload({
   );
 }
 
+// A SLIK dropdown: BMV descriptions shown, codes stored (UI-011).
+function SLIKSelect({
+  label,
+  placeholder,
+  options,
+  value,
+  error,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  placeholder: string;
+  options: Option[];
+  value: string;
+  error?: string;
+  disabled: boolean;
+  onChange: (code: string) => void;
+}) {
+  return (
+    <Field label={label} required error={error}>
+      <select
+        aria-label={label}
+        className={disabled ? styles.inputDisabled : error ? styles.inputInvalid : styles.input}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="" disabled>
+          {placeholder}
+        </option>
+        {options.map((o) => (
+          <option key={o.code} value={o.code}>
+            {o.description}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+}
+
 // One accordion, closed at first (AC-UI-011-02). A clicked row is
 // highlighted (AC-UI-011-04); only the document icon downloads
-// (FR-FILE-003, AC-FR-FILE-003-06).
+// (FR-FILE-003, AC-FR-FILE-003-06). After Create, rows missing a mandatory
+// file show ERR-026 and the accordion opens with the error marker left of
+// its chevron (Gambar 24, agreed over the written "right").
 function CategoryAccordion({
   category,
   editable,
+  missing,
   onUpload,
   onDownload,
 }: {
   category: DocumentCategory;
   editable: boolean;
+  missing: string[];
   onUpload: (documentType: string) => void;
   onDownload: (file: StoredFile) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const hasErrors = missing.length > 0;
+  // Opens once per Create result; the operator may close it again.
+  const missingKey = missing.join("|");
+  useEffect(() => {
+    if (missingKey) {
+      setOpen(true);
+    }
+  }, [missingKey]);
   return (
     <div className={styles.accordion}>
       <button type="button" className={styles.accordionHeader} aria-expanded={open} onClick={() => setOpen(!open)}>
+        {hasErrors && (
+          <span className={styles.accordionError} role="img" aria-label="Error">
+            ▲
+          </span>
+        )}
         <span className={open ? styles.chevronOpen : styles.chevron} aria-hidden="true">
           ›
         </span>
@@ -189,6 +332,7 @@ function CategoryAccordion({
                       </button>
                     )}
                     {d.documentType}
+                    {missing.includes(d.documentType) && <span className={styles.documentError}>Harap upload dokumen wajib</span>}
                   </span>
                 </td>
                 <td className={styles.documentNote}>{d.mandatory ? "Mandatory" : "Conditional"}</td>

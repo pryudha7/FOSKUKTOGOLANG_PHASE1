@@ -18,6 +18,8 @@ type UnderlyingPage struct {
 	CustomerType string
 	// MemoNumber is the Nomor Memo (FR-APP-008); empty until it can be formed.
 	MemoNumber string
+	// SLIK is SLIK Request Data, shown for Perorangan only.
+	SLIK *SLIKSection
 	// TotalLimitMB is the total upload limit of the Tipe Nasabah (FR-FILE-004).
 	TotalLimitMB int
 	Categories   []DocumentCategory
@@ -95,6 +97,13 @@ func (s *Service) underlyingPage(ctx context.Context, userID, caseID string, edi
 		categories = []DocumentCategory{}
 	}
 	page.Categories = categories
+	if page.CustomerType == customerTypeIndividual {
+		sec, err := s.slikSection(ctx, caseID)
+		if err != nil {
+			return UnderlyingPage{}, err
+		}
+		page.SLIK = &sec
+	}
 	return page, nil
 }
 

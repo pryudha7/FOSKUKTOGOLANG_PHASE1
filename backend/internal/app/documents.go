@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -28,9 +29,41 @@ type categoryJSON struct {
 	Documents []documentJSON `json:"documents"`
 }
 
+type slikRequestJSON struct {
+	RequestPurpose string `json:"requestPurpose"`
+	FacilityOption string `json:"facilityOption"`
+	Address        string `json:"address"`
+	SearchType     string `json:"searchType"`
+	Segmentation   string `json:"segmentation"`
+}
+
+type optionJSON struct {
+	Code        string `json:"code"`
+	Description string `json:"description"`
+}
+
+type slikJSON struct {
+	Values  slikRequestJSON `json:"values"`
+	Options struct {
+		RequestPurpose []optionJSON `json:"requestPurpose"`
+		FacilityOption []optionJSON `json:"facilityOption"`
+		SearchType     []optionJSON `json:"searchType"`
+		Segmentation   []optionJSON `json:"segmentation"`
+	} `json:"options"`
+}
+
+func toOptionsJSON(opts []cases.Option) []optionJSON {
+	out := make([]optionJSON, 0, len(opts))
+	for _, o := range opts {
+		out = append(out, optionJSON(o))
+	}
+	return out
+}
+
 type underlyingJSON struct {
 	CustomerType string         `json:"customerType"`
 	MemoNumber   string         `json:"memoNumber"`
+	SLIK         *slikJSON      `json:"slik"`
 	TotalLimitMB int            `json:"totalLimitMb"`
 	Categories   []categoryJSON `json:"categories"`
 	ListError    *errorJSON     `json:"listError"`
@@ -39,6 +72,13 @@ type underlyingJSON struct {
 
 func toUnderlyingJSON(p cases.UnderlyingPage) underlyingJSON {
 	out := underlyingJSON{CustomerType: p.CustomerType, MemoNumber: p.MemoNumber, TotalLimitMB: p.TotalLimitMB, Categories: []categoryJSON{}, Editable: p.Editable}
+	if p.SLIK != nil {
+		out.SLIK = &slikJSON{Values: slikRequestJSON(p.SLIK.Values)}
+		out.SLIK.Options.RequestPurpose = toOptionsJSON(p.SLIK.Options.RequestPurpose)
+		out.SLIK.Options.FacilityOption = toOptionsJSON(p.SLIK.Options.FacilityOption)
+		out.SLIK.Options.SearchType = toOptionsJSON(p.SLIK.Options.SearchType)
+		out.SLIK.Options.Segmentation = toOptionsJSON(p.SLIK.Options.Segmentation)
+	}
 	if p.ListFailed {
 		out.ListError = &errorJSON{"ERR-027", cases.MsgListFailed}
 	}
@@ -201,5 +241,36 @@ func (s *server) downloadDocument(ep endpoint) http.HandlerFunc {
 		if _, err := io.Copy(w, d.Body); err != nil {
 			slog.Error("sending the file failed", "error", err)
 		}
+	}
+}
+
+// createAssignment handles POST .../assignments/{id}/create: Create on
+// Document Underlying Upload (FR-FILE-004, FR-APP-009). Only SLIK Request
+// Data is accepted (BR-UI-010).
+func (s *server) createAssignment(ep endpoint) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sess, ok := s.session(w, r, ep)
+		if !ok {
+			return
+		}
+		caseID, id, ok := pathAssignment(r)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var req slikRequestJSON
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		next, err := s.cases.CreateUnderlying(r.Context(), sess, caseID, id, cases.SLIKRequest(req))
+		if writeAssignmentError(w, "create", err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, struct {
+			AssignmentID int64 `json:"assignmentId"`
+		}{next})
 	}
 }

@@ -1094,3 +1094,37 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* UI-011 SLIK Request Data and Create errors (Gambar 15, 24) */
+.textarea,
+.textareaDisabled,
+.textareaInvalid {
+  min-height: 86px;
+  padding: 6px 8px;
+  border: 1px solid #939393;
+  border-radius: 3px;
+  background: #ffffff;
+  font: inherit;
+  resize: vertical;
+}
+
+.textareaDisabled {
+  background: #eff1fd;
+  color: #8a8c99;
+}
+
+.textareaInvalid {
+  border-color: #d91c29;
+}
+
+.documentError {
+  margin-left: 8px;
+  color: #d91c29;
+  font-size: 12px;
+}
+
+.accordionError {
+  color: #f5513b;
+  font-size: 9px;
+  line-height: 1;
+}

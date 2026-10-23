@@ -188,10 +188,6 @@ func (s *server) openAssignment(ep endpoint) http.HandlerFunc {
 		if writeAssignmentError(w, "open assignment", err) {
 			return
 		}
-		type optionJSON struct {
-			Code        string `json:"code"`
-			Description string `json:"description"`
-		}
 		type preScreeningJSON struct {
 			BranchName          string       `json:"branchName"`
 			BranchError         *errorJSON   `json:"branchError"`
@@ -205,14 +201,11 @@ func (s *server) openAssignment(ep endpoint) http.HandlerFunc {
 		}
 		var page *preScreeningJSON
 		if ps := p.PreScreening; ps != nil {
-			page = &preScreeningJSON{BranchName: ps.BranchName, CustomerType: ps.CustomerType, CustomerTypeOptions: []optionJSON{},
+			page = &preScreeningJSON{BranchName: ps.BranchName, CustomerType: ps.CustomerType, CustomerTypeOptions: toOptionsJSON(ps.CustomerTypeOptions),
 				Customer: personForm(ps.Customer), Spouse: personForm(ps.Spouse),
 				Editable: ps.Editable, Today: ps.Today, EarliestBirthDate: ps.EarliestBirthDate}
 			if ps.BranchMissing {
 				page.BranchError = &errorJSON{"ERR-006", caseErrors["ERR-006"].message}
-			}
-			for _, o := range ps.CustomerTypeOptions {
-				page.CustomerTypeOptions = append(page.CustomerTypeOptions, optionJSON(o))
 			}
 		}
 		var body any

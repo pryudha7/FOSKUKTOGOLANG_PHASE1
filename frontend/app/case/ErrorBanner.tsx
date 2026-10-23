@@ -8,6 +8,8 @@ const sectionPrefix: Partial<Record<FieldError["section"], string>> = { spouse: 
 // UI-010 State Error banner (Gambar 13): a red block with a white warning
 // sign, then one bullet per error "<Nama Field> : <pesan>", field in bold.
 // A message of its own (e.g. a failed request) shows as a single bullet.
+// ERR-020 reads "Notes: <pesan>" (Gambar 24); an error without a field
+// shows its message alone.
 export default function ErrorBanner({ errors, message }: { errors: FieldError[]; message?: string }) {
   if (errors.length === 0 && !message) {
     return null;
@@ -20,10 +22,17 @@ export default function ErrorBanner({ errors, message }: { errors: FieldError[];
       <ul className={styles.errorBannerList}>
         {errors.map((e, i) => (
           <li key={`${e.section}-${e.key}-${i}`}>
-            <strong>
-              {sectionPrefix[e.section] ?? ""}
-              {e.field} :
-            </strong>{" "}
+            {e.code === "ERR-020" ? (
+              <strong>{e.field}:</strong>
+            ) : (
+              e.field && (
+                <strong>
+                  {sectionPrefix[e.section] ?? ""}
+                  {e.field} :
+                </strong>
+              )
+            )}
+            {e.field && " "}
             {e.message}
           </li>
         ))}

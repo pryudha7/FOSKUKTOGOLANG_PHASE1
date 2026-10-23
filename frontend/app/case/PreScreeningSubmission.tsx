@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { moveAssignment, type AssignmentRef } from "@/lib/api";
 import type { FieldError, PersonForm, PreScreeningPage, Section } from "./types";
 import AssignmentHeader from "./AssignmentHeader";
+import Field from "./Field";
 import DateField from "./DateField";
 import ErrorBanner from "./ErrorBanner";
 import Breadcrumb, { preScreeningSteps } from "./Breadcrumb";
@@ -168,30 +169,5 @@ function PersonSection({
         />
       </Field>
     </>
-  );
-}
-
-// A labelled field: label above, asterisk after a required label, and on
-// error a red label and the message under the input (UI-010 State Error).
-function Field({
-  label,
-  required = false,
-  error,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  error?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className={styles.field}>
-      <span className={error ? styles.fieldLabelInvalid : styles.fieldLabel}>
-        {label}
-        {required && <span className={styles.required}> *</span>}
-      </span>
-      {children}
-      {error && <span className={styles.fieldError}>{error}</span>}
-    </div>
   );
 }

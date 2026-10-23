@@ -12,7 +12,7 @@ Where the FOS KUK rebuild stands, so the next session can continue without re-de
 | 04 | UI-008 sidebar, Create menu (AO/SAO), avatar Log off | f26b5ba, 1afbc13 |
 | 05 | Create Financing Case, Case ID / Customer Code, Case View frame (stage bar, info panel, lifecycle popup, attachments panel) | b512c0b, aa8d56d |
 | 30 | Pre-Screening Submission (Perorangan): validation, customer rows, Next to Document Underlying Upload, Back | 6a7229c, 4d258a9 |
-| 11 | SLIK request (ZIP, kode reff), PBSResponse service at /api/NBS/, SLIK parsing into six tables, SLIK Check Rejection; PDF split to ticket 34 | (this commit) |
+| 11 | SLIK request (ZIP, kode reff), PBSResponse service at /api/NBS/, SLIK parsing into six tables, SLIK Check Rejection; PDF split to ticket 34 | dd1b15a, a46e75f |
 | 10 | DHN check, Rejected List check and recording (§9.16); shared outbound API helper | 0fcc14a, 7998b64 |
 | 09 | Pre-Screening Check run (§9.15) with executor, retry, recovery sweep; Dukcapil; Connect API Log (§9.14); Retry view | fd597c1, 2cd49c6 |
 | 08 | Team Lead Pre-Screening Review: Sesuai / Tidak Sesuai, Recommendation history (§9.12), Notes banner on UI-010 | 465d390, 73dfabb |

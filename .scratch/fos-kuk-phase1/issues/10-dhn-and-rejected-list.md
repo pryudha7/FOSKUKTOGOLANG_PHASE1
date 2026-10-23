@@ -12,3 +12,5 @@
 - [ ] The Rejected List is matched by identity number and Customer Type and is not written to the Connect API Log
 - [ ] A database failure on the Rejected List check is never treated as a pass and does not change Case Status
 - [ ] Verified at the HTTP API seam against a real PostgreSQL, with external systems faked at the network boundary.
+
+Note from ticket 09 (2026-10-23): a Check Rejection must also record the customer and spouse in the Rejected List (FR-PSAPI-007); ticket 09 sets status, stage and run state only. Runs paused on DHN resume once the DHN step exists.

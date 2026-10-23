@@ -42,9 +42,11 @@ func run() error {
 		return err
 	}
 
+	a := app.New(cfg, pool)
+	defer a.Close()
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           app.New(cfg, pool),
+		Handler:           a,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	errc := make(chan error, 1)

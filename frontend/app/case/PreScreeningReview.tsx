@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { apiFetch, type AssignmentRef } from "@/lib/api";
+import APILogTable from "./APILogTable";
 import AssignmentHeader from "./AssignmentHeader";
 import ErrorBanner from "./ErrorBanner";
 import Field from "./Field";
@@ -15,7 +16,9 @@ const notesMaxLength = 1000;
 // UI-017 Pre Screening (Gambar 27, 28): the Team Lead's Keputusan and Notes,
 // with History Pre-screening Notes once the case has a decision. Submit
 // passes back to the Dashboard (FR-APP-010); Close leaves without saving
-// (TBD-040a, agreed). Errors show as on UI-010 (agreed).
+// (TBD-040a, agreed). Errors show as on UI-010 (agreed). After a Check
+// Failure it is the Retry view (Gambar 35): the failed API's log and Submit
+// to call it again (FR-PSAPI-001 rule 5).
 export default function PreScreeningReview({ page, assignment }: { page: ReviewPage; assignment: AssignmentRef }) {
   const [decisionCode, setDecisionCode] = useState("");
   const [notes, setNotes] = useState("");
@@ -29,12 +32,15 @@ export default function PreScreeningReview({ page, assignment }: { page: ReviewP
     }
     setSubmitting(true);
     setFailed(false);
-    const url = `${assignment.endpointPath}/api/cases/${encodeURIComponent(assignment.caseId)}/assignments/${assignment.assignmentId}/review`;
-    const res = await apiFetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decisionCode, notes }),
-    }).catch(() => null);
+    const base = `${assignment.endpointPath}/api/cases/${encodeURIComponent(assignment.caseId)}/assignments/${assignment.assignmentId}`;
+    const res = await (page.retry
+      ? apiFetch(`${base}/retry`, { method: "POST" })
+      : apiFetch(`${base}/review`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decisionCode, notes }),
+        })
+    ).catch(() => null);
     if (res?.ok) {
       window.location.assign(assignment.endpointPath);
       return;
@@ -53,6 +59,17 @@ export default function PreScreeningReview({ page, assignment }: { page: ReviewP
       <ErrorBanner errors={errors} message={failed ? unavailableMessage : undefined} />
       <section className={styles.card}>
         <AssignmentHeader title="Pre Screening" />
+        {page.retry && (
+          <div className={styles.formPanel}>
+            <h3 className={styles.panelTitle}>API Log History</h3>
+            <p className={styles.retryText}>
+              Server failed for this API:
+              <br />
+              Please retry by click on submit button
+            </p>
+            <APILogTable logs={page.retry.logs} />
+          </div>
+        )}
         {page.history.length > 0 && (
           <>
             <h3 className={styles.sectionTitle}>History Pre-screening Notes</h3>
@@ -63,7 +80,7 @@ export default function PreScreeningReview({ page, assignment }: { page: ReviewP
             </div>
           </>
         )}
-        {page.editable && (
+        {page.editable && !page.retry && (
           <div className={styles.formPanel}>
             <Field label="Keputusan" required error={decisionError?.message}>
               <select

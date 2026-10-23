@@ -56,6 +56,31 @@ func (s *Settings) Int(ctx context.Context, purpose string) (int64, error) {
 	return n, nil
 }
 
+// String reads a STRING or JSON setting.
+func (s *Settings) String(ctx context.Context, purpose string) (string, error) {
+	e, err := s.read(ctx, purpose)
+	if err != nil {
+		return "", err
+	}
+	if e.valueType != "STRING" && e.valueType != "JSON" {
+		return "", fmt.Errorf("setting %s is not a STRING", purpose)
+	}
+	return e.value, nil
+}
+
+// Bool reads a BOOLEAN setting ("true" or "false").
+func (s *Settings) Bool(ctx context.Context, purpose string) (bool, error) {
+	e, err := s.read(ctx, purpose)
+	if err != nil {
+		return false, err
+	}
+	b, err := strconv.ParseBool(e.value)
+	if e.valueType != "BOOLEAN" || err != nil {
+		return false, fmt.Errorf("setting %s is not a BOOLEAN", purpose)
+	}
+	return b, nil
+}
+
 func (s *Settings) read(ctx context.Context, purpose string) (entry, error) {
 	now := s.now()
 	s.mu.Lock()

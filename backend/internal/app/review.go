@@ -20,10 +20,23 @@ type recommendationJSON struct {
 	Notes       string `json:"notes"`
 }
 
+type apiLogJSON struct {
+	Name        string `json:"name"`
+	SubmittedAt string `json:"submittedAt"`
+	Status      string `json:"status"`
+	Request     string `json:"request"`
+	Response    string `json:"response"`
+}
+
+type retryJSON struct {
+	Logs []apiLogJSON `json:"logs"`
+}
+
 type reviewJSON struct {
 	DecisionOptions []optionJSON         `json:"decisionOptions"`
 	History         []recommendationJSON `json:"history"`
 	Editable        bool                 `json:"editable"`
+	Retry           *retryJSON           `json:"retry"`
 }
 
 func toReviewJSON(p cases.ReviewPage) reviewJSON {
@@ -31,7 +44,33 @@ func toReviewJSON(p cases.ReviewPage) reviewJSON {
 	for _, r := range p.History {
 		out.History = append(out.History, recommendationJSON(r))
 	}
+	if p.Retry != nil {
+		out.Retry = &retryJSON{Logs: []apiLogJSON{}}
+		for _, l := range p.Retry.Logs {
+			out.Retry.Logs = append(out.Retry.Logs, apiLogJSON(l))
+		}
+	}
 	return out
+}
+
+// retryReview handles POST .../assignments/{id}/retry: Submit on the Retry
+// view of Pre Screening (FR-PSAPI-001 rule 5). It takes no body.
+func (s *server) retryReview(ep endpoint) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sess, ok := s.session(w, r, ep)
+		if !ok {
+			return
+		}
+		caseID, id, ok := pathAssignment(r)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if writeAssignmentError(w, "pre-screening retry", s.cases.RetryReview(r.Context(), sess, caseID, id)) {
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
 }
 
 // submitReview handles POST .../assignments/{id}/review: Submit on the Team

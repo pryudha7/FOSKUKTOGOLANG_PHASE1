@@ -18,6 +18,7 @@ Before running: start PostgreSQL, the backend and `next start -p 13000` (see the
 | `ps.js`, `check2.js` | Pre-Screening Submission validation, banner, date field/picker, Next and Back (ticket 30) |
 | `create.js` | SLIK Request Data, Create errors (ERR-010, ERR-020, ERR-026, accordion marker) and Create handing the case to the Team Lead (ticket 33); also needs SLIK_* BMV rows TP-1, PF-1, TC-1, SG-1 |
 | `review.js` | Team Lead Pre Screening: form, errors, Tidak Sesuai, Notes banner on the returned Pre-Screening Submission, History Pre-screening Notes (ticket 08); also needs operator TL01 |
+| `retry.js` | Sesuai starts the Pre-Screening Check; Dukcapil on a closed port fails four times; the Team Lead's Retry view (Gambar 35) and its Submit (ticket 09); needs `api/dukcapil/baseurl` set to a closed port and `DUKCAPIL_APIKEY` in the backend environment |
 | `duu.js` | Document Underlying Upload: document list, Upload Document modal, document icon download, attachments panel, ERR-035 popup (ticket 07) |
 
 `duu.js` needs file storage: run `node fakegcs.js 14443 shots/gcs.json` (an in-memory stand-in for the GCS JSON API) and start the backend with `GCS_PROJECT_ID` and `GCS_BUCKET_NAME` set to any value, `GCS_CREDENTIAL` set to the written `shots/gcs.json`, and `STORAGE_EMULATOR_HOST=127.0.0.1:14443`. Its ERR-035 step edits the case through `docker exec fos-smoke-pg psql`; set `DOCKER` to docker's full path if `cmd` cannot find it.

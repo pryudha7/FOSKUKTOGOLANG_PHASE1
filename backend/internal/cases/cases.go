@@ -105,11 +105,21 @@ type Service struct {
 	now      func() time.Time
 	storage  Storage
 	settings *settings.Settings
+	runs     *Executor
 }
 
 func NewService(db *pgxpool.Pool, now func() time.Time, storage Storage, settings *settings.Settings) *Service {
-	return &Service{db: db, now: now, storage: storage, settings: settings}
+	s := &Service{db: db, now: now, storage: storage, settings: settings}
+	s.runs = newExecutor(s)
+	return s
 }
+
+// StartRuns starts the Pre-Screening Check executor: it resumes runs whose
+// executor died, now and every minute (FR-PSAPI-002 Process 5).
+func (s *Service) StartRuns() { s.runs.Start() }
+
+// Close stops the executor and waits for its runs to pause.
+func (s *Service) Close() { s.runs.Close() }
 
 // Created identifies a new case and its first assignment.
 type Created struct {

@@ -11,3 +11,5 @@
 - [ ] Only the seven Pre-Screening Check processes are shown, one per process, latest attempt only
 - [ ] Only Authors can see and resume Broken Process items
 - [ ] Verified at the HTTP API seam against a real PostgreSQL, with external systems faked at the network boundary.
+
+Note from ticket 09 (2026-10-23): the UI-020 table on the Retry view has no sort/filter menus yet; add them here with History Details. A run stopped STOPPED_BROKEN (missing setting or secret) should raise the Problem Flow assignment (FR-FLOW-001).

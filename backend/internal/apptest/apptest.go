@@ -133,9 +133,11 @@ func New(t *testing.T, configure ...func(*config.Config)) *Harness {
 		t.Fatalf("migrate: %v", err)
 	}
 	clock := &FakeClock{now: time.Now().UTC()}
-	srv := httptest.NewServer(app.New(cfg, pool, app.WithClock(clock.Now)))
+	a := app.New(cfg, pool, app.WithClock(clock.Now))
+	srv := httptest.NewServer(a)
 	t.Cleanup(func() {
 		srv.Close()
+		a.Close()
 		pool.Close()
 	})
 	return &Harness{Server: srv, DB: pool, Config: cfg, Clock: clock}

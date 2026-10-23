@@ -61,12 +61,22 @@ type options struct{ now func() time.Time }
 // WithClock replaces the wall clock, e.g. with a test clock.
 func WithClock(now func() time.Time) Option { return func(o *options) { o.now = now } }
 
-func New(cfg config.Config, pool *pgxpool.Pool, opts ...Option) http.Handler {
+// App is the HTTP API and the background Pre-Screening Check executor.
+type App struct {
+	http.Handler
+	cases *cases.Service
+}
+
+// Close stops the background executor and waits for it.
+func (a *App) Close() { a.cases.Close() }
+
+func New(cfg config.Config, pool *pgxpool.Pool, opts ...Option) *App {
 	o := options{now: func() time.Time { return time.Now().UTC() }}
 	for _, f := range opts {
 		f(&o)
 	}
 	s := &server{cfg: cfg, auth: auth.NewService(pool, cfg.LDAP, o.now), cases: cases.NewService(pool, o.now, gcs.New(cfg.GCS, o.now), settings.New(pool, o.now))}
+	s.cases.StartRuns()
 	mux := http.NewServeMux()
 	for _, ep := range []endpoint{
 		{id: auth.EndpointDesktop, path: cfg.EndpointPathDesktop},
@@ -86,9 +96,10 @@ func New(cfg config.Config, pool *pgxpool.Pool, opts ...Option) http.Handler {
 	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/back", s.backAssignment(desktop))
 	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/create", s.createUnderlying(desktop))
 	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/review", s.submitReview(desktop))
+	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/retry", s.retryReview(desktop))
 	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/documents", s.uploadDocument(desktop))
 	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/documents/{fileId}", s.downloadDocument(desktop))
-	return s.requireHTTPS(mux)
+	return &App{Handler: s.requireHTTPS(mux), cases: s.cases}
 }
 
 // loginPath is the login page a session on ep came from.

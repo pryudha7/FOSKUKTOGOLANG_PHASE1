@@ -45,6 +45,20 @@ type ReviewPage struct {
 	DecisionOptions []Option
 	History         []Recommendation
 	Editable        bool
+	// Retry is set when the case returned after a Check Failure (UI-017
+	// Varian Retry); the page then has no decision fields.
+	Retry *RetryView
+}
+
+// RetryView lists the failed check's attempts of its last cycle (UI-020
+// rows on Gambar 35; agreed for TBD-042).
+type RetryView struct {
+	Logs []APILogEntry
+}
+
+// APILogEntry is one Connect API Log row as UI-020 shows it.
+type APILogEntry struct {
+	Name, SubmittedAt, Status, Request, Response string
 }
 
 // recommendations lists the case's Pre-Screening Review Recommendations,
@@ -103,8 +117,38 @@ func (s *Service) reviewPage(ctx context.Context, sess auth.Session, caseID stri
 		slog.Error("operator timezone unreadable; showing times in UTC", "user_id", sess.UserID, "error", err)
 		loc = time.UTC
 	}
-	page.History, err = s.recommendations(ctx, caseID, loc)
-	return page, err
+	if page.History, err = s.recommendations(ctx, caseID, loc); err != nil {
+		return ReviewPage{}, err
+	}
+	retrying, err := s.retrying(ctx, s.db, caseID)
+	if err != nil || !retrying {
+		return page, err
+	}
+	logs, err := collect(ctx, s, func(r pgx.Rows) (APILogEntry, error) {
+		var (
+			l  APILogEntry
+			at time.Time
+		)
+		err := r.Scan(&l.Name, &at, &l.Status, &l.Request, &l.Response)
+		l.SubmittedAt = submittedAt(at.In(loc))
+		return l, err
+	}, `
+		SELECT * FROM (
+			SELECT l.api_name, l.submitted_at, l.api_status, COALESCE(l.request, ''), COALESCE(l.response, '')
+			FROM fos.connect_api_log l
+			JOIN fos.prescreening_runs r ON r.case_id = l.case_id AND l.api_name = r.current_step
+			WHERE r.run_id = (SELECT max(run_id) FROM fos.prescreening_runs WHERE case_id = $1) AND r.state = $2
+			ORDER BY l.submitted_at DESC, l.attempt_number DESC
+			LIMIT (SELECT attempt FROM fos.prescreening_runs WHERE run_id = (SELECT max(run_id) FROM fos.prescreening_runs WHERE case_id = $1))
+		) last ORDER BY submitted_at`, caseID, runStoppedFailed)
+	if err != nil {
+		return ReviewPage{}, err
+	}
+	if logs == nil {
+		logs = []APILogEntry{}
+	}
+	page.Retry = &RetryView{Logs: logs}
+	return page, nil
 }
 
 // SubmitReview is Submit on the Pre-Screening Review (FR-APP-010): it validates
@@ -125,6 +169,14 @@ func (s *Service) SubmitReview(ctx context.Context, sess auth.Session, caseID st
 	if a.name != AssignmentPreScreeningReview {
 		return ErrUnsupported
 	}
+	// The Retry view has no decision to submit.
+	if retrying, err := s.retrying(ctx, tx, caseID); err != nil || retrying {
+		if err != nil {
+			return err
+		}
+		return ErrUnsupported
+	}
+	var runID int64
 
 	decisionCode = strings.TrimSpace(decisionCode)
 	notes = strings.TrimSpace(strings.ReplaceAll(notes, "\r\n", "\n"))
@@ -188,12 +240,75 @@ func (s *Service) SubmitReview(ctx context.Context, sess auth.Session, caseID st
 			return err
 		}
 	case decisionMatch:
+		// FR-PSAPI-001 Process 1: the run starts; Submit returns at once (DEC-095).
 		if _, err := tx.Exec(ctx, `UPDATE fos.work SET case_status = $2 WHERE case_id = $1`, caseID, CaseStatusPendingPreScreening); err != nil {
+			return err
+		}
+		if runID, err = s.runs.startRun(ctx, tx, caseID); err != nil {
 			return err
 		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE fos.work SET updated_at = $2, updated_by = $3 WHERE case_id = $1`, caseID, now, sess.UserID); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	if runID != 0 {
+		s.runs.kick(runID)
+	}
+	return nil
+}
+
+// RetryReview is Submit on the Retry view (FR-PSAPI-001 rule 5): the case
+// returns to Pending-Prescreening and its run resumes at the check that
+// failed, with a fresh attempt cycle. No Recommendation is added.
+func (s *Service) RetryReview(ctx context.Context, sess auth.Session, caseID string, assignmentID int64) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	a, err := ownOpenAssignment(ctx, tx, sess, caseID, assignmentID)
+	if err != nil {
+		return err
+	}
+	if a.name != AssignmentPreScreeningReview {
+		return ErrUnsupported
+	}
+	retrying, err := s.retrying(ctx, tx, caseID)
+	if err != nil {
+		return err
+	}
+	if !retrying {
+		return ErrUnsupported
+	}
+	now := s.now()
+	if _, err := tx.Exec(ctx, `UPDATE fos.assignments SET assignment_status = $2, completed_at = $3 WHERE assignment_id = $1`,
+		a.id, string(AssignmentCompleted), now); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE fos.work SET case_status = $2, updated_at = $3, updated_by = $4 WHERE case_id = $1`,
+		caseID, CaseStatusPendingPreScreening, now, sess.UserID); err != nil {
+		return err
+	}
+	runID, err := s.runs.resumeRun(ctx, tx, caseID)
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	s.runs.kick(runID)
+	return nil
+}
+
+// retrying reports whether the case waits on its Team Lead after a Check
+// Failure, which shows Pre Screening as the Retry view.
+func (s *Service) retrying(ctx context.Context, q rowQuerier, caseID string) (bool, error) {
+	var status *string
+	if err := q.QueryRow(ctx, `SELECT case_status FROM fos.work WHERE case_id = $1`, caseID).Scan(&status); err != nil {
+		return false, err
+	}
+	return value(status) == CaseStatusFailedPreScreening, nil
 }

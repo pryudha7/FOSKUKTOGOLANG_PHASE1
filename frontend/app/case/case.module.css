@@ -1171,3 +1171,62 @@
 .notesText {
   white-space: pre-wrap;
 }
+
+/* UI-017 Varian Retry and UI-020 table (Gambar 35) */
+.panelTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.retryText {
+  margin: 0;
+  color: #6f6f6f;
+  font-size: 13px;
+}
+
+.logTable {
+  width: 100%;
+  border-collapse: collapse;
+  background: #ffffff;
+  font-size: 12px;
+  table-layout: fixed;
+}
+
+.logTable th {
+  padding: 8px 10px;
+  border: 1px solid #d5dbe2;
+  text-align: left;
+}
+
+.logTable td {
+  padding: 10px;
+  border-top: 1px solid #d5dbe2;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
+.logTable th:nth-child(1),
+.logTable th:nth-child(2),
+.logTable th:nth-child(3) {
+  width: 80px;
+}
+
+.logText {
+  white-space: pre-wrap;
+}
+
+.logFull {
+  margin: 0;
+  font-family: ui-monospace, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.logToggle {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #076bc9;
+  font: inherit;
+  cursor: pointer;
+}

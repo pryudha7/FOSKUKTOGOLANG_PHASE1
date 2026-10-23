@@ -58,11 +58,16 @@ export type PreScreeningPage = {
 // the operator's timezone, decidedBy a full name.
 export type Recommendation = { decidedBy: string; submittedAt: string; decision: string; notes: string };
 
+// One Connect API Log row (UI-020); submittedAt is dd/MM/yy H:mm.
+export type APILogEntry = { name: string; submittedAt: string; status: string; request: string; response: string };
+
 // UI-017 for the Team Lead.
 export type ReviewPage = {
   decisionOptions: Option[];
   history: Recommendation[]; // oldest first
   editable: boolean;
+  // Set after a Check Failure: the Retry view, without decision fields.
+  retry: { logs: APILogEntry[] } | null;
 };
 
 export type StoredFile = { fileId: string; fileName: string };

@@ -119,7 +119,7 @@ func newExecutor(s *Service) *Executor {
 		s: s, owner: fmt.Sprintf("%s/%d/%s", host, os.Getpid(), hex.EncodeToString(b)),
 		http: &http.Client{}, getenv: os.Getenv, ctx: ctx, cancel: cancel, active: map[int64]bool{},
 	}
-	e.checks = map[string]check{"Dukcapil": e.dukcapilCheck()}
+	e.checks = map[string]check{apiDukcapil: e.dukcapilCheck(), apiDHN: e.dhnCheck(), stepRejectedList: e.rejectedListCheck()}
 	return e
 }
 
@@ -404,8 +404,14 @@ func (e *Executor) inOwnedRun(ctx context.Context, r runRef, log *apiLog, change
 }
 
 // reject is a Check Rejection (FR-PSAPI-001 Process 3): the case goes to
-// the alternate stage Rejected. The Rejected List entry is ticket 10.
+// the alternate stage Rejected, and its Customer and Spouse to the Rejected
+// List unless the Rejected List itself rejected it (FR-PSAPI-007).
 func (e *Executor) reject(ctx context.Context, tx pgx.Tx, r runRef) (string, error) {
+	if r.step != stepRejectedList {
+		if err := e.recordRejection(ctx, tx, r.caseID, e.apiNameOf(r.step)); err != nil {
+			return "", err
+		}
+	}
 	now := e.s.now()
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO fos.case_stage_progress (case_id, stage_name, first_entered_at, entered_from_stage)

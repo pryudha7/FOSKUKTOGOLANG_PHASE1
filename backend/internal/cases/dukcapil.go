@@ -1,15 +1,11 @@
 package cases
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 )
@@ -19,11 +15,8 @@ import (
 
 const (
 	apiDukcapil = "Dukcapil"
-	// dukcapilKeyHeader carries the API key; it is masked in the log whatever
-	// api/log/masked_headers says (DEC-060).
+	// dukcapilKeyHeader carries the API key (DEC-060).
 	dukcapilKeyHeader = "x-Gateway-APIKey"
-	// maxResponseBytes bounds a response read into the log.
-	maxResponseBytes = 10 << 20
 )
 
 // dukcapilRequest is the body, in the SoT's field order.
@@ -33,75 +26,8 @@ type dukcapilRequest struct {
 	NamaLengkap  string `json:"namaLengkap"`
 }
 
-// dukcapilConfig is the call's configuration (§9.25, DEC-060).
-type dukcapilConfig struct {
-	simulate         bool
-	simulateResponse string
-	url              string
-	timeout          time.Duration
-	key              string
-	maskedHeaders    []string
-}
-
 func (e *Executor) dukcapilCheck() check {
-	return check{
-		apiName: apiDukcapil,
-		try:     e.tryDukcapil,
-		retry: func(ctx context.Context) (int, time.Duration, error) {
-			max, err := e.s.settings.Int(ctx, "api/dukcapil/retry_max")
-			if err != nil {
-				return 0, 0, err
-			}
-			gap, err := e.s.settings.Int(ctx, "api/dukcapil/retry_gap_ms")
-			return int(max), time.Duration(gap) * time.Millisecond, err
-		},
-	}
-}
-
-// dukcapilConfig reads the settings and the API key; a missing one is a
-// system failure of the step (DB-RULE-084).
-func (e *Executor) dukcapilConfig(ctx context.Context) (dukcapilConfig, error) {
-	st := e.s.settings
-	var c dukcapilConfig
-	var err error
-	if c.maskedHeaders, err = e.s.maskedHeaderNames(ctx); err != nil {
-		return c, err
-	}
-	c.maskedHeaders = append(c.maskedHeaders, dukcapilKeyHeader)
-	if c.simulate, err = st.Bool(ctx, "api/dukcapil/simulate"); err != nil {
-		return c, err
-	}
-	if c.simulate {
-		c.simulateResponse, err = st.String(ctx, "api/dukcapil/simulate_response")
-		return c, err
-	}
-	base, err := st.String(ctx, "api/dukcapil/baseurl")
-	if err != nil {
-		return c, err
-	}
-	path, err := st.String(ctx, "api/dukcapil/path")
-	if err != nil {
-		return c, err
-	}
-	timeoutMS, err := st.Int(ctx, "api/dukcapil/timeout_ms")
-	if err != nil {
-		return c, err
-	}
-	keyRef, err := st.String(ctx, "secret/dukcapil/apikey_ref")
-	if err != nil {
-		return c, err
-	}
-	if c.key = e.getenv(keyRef); c.key == "" {
-		return c, fmt.Errorf("Dukcapil API key: environment variable %s is empty (DEC-060)", keyRef)
-	}
-	u, err := url.Parse(strings.TrimSuffix(base, "/") + path)
-	if err != nil || u.Host == "" {
-		return c, errors.New("api/dukcapil/baseurl or api/dukcapil/path is not a URL")
-	}
-	u.User = nil // never logged with credentials (§9.14)
-	c.url = u.String()
-	c.timeout = time.Duration(timeoutMS) * time.Millisecond
-	return c, nil
+	return check{apiName: apiDukcapil, try: e.tryDukcapil, retry: e.retrySettings("dukcapil")}
 }
 
 func (e *Executor) tryDukcapil(ctx context.Context, caseID string, attemptNumber int) (attempt, error) {
@@ -112,7 +38,7 @@ func (e *Executor) tryDukcapil(ctx context.Context, caseID string, attemptNumber
 	if value(customerType) != customerTypeIndividual {
 		return attempt{outcome: outcomeSkip}, nil
 	}
-	cfg, err := e.dukcapilConfig(ctx)
+	cfg, err := e.apiConfig(ctx, "dukcapil", dukcapilKeyHeader)
 	if err != nil {
 		return attempt{}, err
 	}
@@ -132,47 +58,18 @@ func (e *Executor) tryDukcapil(ctx context.Context, caseID string, attemptNumber
 		log.status, log.response, log.method = apiSuccess, cfg.simulateResponse, ""
 		return attempt{outcomeSuccess, log}, nil
 	}
-
-	log.url = cfg.url
-	callCtx, cancel := context.WithTimeout(ctx, cfg.timeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(callCtx, http.MethodPost, cfg.url, bytes.NewReader(body))
+	u, err := cfg.endpoint(cfg.path)
 	if err != nil {
-		return attempt{}, errors.New("Dukcapil request could not be built")
+		return attempt{}, fmt.Errorf("Dukcapil: %w", err)
 	}
-	req.Header.Set(dukcapilKeyHeader, cfg.key)
-	req.Header.Set("Content-Type", "application/json")
-	log.requestHeaders = masked(req.Header, cfg.maskedHeaders)
-
-	start := time.Now()
-	resp, err := e.http.Do(req)
-	if err == nil {
-		var raw []byte
-		raw, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
-		resp.Body.Close()
-		code := resp.StatusCode
-		log.httpStatus = &code
-		log.responseHeaders = masked(resp.Header, cfg.maskedHeaders)
-		switch {
-		case err != nil:
-		case len(raw) > maxResponseBytes:
-			err = fmt.Errorf("response larger than %d bytes", maxResponseBytes)
-		case len(bytes.TrimSpace(raw)) == 0:
-			log.response = noBodyMessage(code)
-		default:
-			log.response = string(raw)
-		}
-	}
-	log.duration = time.Since(start)
-	if ctx.Err() != nil {
-		return attempt{}, ctx.Err()
-	}
+	answered, err := e.call(ctx, cfg, log, u, body, map[string]string{"Content-Type": "application/json"})
 	if err != nil {
-		log.response = callError(err, req.URL, cfg.timeout)
-		log.status = apiFail
-		return attempt{outcomeFail, log}, nil
+		return attempt{}, err
 	}
-	o := evaluateDukcapil(log.response)
+	o := outcomeFail
+	if answered {
+		o = evaluateDukcapil(log.response)
+	}
 	log.status = o.logStatus()
 	return attempt{o, log}, nil
 }
@@ -221,31 +118,4 @@ func evaluateDukcapil(body string) outcome {
 		return outcomeSuccess
 	}
 	return outcomeFail
-}
-
-// noBodyMessage is the Response of an answer without a body (FR-PSAPI-004
-// rule 3; agreed for other codes).
-func noBodyMessage(code int) string {
-	if code == http.StatusUnauthorized {
-		return "the server responded with an HTTP 401 code, indicating an authorization problem."
-	}
-	return fmt.Sprintf("the server responded with an HTTP %d code.", code)
-}
-
-// callError is the Response of a call that got no answer, without the URL's
-// credentials (agreed for ticket 09).
-func callError(err error, u *url.URL, timeout time.Duration) string {
-	var ne net.Error
-	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout()) {
-		port := u.Port()
-		if port == "" {
-			port = map[string]string{"https": "443", "http": "80"}[u.Scheme]
-		}
-		return fmt.Sprintf("Connect to %s:%s timed out after %d ms", u.Hostname(), port, timeout.Milliseconds())
-	}
-	var ue *url.Error
-	if errors.As(err, &ue) {
-		return ue.Err.Error()
-	}
-	return err.Error()
 }

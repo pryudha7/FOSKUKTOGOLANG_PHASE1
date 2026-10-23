@@ -12,6 +12,7 @@ Where the FOS KUK rebuild stands, so the next session can continue without re-de
 | 04 | UI-008 sidebar, Create menu (AO/SAO), avatar Log off | f26b5ba, 1afbc13 |
 | 05 | Create Financing Case, Case ID / Customer Code, Case View frame (stage bar, info panel, lifecycle popup, attachments panel) | b512c0b, aa8d56d |
 | 30 | Pre-Screening Submission (Perorangan): validation, customer rows, Next to Document Underlying Upload, Back | 6a7229c, 4d258a9 |
+| 10 | DHN check, Rejected List check and recording (§9.16); shared outbound API helper | (this commit) |
 | 09 | Pre-Screening Check run (§9.15) with executor, retry, recovery sweep; Dukcapil; Connect API Log (§9.14); Retry view | fd597c1, 2cd49c6 |
 | 08 | Team Lead Pre-Screening Review: Sesuai / Tidak Sesuai, Recommendation history (§9.12), Notes banner on UI-010 | 465d390, 73dfabb |
 | 33 | SLIK Request Data (stored on work), Create with ERR-010/020/026/029, Team Lead Pre Screening assignment | 69cefcc, 8b6c891 |
@@ -21,7 +22,7 @@ Each ticket file in `.scratch/fos-kuk-phase1/issues/` has a **Comments** section
 
 ## Next
 
-Next recommended: **10** (DHN + Rejected List), which resumes runs paused on DHN. Also unblocked: **31** Badan Usaha form (now includes the Badan Usaha Document Underlying Upload variant), **32** Case View mode Case + To do, **06** assignment lock, **27** Dashboard. Ticket **29** (operator/master-data management) waits on TBD-003/018. Open domain questions for the SoT owner: `.scratch/fos-kuk-glossary/issues/01-open-domain-questions.md`.
+Next recommended: **11** (SLIK request, callback and rejection), which resumes runs paused on SLIK. Also unblocked: **31** Badan Usaha form (now includes the Badan Usaha Document Underlying Upload variant), **32** Case View mode Case + To do, **06** assignment lock, **27** Dashboard. Ticket **29** (operator/master-data management) waits on TBD-003/018. Open domain questions for the SoT owner: `.scratch/fos-kuk-glossary/issues/01-open-domain-questions.md`.
 
 ## How each ticket was worked
 
@@ -37,6 +38,6 @@ Next recommended: **10** (DHN + Rejected List), which resumes runs paused on DHN
 - Schema follows SoT §9 exactly, PROPOSED columns included (CLAUDE.md); additions so far were agreed: `operator`, `operator_session`, `access_groups`, `work.customer_type`.
 - Every config key is required, no defaults (ENV-006). On Windows start servers from PowerShell: Git Bash rewrites `/PRWebDB1`-style values into paths.
 - Smoke runs: Postgres in Docker on 55432, backend on 18080, `next start` on 13000; seed operators with `go run ./cmd/hashpw`. Uploads need `tools/uicheck/fakegcs.js` and `STORAGE_EMULATOR_HOST` (see `tools/uicheck/README.md`).
-- The backend runs the Pre-Screening Check executor in-process (`app.New` returns an `*App`; call `Close`). Dukcapil needs `api/dukcapil/baseurl` in the database and the API key in the environment variable named by `secret/dukcapil/apikey_ref`.
+- The backend runs the Pre-Screening Check executor in-process (`app.New` returns an `*App`; call `Close`). Each outbound API (Dukcapil, DHN) needs `api/<api>/baseurl` in the database and its API key in the environment variable named by `secret/<api>/apikey_ref`.
 - When editing files with Python on Windows, write with `newline='
 '`: text mode writes CRLF otherwise.

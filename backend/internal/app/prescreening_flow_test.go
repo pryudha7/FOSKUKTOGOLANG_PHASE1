@@ -34,7 +34,7 @@ func TestDukcapilMismatchRejectsTheCase(t *testing.T) {
 	if got := run(t, h, caseID); got.State != "STOPPED_REJECTED" || got.Step != "Dukcapil" {
 		t.Fatalf("run = %+v", got)
 	}
-	if got := statuses(apiLogs(t, h, caseID)); !reflect.DeepEqual(got, []string{"Rejected"}) {
+	if got := statuses(dukcapilLogs(t, h, caseID)); !reflect.DeepEqual(got, []string{"Rejected"}) {
 		t.Fatalf("logs = %v", got)
 	}
 	if caseStatus(t, h, caseID) != "ResolvedRejected-Prescreening" || currentStage(t, h, caseID) != "Rejected" || len(fake.Requests()) != 1 {
@@ -50,8 +50,8 @@ func TestDukcapilMismatchRejectsTheCase(t *testing.T) {
 // AC-FR-PSAPI-001-04: "data not found" is a Success that passes.
 func TestDukcapilNotFoundPasses(t *testing.T) {
 	h, _, _, caseID := sesuaiWith(t, apptest.DukcapilNotFound)
-	eventually(t, "the run to reach DHN", func() bool { return run(t, h, caseID).Step == "DHN" })
-	if got := statuses(apiLogs(t, h, caseID)); !reflect.DeepEqual(got, []string{"Success"}) {
+	eventually(t, "Dukcapil to finish", func() bool { return run(t, h, caseID).Step != "Dukcapil" })
+	if got := statuses(dukcapilLogs(t, h, caseID)); !reflect.DeepEqual(got, []string{"Success"}) {
 		t.Fatalf("logs = %v", got)
 	}
 }
@@ -61,8 +61,8 @@ func TestDukcapilNotFoundPasses(t *testing.T) {
 func TestDukcapilFailIsRetried(t *testing.T) {
 	h, fake, _, caseID := sesuaiWith(t, apptest.DukcapilReply{Status: 401}, apptest.DukcapilDown, apptest.DukcapilMatch)
 
-	eventually(t, "the run to reach DHN", func() bool { return run(t, h, caseID).Step == "DHN" })
-	logs := apiLogs(t, h, caseID)
+	eventually(t, "Dukcapil to finish", func() bool { return run(t, h, caseID).Step != "Dukcapil" })
+	logs := dukcapilLogs(t, h, caseID)
 	if got := statuses(logs); !reflect.DeepEqual(got, []string{"Fail", "Fail", "Success"}) || len(fake.Requests()) != 3 {
 		t.Fatalf("logs = %v, calls %d", got, len(fake.Requests()))
 	}
@@ -82,7 +82,7 @@ func TestDukcapilFailureReturnsToTheTeamLeadForRetry(t *testing.T) {
 	h, fake, tl, caseID := sesuaiWith(t, apptest.DukcapilHang)
 
 	eventually(t, "the run to fail", func() bool { return run(t, h, caseID).State == "STOPPED_FAILED" })
-	logs := apiLogs(t, h, caseID)
+	logs := dukcapilLogs(t, h, caseID)
 	if got := statuses(logs); !reflect.DeepEqual(got, []string{"Fail", "Fail", "Fail", "Fail"}) {
 		t.Fatalf("logs = %v", got)
 	}
@@ -119,8 +119,8 @@ func TestDukcapilFailureReturnsToTheTeamLeadForRetry(t *testing.T) {
 	if got := caseStatus(t, h, caseID); got != "Pending-Prescreening" {
 		t.Fatalf("case_status after retry = %s", got)
 	}
-	eventually(t, "the run to reach DHN", func() bool { return run(t, h, caseID).Step == "DHN" })
-	logs = apiLogs(t, h, caseID)
+	eventually(t, "Dukcapil to finish", func() bool { return run(t, h, caseID).Step != "Dukcapil" })
+	logs = dukcapilLogs(t, h, caseID)
 	if got := statuses(logs); !reflect.DeepEqual(got, []string{"Fail", "Fail", "Fail", "Fail", "Fail", "Success"}) || logs[4].Attempt != 1 {
 		t.Fatalf("logs after retry = %v", logs)
 	}
@@ -149,8 +149,8 @@ func TestDukcapilSimulation(t *testing.T) {
 	exec(t, h, `UPDATE fos.dynamic_system_settings SET value = 'true' WHERE purpose = 'api/dukcapil/simulate'`)
 	review(t, tl, caseID, id, "SESUAI", "x")
 
-	eventually(t, "the run to reach DHN", func() bool { return run(t, h, caseID).Step == "DHN" })
-	logs := apiLogs(t, h, caseID)
+	eventually(t, "Dukcapil to finish", func() bool { return run(t, h, caseID).Step != "Dukcapil" })
+	logs := dukcapilLogs(t, h, caseID)
 	if len(fake.Requests()) != 0 || len(logs) != 1 || logs[0].Status != "Success" || !strings.Contains(logs[0].Response, `"TGL_LHR":"Sesuai"`) {
 		t.Fatalf("calls %d, logs %+v", len(fake.Requests()), logs)
 	}
@@ -163,8 +163,8 @@ func TestDukcapilSkipsBusinessEntities(t *testing.T) {
 	h.UseDukcapil(t, fake)
 	exec(t, h, `UPDATE fos.work SET customer_type = 'Badan Usaha' WHERE case_id = $1`, caseID)
 	review(t, tl, caseID, id, "SESUAI", "x")
-	eventually(t, "the run to reach DHN", func() bool { return run(t, h, caseID).Step == "DHN" })
-	if len(fake.Requests()) != 0 || len(apiLogs(t, h, caseID)) != 0 {
+	eventually(t, "Dukcapil to finish", func() bool { return run(t, h, caseID).Step != "Dukcapil" })
+	if len(fake.Requests()) != 0 || len(dukcapilLogs(t, h, caseID)) != 0 {
 		t.Fatal("Dukcapil ran for a Badan Usaha case")
 	}
 }
@@ -201,8 +201,8 @@ func TestRecoverySweepResumesAnAbandonedRun(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		apptest.New(t, func(c *config.Config) { c.DatabaseURL = h.Config.DatabaseURL })
 	}
-	eventually(t, "the run to reach DHN", func() bool { return run(t, h, caseID).Step == "DHN" })
-	logs := apiLogs(t, h, caseID)
+	eventually(t, "Dukcapil to finish", func() bool { return run(t, h, caseID).Step != "Dukcapil" })
+	logs := dukcapilLogs(t, h, caseID)
 	if len(fake.Requests()) != 1 || len(logs) != 1 || logs[0].Attempt != 2 {
 		t.Fatalf("calls %d, logs %+v", len(fake.Requests()), logs)
 	}
@@ -231,7 +231,7 @@ func TestAnExecutorThatLostItsRunRecordsNothing(t *testing.T) {
 	exec(t, h, `UPDATE fos.prescreening_runs SET owner_id = 'other-executor' WHERE case_id = $1`, caseID)
 
 	time.Sleep(time.Second) // past the 300 ms timeout and the 20 ms retry gap
-	if logs := apiLogs(t, h, caseID); len(logs) != 0 || len(fake.Requests()) != 1 {
+	if logs := dukcapilLogs(t, h, caseID); len(logs) != 0 || len(fake.Requests()) != 1 {
 		t.Fatalf("logs %+v, calls %d", logs, len(fake.Requests()))
 	}
 	if got := run(t, h, caseID); got.State != "RUNNING" || got.Attempt != 1 {
@@ -244,8 +244,8 @@ func TestAnExecutorThatLostItsRunRecordsNothing(t *testing.T) {
 func TestLongResponsesAreLoggedWhole(t *testing.T) {
 	long := `{"NIK":"Sesuai (100)","NAMA_LGKP":"Sesuai (100)","TGL_LHR":"Sesuai","ALAMAT":"` + strings.Repeat("Jalan Panjang ", 20000) + `"}`
 	h, _, _, caseID := sesuaiWith(t, apptest.DukcapilReply{Status: 500, Body: strings.Repeat("x", 300000)}, apptest.DukcapilReply{Status: 200, Body: long})
-	eventually(t, "the run to reach DHN", func() bool { return run(t, h, caseID).Step == "DHN" })
-	logs := apiLogs(t, h, caseID)
+	eventually(t, "Dukcapil to finish", func() bool { return run(t, h, caseID).Step != "Dukcapil" })
+	logs := dukcapilLogs(t, h, caseID)
 	if len(logs) != 2 || len(logs[0].Response) != 300000 || logs[1].Response != long {
 		t.Fatalf("rows %d, lengths %d / %d", len(logs), len(logs[0].Response), len(logs[1].Response))
 	}
@@ -258,7 +258,7 @@ func TestDukcapilNeverSendsTheSpouse(t *testing.T) {
 	fake := apptest.StartFakeDukcapil(t, apptest.DukcapilMatch)
 	h.UseDukcapil(t, fake)
 	review(t, tl, caseID, id, "SESUAI", "x")
-	eventually(t, "the run to reach DHN", func() bool { return run(t, h, caseID).Step == "DHN" })
+	eventually(t, "Dukcapil to finish", func() bool { return run(t, h, caseID).Step != "Dukcapil" })
 	reqs := fake.Requests()
 	if len(reqs) != 1 || strings.Contains(reqs[0].Body, "3171019876543210") || strings.Contains(reqs[0].Body, "Siti") {
 		t.Fatalf("requests = %+v", reqs)
@@ -268,7 +268,7 @@ func TestDukcapilNeverSendsTheSpouse(t *testing.T) {
 // RESPONSE_CODE 13 passes whether it comes as text or as a number.
 func TestDukcapilNotFoundAsNumberPasses(t *testing.T) {
 	h, _, _, caseID := sesuaiWith(t, apptest.DukcapilReply{Status: 200, Body: `{"RESPONSE_CODE":13,"RESPONSE_DESC":"Data Tidak Ditemukan"}`})
-	eventually(t, "the run to reach DHN", func() bool { return run(t, h, caseID).Step == "DHN" })
+	eventually(t, "Dukcapil to finish", func() bool { return run(t, h, caseID).Step != "Dukcapil" })
 }
 
 // Agreed for ticket 09: missing request data is a Fail of each attempt,
@@ -280,7 +280,7 @@ func TestMissingRequestDataFailsTheAttempts(t *testing.T) {
 	exec(t, h, `UPDATE fos.customer SET birth_date = NULL WHERE case_id = $1 AND customer_type = 'Nasabah'`, caseID)
 	review(t, tl, caseID, id, "SESUAI", "x")
 	eventually(t, "the run to fail", func() bool { return run(t, h, caseID).State == "STOPPED_FAILED" })
-	logs := apiLogs(t, h, caseID)
+	logs := dukcapilLogs(t, h, caseID)
 	if len(fake.Requests()) != 0 || len(logs) != 4 || !strings.HasPrefix(logs[0].Response, "Dukcapil request data missing") {
 		t.Fatalf("calls %d, logs %+v", len(fake.Requests()), logs)
 	}
@@ -293,7 +293,7 @@ func TestDukcapilKeyIsAlwaysMasked(t *testing.T) {
 	h.UseDukcapil(t, fake)
 	exec(t, h, `UPDATE fos.dynamic_system_settings SET value = 'Cookie' WHERE purpose = 'api/log/masked_headers'`)
 	review(t, tl, caseID, id, "SESUAI", "x")
-	eventually(t, "the run to reach DHN", func() bool { return run(t, h, caseID).Step == "DHN" })
+	eventually(t, "Dukcapil to finish", func() bool { return run(t, h, caseID).Step != "Dukcapil" })
 	if n := count(t, h, `SELECT count(*) FROM fos.connect_api_log WHERE case_id = $1 AND request_headers::text LIKE '%'||$2||'%'`, caseID, apptest.DukcapilAPIKey); n != 0 {
 		t.Fatal("the API key was stored")
 	}

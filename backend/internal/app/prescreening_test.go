@@ -17,6 +17,7 @@ func sesuaiWith(t *testing.T, replies ...apptest.DukcapilReply) (*apptest.Harnes
 	h, _, tl, caseID, id := toReview(t)
 	fake := apptest.StartFakeDukcapil(t, replies...)
 	h.UseDukcapil(t, fake)
+	h.UseDHN(t, apptest.StartFakeAPI(t, apptest.DHNNotFound))
 	if r := review(t, tl, caseID, id, "SESUAI", "Data lengkap."); r.Status != http.StatusNoContent {
 		t.Fatalf("sesuai = %d %s", r.Status, r.Raw)
 	}
@@ -92,7 +93,7 @@ func apiLogs(t *testing.T, h *apptest.Harness, caseID string) []apiLogRow {
 func TestSesuaiRunsDukcapilInTheBackground(t *testing.T) {
 	h, fake, _, caseID := sesuaiWith(t, apptest.DukcapilMatch)
 
-	eventually(t, "the run to reach DHN", func() bool { return run(t, h, caseID).Step == "DHN" })
+	eventually(t, "Dukcapil to finish", func() bool { return run(t, h, caseID).Step != "Dukcapil" })
 	if got := run(t, h, caseID); got.State != "RUNNING" || got.Attempt != 1 {
 		t.Fatalf("run = %+v", got)
 	}
@@ -112,7 +113,7 @@ func TestSesuaiRunsDukcapilInTheBackground(t *testing.T) {
 		t.Fatalf("body = %s", reqs[0].Body)
 	}
 
-	logs := apiLogs(t, h, caseID)
+	logs := dukcapilLogs(t, h, caseID)
 	if len(logs) != 1 {
 		t.Fatalf("logs = %+v", logs)
 	}
@@ -128,6 +129,18 @@ func TestSesuaiRunsDukcapilInTheBackground(t *testing.T) {
 	if got := l.ResponseHeaders["Set-Cookie"]; len(got) != 1 || got[0] != "***" {
 		t.Fatalf("response headers = %v", l.ResponseHeaders)
 	}
+}
+
+// dukcapilLogs is the case's Dukcapil rows of the Connect API Log.
+func dukcapilLogs(t *testing.T, h *apptest.Harness, caseID string) []apiLogRow {
+	t.Helper()
+	var out []apiLogRow
+	for _, l := range apiLogs(t, h, caseID) {
+		if l.Name == "Dukcapil" {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // dmy turns yyyy-mm-dd into dd-MM-yyyy.

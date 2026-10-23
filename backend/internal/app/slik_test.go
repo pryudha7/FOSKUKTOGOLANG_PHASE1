@@ -488,8 +488,9 @@ func TestBadanUsahaMakesNoSLIKRequest(t *testing.T) {
 		exec(t, h, `UPDATE fos.work SET customer_type = 'Badan Usaha' WHERE case_id = $1`, caseID)
 		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name) VALUES ($1, 'Badan Usaha', '012345678901000', 'PT Contoh')`, caseID)
 	})
-	eventually(t, "the run to reach Pefindo", func() bool { return run(t, h, caseID).Step == "Pefindo" || run(t, h, caseID).State != "RUNNING" })
-	if got := run(t, h, caseID); got.State != "RUNNING" || got.Step != "Pefindo" {
+	// Pefindo is not configured here: the run stops broken there.
+	waitRunEnd(t, h, caseID)
+	if got := run(t, h, caseID); got.Step != "Pefindo" {
 		t.Fatalf("run = %+v", got)
 	}
 	if len(fs.Calls()) != 0 || count(t, h, `SELECT count(*) FROM fos.slik_report WHERE case_id = $1`, caseID) != 0 {

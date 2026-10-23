@@ -19,7 +19,8 @@ var dhnAPI = outboundAPI{logName: "DHN", settings: "dhn", keyHeader: "x-api-key"
 const dhnIdentityPlaceholder = "{IdentityNumber}"
 
 func (e *Executor) dhnCheck() check {
-	return check{apiName: dhnAPI.logName, try: e.tryDHN, retry: e.retrySettings(dhnAPI)}
+	return check{apiName: dhnAPI.logName, retry: e.retrySettings(dhnAPI),
+		try: func(ctx context.Context, r runRef) (attempt, error) { return e.tryDHN(ctx, r.caseID, r.attempt) }}
 }
 
 func (e *Executor) tryDHN(ctx context.Context, caseID string, attemptNumber int) (attempt, error) {

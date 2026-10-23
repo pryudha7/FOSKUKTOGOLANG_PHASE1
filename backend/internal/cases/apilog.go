@@ -31,6 +31,8 @@ type apiLog struct {
 	responseHeaders   http.Header
 	duration          time.Duration
 	attempt           int
+	// Pefindo Search (FR-PSAPI-014, §9.14).
+	eventID, pefindoID, inquiryID string
 }
 
 // masked replaces the values of secret headers with "***" (DB-RULE-066);
@@ -74,7 +76,8 @@ func (s *Service) maskedHeaderNames(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
-// insert appends the row (DB-RULE-041). Headers must already be masked.
+// insert appends the row (DB-RULE-041); caseID "" is a row without a case
+// (PefindoToken). Headers must already be masked.
 func (l *apiLog) insert(ctx context.Context, tx pgx.Tx, caseID string) error {
 	toJSON := func(h http.Header) []byte {
 		if h == nil {
@@ -91,10 +94,11 @@ func (l *apiLog) insert(ctx context.Context, tx pgx.Tx, caseID string) error {
 	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO fos.connect_api_log (log_id, case_id, api_type, api_name, submitted_at, api_status, request, response,
-			http_method, request_url, http_status_code, request_headers, response_headers, duration_milliseconds, attempt_number)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-		uuid.New(), caseID, apiTypeConnectRest, l.name, l.submittedAt, l.status, empty(l.request), l.response,
+			http_method, request_url, http_status_code, request_headers, response_headers, duration_milliseconds, attempt_number,
+			event_id, pefindo_id, inquiry_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+		uuid.New(), empty(caseID), apiTypeConnectRest, l.name, l.submittedAt, l.status, empty(l.request), l.response,
 		empty(l.method), empty(l.url), l.httpStatus, toJSON(l.requestHeaders), toJSON(l.responseHeaders),
-		int(l.duration/time.Millisecond), l.attempt)
+		int(l.duration/time.Millisecond), l.attempt, empty(l.eventID), empty(l.pefindoID), empty(l.inquiryID))
 	return err
 }

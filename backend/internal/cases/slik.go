@@ -70,8 +70,8 @@ var (
 func (e *Executor) slikCheck(subject slikSubject) check {
 	return check{
 		apiName: subject.api.logName,
-		try: func(ctx context.Context, caseID string, n int) (attempt, error) {
-			return e.trySLIK(ctx, caseID, n, subject)
+		try: func(ctx context.Context, r runRef) (attempt, error) {
+			return e.trySLIK(ctx, r.caseID, r.attempt, subject)
 		},
 		retry: e.retrySettings(subject.api),
 	}

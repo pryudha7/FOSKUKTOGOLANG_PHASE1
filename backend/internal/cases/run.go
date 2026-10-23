@@ -71,29 +71,42 @@ func (o outcome) logStatus() string {
 }
 
 // attempt is one try of a check: its outcome, the log row it made, and
-// what a passed attempt changes besides the run (e.g. slik_report REQUESTED),
-// applied in the transaction that records it.
+// what a passed or rejected attempt changes besides the run (e.g.
+// slik_report REQUESTED), applied in the transaction that records it.
 type attempt struct {
 	outcome outcome
 	log     *apiLog
 	apply   func(context.Context, pgx.Tx) error
+	// A step of several APIs (Pefindo) goes on at nextAPI after a pass,
+	// waiting pause first; a pass with no nextAPI ends the step.
+	nextAPI string
+	pause   time.Duration
+	// immediate repeats a failed attempt without the retry gap (FR-PSAPI-015).
+	immediate bool
+	// failIfNotApplied turns a pass whose apply cannot be saved into a Fail
+	// that is retried (DB-RULE-075), instead of a system failure.
+	failIfNotApplied bool
 }
 
-// check is one step of the run. apiName is its Connect API Log api_name;
-// try returns an error only for a system failure (a missing setting), which
-// stops the run broken.
+// check is one step of the run. apiName is its Connect API Log api_name and
+// criterion its rejection criterion on the Rejected List; try returns an
+// error only for a system failure (a missing setting), which stops the run
+// broken.
 type check struct {
-	apiName string
-	try     func(ctx context.Context, caseID string, attemptNumber int) (attempt, error)
-	// retry gives the step's maximum retries and gap (FR-PSAPI-002).
-	retry func(ctx context.Context) (int, time.Duration, error)
+	apiName, criterion string
+	try                func(ctx context.Context, r runRef) (attempt, error)
+	// retry gives the maximum retries and gap of the step's API
+	// (FR-PSAPI-002); api is "" on a step of one API.
+	retry func(ctx context.Context, api string) (int, time.Duration, error)
 }
 
-// runRef is a run loaded for execution.
+// runRef is a run loaded for execution: its step, the API inside the step
+// ("" on a step of one API, agreed for ticket 13) and the attempt there.
 type runRef struct {
 	id      int64
 	caseID  string
 	step    string
+	api     string
 	attempt int
 }
 
@@ -126,6 +139,7 @@ func newExecutor(s *Service) *Executor {
 	e.checks = map[string]check{
 		dukcapilAPI.logName: e.dukcapilCheck(), dhnAPI.logName: e.dhnCheck(), stepRejectedList: e.rejectedListCheck(),
 		stepSLIK: e.slikCheck(slikSubjects[subjectCustomer]), stepSLIKSpouse: e.slikCheck(slikSubjects[subjectSpouse]),
+		stepPefindo: e.pefindoCheck(pefindoSubjects[subjectCustomer]), stepPefindoSpouse: e.pefindoCheck(pefindoSubjects[subjectSpouse]),
 	}
 	return e
 }
@@ -253,8 +267,8 @@ func (e *Executor) heartbeat(ctx context.Context, stop context.CancelFunc, runID
 func (e *Executor) load(ctx context.Context, runID int64) (runRef, bool, error) {
 	var r runRef
 	err := e.s.db.QueryRow(ctx, `
-		SELECT run_id, case_id, current_step, attempt FROM fos.prescreening_runs
-		WHERE run_id = $1 AND state = $2 AND owner_id = $3`, runID, runRunning, e.owner).Scan(&r.id, &r.caseID, &r.step, &r.attempt)
+		SELECT run_id, case_id, current_step, COALESCE(current_api, ''), attempt FROM fos.prescreening_runs
+		WHERE run_id = $1 AND state = $2 AND owner_id = $3`, runID, runRunning, e.owner).Scan(&r.id, &r.caseID, &r.step, &r.api, &r.attempt)
 	if isNotFound(err) {
 		return r, false, nil
 	}
@@ -287,7 +301,7 @@ func (e *Executor) execute(runID int64) {
 			slog.Info("Pre-Screening Check run waits: step not implemented yet", "run_id", r.id, "case_id", r.caseID, "step", r.step)
 			return
 		}
-		a, err := c.try(ctx, r.caseID, r.attempt)
+		a, err := c.try(ctx, r)
 		if ctx.Err() != nil {
 			return // closing or lost: the attempt is not recorded and is repeated on recovery
 		}
@@ -295,33 +309,86 @@ func (e *Executor) execute(runID int64) {
 			e.stopBroken(ctx, r, err)
 			return
 		}
-		switch a.outcome {
-		case outcomeSuccess, outcomeSkip:
-			if !e.advance(ctx, r, a) {
-				return
-			}
-		case outcomeRejected:
-			e.finish(ctx, r, a.log, e.reject)
-			return
-		case outcomeFail:
-			max, gap, err := c.retry(ctx)
-			if err != nil {
-				e.stopBroken(ctx, r, err)
-				return
-			}
-			if r.attempt >= 1+max {
-				e.finish(ctx, r, a.log, e.fail)
-				return
-			}
-			if !e.recordAttempt(ctx, r, attempt{log: a.log}, r.step, r.attempt+1) {
-				return
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(gap):
-			}
+		notSaved := false
+		if a.failIfNotApplied {
+			a.apply = savedOr(&notSaved, applyOf(a))
 		}
+		goOn := e.settle(ctx, r, c, a)
+		if notSaved && ctx.Err() == nil {
+			// DB-RULE-075: a result that cannot be saved fails the attempt.
+			slog.Error("Pre-Screening Check result not saved; the attempt fails", "run_id", r.id, "case_id", r.caseID, "api", a.log.name)
+			a.log.status = apiFail
+			goOn = e.settle(ctx, r, c, attempt{outcome: outcomeFail, log: a.log})
+		}
+		if !goOn {
+			return
+		}
+	}
+}
+
+// settle records an attempt's outcome and moves the run on; it reports
+// whether the execution goes on with the run's next attempt.
+func (e *Executor) settle(ctx context.Context, r runRef, c check, a attempt) bool {
+	switch a.outcome {
+	case outcomeSuccess, outcomeSkip:
+		if a.nextAPI != "" {
+			return e.recordAttempt(ctx, r, a, r.step, a.nextAPI, 1) && e.wait(ctx, a.pause)
+		}
+		return e.advance(ctx, r, a)
+	case outcomeRejected:
+		e.finish(ctx, r, a.log, func(ctx context.Context, tx pgx.Tx, r runRef) (string, error) {
+			if err := applyOf(a)(ctx, tx); err != nil {
+				return "", err
+			}
+			return e.reject(ctx, tx, r)
+		})
+		return false
+	}
+	max, gap, err := c.retry(ctx, r.api)
+	if err != nil {
+		e.stopBroken(ctx, r, err)
+		return false
+	}
+	if r.attempt >= 1+max {
+		e.finish(ctx, r, a.log, e.fail)
+		return false
+	}
+	if !e.recordAttempt(ctx, r, attempt{log: a.log}, r.step, r.api, r.attempt+1) {
+		return false
+	}
+	return a.immediate || e.wait(ctx, gap)
+}
+
+var errNotSaved = errors.New("result not saved")
+
+// savedOr wraps a pass's change so that its failure is reported as
+// errNotSaved and flagged in *notSaved.
+func savedOr(notSaved *bool, apply func(context.Context, pgx.Tx) error) func(context.Context, pgx.Tx) error {
+	return func(ctx context.Context, tx pgx.Tx) error {
+		if err := apply(ctx, tx); err != nil {
+			*notSaved = true
+			return fmt.Errorf("%w: %v", errNotSaved, err)
+		}
+		return nil
+	}
+}
+
+// unrecorded reports whether a failure to record must stop the run broken:
+// not when the executor stops, lost the run, or a result was not saved.
+func unrecorded(ctx context.Context, err error) bool {
+	return err != nil && ctx.Err() == nil && !errors.Is(err, errRunLost) && !errors.Is(err, errNotSaved)
+}
+
+// wait sleeps d unless the execution stops first; it reports whether to go on.
+func (e *Executor) wait(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
 	}
 }
 
@@ -347,7 +414,7 @@ func (e *Executor) advance(ctx context.Context, r runRef, a attempt) bool {
 		return false
 	}
 	if r.step != stepSLIKSpouse {
-		return e.recordAttempt(ctx, r, a, next, 1)
+		return e.recordAttempt(ctx, r, a, next, "", 1)
 	}
 	waiting := false
 	err := e.inOwnedRun(ctx, r, a.log, func(tx pgx.Tx) error {
@@ -367,12 +434,12 @@ func (e *Executor) advance(ctx context.Context, r runRef, a attempt) bool {
 			d := e.s.now().Add(time.Duration(sla) * time.Second)
 			state, deadline, waiting = runWaitingSLIK, &d, true
 		}
-		_, err = tx.Exec(ctx, `UPDATE fos.prescreening_runs SET state = $2, current_step = $3, attempt = 1, wait_deadline_at = $4,
-			heartbeat_at = $5, updated_at = $5 WHERE run_id = $1`, r.id, state, next, deadline, e.s.now())
+		_, err = tx.Exec(ctx, `UPDATE fos.prescreening_runs SET state = $2, current_step = $3, current_api = NULL, attempt = 1,
+			wait_deadline_at = $4, heartbeat_at = $5, updated_at = $5 WHERE run_id = $1`, r.id, state, next, deadline, e.s.now())
 		return err
 	})
 	if err != nil {
-		if ctx.Err() == nil && !errors.Is(err, errRunLost) {
+		if unrecorded(ctx, err) {
 			e.stopBroken(ctx, r, fmt.Errorf("attempt not recorded: %w", err))
 		}
 		return false
@@ -389,19 +456,19 @@ func applyOf(a attempt) func(context.Context, pgx.Tx) error {
 }
 
 // recordAttempt writes the attempt's log row, its extra change and the
-// run's next position in one transaction, only while this executor still
-// owns the run.
-func (e *Executor) recordAttempt(ctx context.Context, r runRef, a attempt, step string, attemptNumber int) bool {
+// run's next position (step, API inside it, attempt) in one transaction,
+// only while this executor still owns the run.
+func (e *Executor) recordAttempt(ctx context.Context, r runRef, a attempt, step, api string, attemptNumber int) bool {
 	err := e.inOwnedRun(ctx, r, a.log, func(tx pgx.Tx) error {
 		if err := applyOf(a)(ctx, tx); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `UPDATE fos.prescreening_runs SET current_step = $2, attempt = $3, heartbeat_at = $4, updated_at = $4 WHERE run_id = $1`,
-			r.id, step, attemptNumber, e.s.now())
+		_, err := tx.Exec(ctx, `UPDATE fos.prescreening_runs SET current_step = $2, current_api = NULLIF($3, ''), attempt = $4,
+			heartbeat_at = $5, updated_at = $5 WHERE run_id = $1`, r.id, step, api, attemptNumber, e.s.now())
 		return err
 	})
 	if err != nil {
-		if ctx.Err() == nil && !errors.Is(err, errRunLost) {
+		if unrecorded(ctx, err) {
 			e.stopBroken(ctx, r, fmt.Errorf("attempt not recorded: %w", err))
 		}
 		return false
@@ -420,7 +487,7 @@ func (e *Executor) finish(ctx context.Context, r runRef, log *apiLog, end func(c
 		_, err = tx.Exec(ctx, `UPDATE fos.prescreening_runs SET state = $2, updated_at = $3 WHERE run_id = $1`, r.id, state, e.s.now())
 		return err
 	})
-	if err != nil && ctx.Err() == nil && !errors.Is(err, errRunLost) {
+	if unrecorded(ctx, err) {
 		e.stopBroken(ctx, r, fmt.Errorf("run not finished: %w", err))
 	}
 }
@@ -476,7 +543,7 @@ func (e *Executor) inOwnedRun(ctx context.Context, r runRef, log *apiLog, change
 func (e *Executor) reject(ctx context.Context, tx pgx.Tx, r runRef) (string, error) {
 	reason := ""
 	if r.step != stepRejectedList {
-		reason = rejectionReason(e.apiNameOf(r.step), "")
+		reason = rejectionReason(e.apiNameOf(r.step), e.checks[r.step].criterion)
 	}
 	return runStoppedRejected, e.rejectCase(ctx, tx, r.caseID, reason)
 }

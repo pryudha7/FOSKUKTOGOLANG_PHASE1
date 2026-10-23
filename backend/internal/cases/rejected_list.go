@@ -21,9 +21,9 @@ const (
 
 func (e *Executor) rejectedListCheck() check {
 	return check{
-		try: e.tryRejectedList,
+		try: func(ctx context.Context, r runRef) (attempt, error) { return e.tryRejectedList(ctx, r.caseID) },
 		// Never retried: a failed query stops the run (FR-PSAPI-007).
-		retry: func(context.Context) (int, time.Duration, error) { return 0, 0, nil },
+		retry: func(context.Context, string) (int, time.Duration, error) { return 0, 0, nil },
 	}
 }
 
@@ -31,7 +31,7 @@ func (e *Executor) rejectedListCheck() check {
 // against ACTIVE rows (DB-RULE-049). Any failure, a missing identity
 // included, is a system failure, never a pass and never retried
 // (fail-closed, FR-PSAPI-007): the run stops broken, case_status unchanged.
-func (e *Executor) tryRejectedList(ctx context.Context, caseID string, _ int) (attempt, error) {
+func (e *Executor) tryRejectedList(ctx context.Context, caseID string) (attempt, error) {
 	timeoutMS, err := e.s.settings.Int(ctx, "process/rejectedlist/query_timeout_ms")
 	if err != nil {
 		return attempt{}, err

@@ -20,12 +20,13 @@ type FakeAPI struct {
 	requests []FakeRequest
 }
 
-// FakeReply is one answer: Status with Body, or a hang longer than the
-// caller's timeout.
+// FakeReply is one answer: Status with Body (JSON unless ContentType says
+// otherwise), or a hang longer than the caller's timeout.
 type FakeReply struct {
-	Status int
-	Body   string
-	Hang   bool
+	Status      int
+	Body        string
+	Hang        bool
+	ContentType string
 }
 
 // FakeRequest is what the fake received.
@@ -71,6 +72,10 @@ func (f *FakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	f.mu.Unlock()
+	writeReply(w, r, reply)
+}
+
+func writeReply(w http.ResponseWriter, r *http.Request, reply FakeReply) {
 	if reply.Hang {
 		select {
 		case <-r.Context().Done():
@@ -78,7 +83,10 @@ func (f *FakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
+	if reply.ContentType == "" {
+		reply.ContentType = "application/json"
+	}
+	w.Header().Set("Content-Type", reply.ContentType)
 	w.Header().Set("Set-Cookie", "gw=secret-cookie")
 	w.WriteHeader(reply.Status)
 	_, _ = io.WriteString(w, reply.Body)

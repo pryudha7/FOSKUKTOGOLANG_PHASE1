@@ -18,16 +18,19 @@ import (
 // (FR-PSAPI-004).
 
 // outboundAPI names one API: its Connect API Log api_name, its settings key
-// (api/<settings>/..., secret/<settings>/apikey_ref) and the header that
-// carries its key.
+// (api/<settings>/..., secret/<settings>/apikey_ref), the settings key of
+// its base URL when another API's (base; "" for its own) and the header that
+// carries its key ("" for an API without one).
 type outboundAPI struct {
-	logName, settings, keyHeader string
+	logName, settings, base, keyHeader string
 }
 
 // maxResponseBytes bounds a response read into the log.
 const maxResponseBytes = 10 << 20
 
-// apiConfig is one API's configuration for an attempt.
+// apiConfig is one API's configuration for an attempt. unbounded reads a
+// response whole (the Pefindo PDF, agreed for ticket 13); otherwise a
+// response is at most maxResponseBytes.
 type apiConfig struct {
 	simulate         bool
 	simulateResponse string
@@ -35,6 +38,7 @@ type apiConfig struct {
 	timeout          time.Duration
 	keyHeader, key   string
 	maskedHeaders    []string
+	unbounded        bool
 }
 
 // apiConfig reads api/<api>/* and the key named by secret/<api>/apikey_ref;
@@ -48,7 +52,9 @@ func (e *Executor) apiConfig(ctx context.Context, a outboundAPI) (apiConfig, err
 	if c.maskedHeaders, err = e.s.maskedHeaderNames(ctx); err != nil {
 		return c, err
 	}
-	c.maskedHeaders = append(c.maskedHeaders, keyHeader)
+	if keyHeader != "" {
+		c.maskedHeaders = append(c.maskedHeaders, keyHeader)
+	}
 	if c.simulate, err = st.Bool(ctx, "api/"+api+"/simulate"); err != nil {
 		return c, err
 	}
@@ -56,7 +62,11 @@ func (e *Executor) apiConfig(ctx context.Context, a outboundAPI) (apiConfig, err
 		c.simulateResponse, err = st.String(ctx, "api/"+api+"/simulate_response")
 		return c, err
 	}
-	if c.base, err = st.String(ctx, "api/"+api+"/baseurl"); err != nil {
+	base := a.base
+	if base == "" {
+		base = api
+	}
+	if c.base, err = st.String(ctx, "api/"+base+"/baseurl"); err != nil {
 		return c, err
 	}
 	if c.path, err = st.String(ctx, "api/"+api+"/path"); err != nil {
@@ -67,6 +77,9 @@ func (e *Executor) apiConfig(ctx context.Context, a outboundAPI) (apiConfig, err
 		return c, err
 	}
 	c.timeout = time.Duration(timeoutMS) * time.Millisecond
+	if keyHeader == "" {
+		return c, nil
+	}
 	keyRef, err := st.String(ctx, "secret/"+api+"/apikey_ref")
 	if err != nil {
 		return c, err
@@ -78,8 +91,8 @@ func (e *Executor) apiConfig(ctx context.Context, a outboundAPI) (apiConfig, err
 }
 
 // retrySettings reads api/<api>/retry_max and retry_gap_ms (FR-PSAPI-002).
-func (e *Executor) retrySettings(a outboundAPI) func(context.Context) (int, time.Duration, error) {
-	return func(ctx context.Context) (int, time.Duration, error) {
+func (e *Executor) retrySettings(a outboundAPI) func(context.Context, string) (int, time.Duration, error) {
+	return func(ctx context.Context, _ string) (int, time.Duration, error) {
 		max, err := e.s.settings.Int(ctx, "api/"+a.settings+"/retry_max")
 		if err != nil {
 			return 0, 0, err
@@ -101,9 +114,9 @@ func (c apiConfig) endpoint(path string) (*url.URL, error) {
 
 // call sends one attempt and fills log with the URL, masked headers, HTTP
 // status, response (or the message of a missing one) and duration. It
-// reports whether an answer with a body arrived; a ctx error means the
-// executor is stopping.
-func (e *Executor) call(ctx context.Context, c apiConfig, log *apiLog, u *url.URL, body []byte, headers map[string]string) (bool, error) {
+// returns the body of an answer that has one (nil otherwise); a ctx error
+// means the executor is stopping.
+func (e *Executor) call(ctx context.Context, c apiConfig, log *apiLog, u *url.URL, body []byte, headers map[string]string) ([]byte, error) {
 	log.url = u.String()
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
@@ -113,9 +126,11 @@ func (e *Executor) call(ctx context.Context, c apiConfig, log *apiLog, u *url.UR
 	}
 	req, err := http.NewRequestWithContext(callCtx, log.method, log.url, rdr)
 	if err != nil {
-		return false, errors.New("request could not be built")
+		return nil, errors.New("request could not be built")
 	}
-	req.Header.Set(c.keyHeader, c.key)
+	if c.keyHeader != "" {
+		req.Header.Set(c.keyHeader, c.key)
+	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
@@ -123,32 +138,36 @@ func (e *Executor) call(ctx context.Context, c apiConfig, log *apiLog, u *url.UR
 
 	start := time.Now()
 	resp, err := e.http.Do(req)
-	answered := false
+	var answer []byte
 	if err == nil {
 		var raw []byte
-		raw, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+		if c.unbounded {
+			raw, err = io.ReadAll(resp.Body)
+		} else {
+			raw, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+		}
 		resp.Body.Close()
 		code := resp.StatusCode
 		log.httpStatus = &code
 		log.responseHeaders = masked(resp.Header, c.maskedHeaders)
 		switch {
 		case err != nil:
-		case len(raw) > maxResponseBytes:
+		case !c.unbounded && len(raw) > maxResponseBytes:
 			err = fmt.Errorf("response larger than %d bytes", maxResponseBytes)
 		case len(bytes.TrimSpace(raw)) == 0:
 			log.response = noBodyMessage(code)
 		default:
-			log.response, answered = string(raw), true
+			log.response, answer = string(raw), raw
 		}
 	}
 	log.duration = time.Since(start)
 	if ctx.Err() != nil {
-		return false, ctx.Err()
+		return nil, ctx.Err()
 	}
 	if err != nil {
 		log.response = callError(err, u, c.timeout)
 	}
-	return answered, nil
+	return answer, nil
 }
 
 // send completes an attempt whose log holds the request: a simulation is
@@ -163,12 +182,12 @@ func (e *Executor) send(ctx context.Context, c apiConfig, log *apiLog, path stri
 	if err != nil {
 		return attempt{}, fmt.Errorf("%s: %w", log.name, err)
 	}
-	answered, err := e.call(ctx, c, log, u, body, headers)
+	answer, err := e.call(ctx, c, log, u, body, headers)
 	if err != nil {
 		return attempt{}, err
 	}
 	o := outcomeFail
-	if answered {
+	if answer != nil {
 		o = evaluate(log.response)
 	}
 	log.status = o.logStatus()

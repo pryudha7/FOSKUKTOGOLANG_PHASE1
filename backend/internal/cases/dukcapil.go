@@ -23,7 +23,8 @@ type dukcapilRequest struct {
 }
 
 func (e *Executor) dukcapilCheck() check {
-	return check{apiName: dukcapilAPI.logName, try: e.tryDukcapil, retry: e.retrySettings(dukcapilAPI)}
+	return check{apiName: dukcapilAPI.logName, retry: e.retrySettings(dukcapilAPI),
+		try: func(ctx context.Context, r runRef) (attempt, error) { return e.tryDukcapil(ctx, r.caseID, r.attempt) }}
 }
 
 func (e *Executor) tryDukcapil(ctx context.Context, caseID string, attemptNumber int) (attempt, error) {

@@ -25,12 +25,20 @@ export type CaseFrame = {
 
 export type Option = { code: string; description: string };
 
+// birthDate is yyyy-mm-dd.
+export type PersonForm = { nik: string; name: string; birthDate: string };
+
 export type PreScreeningPage = {
   branchName: string;
   branchError: { code: string; message: string } | null;
   customerType: string;
   customerTypeOptions: Option[];
+  personal: PersonForm;
+  spouse: PersonForm;
 };
+
+// A validation failure returned with 422 by a submit.
+export type FieldError = { section: string; field: string; code: string; message: string };
 
 export type Assignment = {
   assignmentId: number;

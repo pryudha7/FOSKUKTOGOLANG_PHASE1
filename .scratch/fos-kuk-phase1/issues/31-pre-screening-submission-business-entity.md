@@ -10,4 +10,6 @@
 - [ ] NPWP: ERR-010, ERR-011 (digits only), ERR-012 (15-22 digits), in that order; Nama Badan Usaha ERR-017 (30 max) and ERR-008; Tanggal Akta Pendirian ERR-016 (not after today)
 - [ ] Data Pengurus: starts with 1 entry, 1 minimum, 10 maximum; Jabatan from BMV BUSINESS_ROLE (ERR-014); NIK/Nama/Tanggal Lahir as Data Pribadi; duplicate NIK across entries ERR-018 on every duplicate; ERR-015 guards zero entries
 - [ ] Banner lines for entries read "Pengurus <n> - <Nama Field> : <pesan>"
+- [ ] Tipe Nasabah cannot change after the first submit: test Perorangan then Badan Usaha (ticket 30 could not, as only Perorangan was accepted)
+- [ ] Form switching resets every field (AC-FR-APP-002-25/26/27)
 - [ ] Verified at the HTTP API seam against a real PostgreSQL, with external systems faked at the network boundary.

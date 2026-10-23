@@ -10,9 +10,9 @@ import (
 	"fos/internal/auth"
 )
 
-// Person is an operator shown by full name, read from the operator data at
-// display time (DB-RULE-027).
-type Person struct {
+// Actor is the operator who created or last updated a case, shown by full
+// name read from the operator data at display time (DB-RULE-027).
+type Actor struct {
 	UserID string
 	Name   string
 	At     time.Time
@@ -44,8 +44,8 @@ type Frame struct {
 	CaseType        CaseType
 	Priority        int
 	CaseStatus      string
-	Created         Person
-	Updated         Person
+	Created         Actor
+	Updated         Actor
 	Stages          []StageItem
 	Lifecycle       []LifecycleStage
 	AttachmentCount int
@@ -184,6 +184,8 @@ type PreScreeningPage struct {
 	BranchMissing       bool
 	CustomerType        string
 	CustomerTypeOptions []Option
+	// Personal and Spouse are the saved Data Pribadi and Data Pasangan.
+	Personal, Spouse Person
 }
 
 // Option is a BMV dropdown option.
@@ -259,7 +261,13 @@ func (s *Service) preScreeningPage(ctx context.Context, caseID string) (PreScree
 	page.BranchMissing = branch == nil
 	page.BranchName = value(branch)
 	page.CustomerType = value(customerType)
-	page.CustomerTypeOptions, err = s.options(ctx, "CUSTOMER_TYPE")
+	if page.CustomerTypeOptions, err = s.options(ctx, "CUSTOMER_TYPE"); err != nil {
+		return PreScreeningPage{}, err
+	}
+	if page.Personal, err = s.savedParty(ctx, caseID, customerNasabah); err != nil {
+		return PreScreeningPage{}, err
+	}
+	page.Spouse, err = s.savedParty(ctx, caseID, customerPasangan)
 	return page, err
 }
 

@@ -194,10 +194,13 @@ func (s *server) openAssignment(ep endpoint) http.HandlerFunc {
 			BranchError         *errorJSON   `json:"branchError"`
 			CustomerType        string       `json:"customerType"`
 			CustomerTypeOptions []optionJSON `json:"customerTypeOptions"`
+			Personal            personForm   `json:"personal"`
+			Spouse              personForm   `json:"spouse"`
 		}
 		var page *preScreeningJSON
 		if ps := p.PreScreening; ps != nil {
-			page = &preScreeningJSON{BranchName: ps.BranchName, CustomerType: ps.CustomerType, CustomerTypeOptions: []optionJSON{}}
+			page = &preScreeningJSON{BranchName: ps.BranchName, CustomerType: ps.CustomerType, CustomerTypeOptions: []optionJSON{},
+				Personal: personForm(ps.Personal), Spouse: personForm(ps.Spouse)}
 			if ps.BranchMissing {
 				page.BranchError = &errorJSON{"ERR-006", caseErrors["ERR-006"].message}
 			}
@@ -211,5 +214,107 @@ func (s *server) openAssignment(ep endpoint) http.HandlerFunc {
 			Status       string            `json:"status"`
 			Page         *preScreeningJSON `json:"page"`
 		}{p.AssignmentID, p.Name, string(p.Status), page})
+	}
+}
+
+// personForm is a Data Pribadi or Data Pasangan block; birthDate is yyyy-mm-dd.
+type personForm struct {
+	NIK       string `json:"nik"`
+	Name      string `json:"name"`
+	BirthDate string `json:"birthDate"`
+}
+
+// writeMoveResult answers a submit or back: the opened next assignment, the
+// validation errors (422), or the refusal.
+func writeMoveResult(w http.ResponseWriter, next int64, err error) {
+	var invalid *cases.ValidationError
+	switch {
+	case errors.As(err, &invalid):
+		type fieldErrorJSON struct {
+			Section string `json:"section"`
+			Field   string `json:"field"`
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		}
+		out := make([]fieldErrorJSON, 0, len(invalid.Fields))
+		for _, f := range invalid.Fields {
+			out = append(out, fieldErrorJSON(f))
+		}
+		writeJSON(w, http.StatusUnprocessableEntity, struct {
+			Errors []fieldErrorJSON `json:"errors"`
+		}{out})
+	case errors.Is(err, cases.ErrNotFound):
+		w.WriteHeader(http.StatusNotFound)
+	case errors.Is(err, cases.ErrForbidden):
+		w.WriteHeader(http.StatusForbidden)
+	case errors.Is(err, cases.ErrCompleted):
+		w.WriteHeader(http.StatusConflict)
+	case errors.Is(err, cases.ErrUnsupported):
+		w.WriteHeader(http.StatusBadRequest)
+	case err != nil:
+		slog.Error("move assignment failed", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+	default:
+		writeJSON(w, http.StatusOK, struct {
+			AssignmentID int64 `json:"assignmentId"`
+		}{next})
+	}
+}
+
+// pathAssignment reads {caseId} and {assignmentId}.
+func pathAssignment(r *http.Request) (string, int64, bool) {
+	id, err := strconv.ParseInt(r.PathValue("assignmentId"), 10, 64)
+	return r.PathValue("caseId"), id, err == nil
+}
+
+// submitAssignment handles POST .../assignments/{id}/submit: Next or the
+// breadcrumb on Pre-Screening Submission. Only this form's fields are
+// accepted (BR-UI-010).
+func (s *server) submitAssignment(ep endpoint) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sess, ok := s.session(w, r, ep)
+		if !ok {
+			return
+		}
+		caseID, id, ok := pathAssignment(r)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var req struct {
+			CustomerType string     `json:"customerType"`
+			Personal     personForm `json:"personal"`
+			Spouse       personForm `json:"spouse"`
+		}
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		next, err := s.cases.SubmitPreScreening(r.Context(), sess, caseID, id, cases.PreScreeningForm{
+			CustomerType: req.CustomerType,
+			Personal:     cases.Person(req.Personal),
+			Spouse:       cases.Person(req.Spouse),
+		})
+		writeMoveResult(w, next, err)
+	}
+}
+
+// backAssignment handles POST .../assignments/{id}/back: the breadcrumb back
+// from Document Underlying Upload.
+func (s *server) backAssignment(ep endpoint) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sess, ok := s.session(w, r, ep)
+		if !ok {
+			return
+		}
+		caseID, id, ok := pathAssignment(r)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		next, err := s.cases.BackToPreScreening(r.Context(), sess, caseID, id)
+		writeMoveResult(w, next, err)
 	}
 }

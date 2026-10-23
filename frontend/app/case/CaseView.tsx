@@ -7,6 +7,7 @@ import CaseInfoPanel, { CaseHeader } from "./CaseInfoPanel";
 import StageBar from "./StageBar";
 import AttachmentsPanel from "./AttachmentsPanel";
 import PreScreeningSubmission from "./PreScreeningSubmission";
+import DocumentUnderlyingUpload from "./DocumentUnderlyingUpload";
 import styles from "./case.module.css";
 
 // UI-013 Case View, mode Assignment: case info on the left, Stage Bar and
@@ -62,7 +63,9 @@ export default function CaseView({
         <StageBar stages={frame.stages} lifecycle={frame.lifecycle} />
         <div className={styles.main}>
           {assignment.page ? (
-            <PreScreeningSubmission page={assignment.page} endpointPath={endpointPath} />
+            <PreScreeningSubmission page={assignment.page} endpointPath={endpointPath} caseId={caseId} assignmentId={assignmentId} />
+          ) : assignment.name === "Document Underlying Upload" ? (
+            <DocumentUnderlyingUpload endpointPath={endpointPath} caseId={caseId} assignmentId={assignmentId} />
           ) : (
             <section className={styles.card}>
               <h2 className={styles.cardTitle}>{assignment.name}</h2>

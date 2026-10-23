@@ -80,6 +80,8 @@ func New(cfg config.Config, pool *pgxpool.Pool, opts ...Option) http.Handler {
 	mux.HandleFunc("POST "+desktop.path+"/api/cases", s.createCase(desktop))
 	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}", s.caseFrame(desktop))
 	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}", s.openAssignment(desktop))
+	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/submit", s.submitAssignment(desktop))
+	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/back", s.backAssignment(desktop))
 	return s.requireHTTPS(mux)
 }
 

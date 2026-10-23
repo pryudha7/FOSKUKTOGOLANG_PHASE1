@@ -502,6 +502,199 @@
   font-size: 12px;
 }
 
+.fieldLabelInvalid {
+  color: #d91c29;
+  font-size: 13px;
+}
+
+.inputInvalid {
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid #d91c29;
+  border-radius: 3px;
+  background: #ffffff;
+  font: inherit;
+}
+
+.sectionTitle {
+  margin: 6px 0 0;
+  font-size: 15px;
+  font-weight: bold;
+}
+
+.assignmentArea {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* UI-010 State Error banner (Gambar 13). */
+.errorBanner {
+  display: flex;
+  align-items: stretch;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+}
+
+.errorBannerIcon {
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  background: #d91c29;
+  color: #ffffff;
+  font-size: 18px;
+}
+
+.errorBannerList {
+  margin: 0;
+  padding: 10px 10px 10px 28px;
+}
+
+/* Date field and picker (BR-UI-011, Gambar 12). */
+.dateField {
+  position: relative;
+  display: flex;
+}
+
+.dateField input {
+  flex: 1;
+  padding-right: 36px;
+}
+
+/* The typed value stays in the input; the long form overlays it. */
+.dateHidden {
+  color: transparent;
+}
+
+.dateLong {
+  position: absolute;
+  left: 9px;
+  top: 0;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.calendarButton {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  height: 26px;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.datePicker {
+  position: absolute;
+  top: 38px;
+  left: 0;
+  z-index: 30;
+  width: 220px;
+  padding: 10px;
+  background: #ffffff;
+  border: 1px solid #c9d0d8;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.dpHeader {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dpGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+}
+
+.dpWeekday {
+  font-size: 11px;
+  color: #444b52;
+}
+
+.dpDay {
+  height: 26px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.dpDay:disabled {
+  color: #c9d0d8;
+  cursor: not-allowed;
+}
+
+.dpOther {
+  color: #b0b4ba;
+}
+
+.dpSelected {
+  background: #0089ec;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.dpFooter {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.dpToday,
+.dpClose {
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dpToday::before {
+  content: "◣ ";
+  color: #0089ec;
+}
+
+.dpClose::before {
+  content: "× ";
+  color: #d91c29;
+}
+
+.crumbButton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.buttonGroup {
+  display: flex;
+  gap: 8px;
+}
+
+.back {
+  min-width: 90px;
+  height: 34px;
+  border: 1px solid #31f000;
+  border-radius: 17px;
+  background: #ffffff;
+  color: #146000;
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+
 .buttons {
   display: flex;
   justify-content: space-between;

@@ -13,3 +13,19 @@
 - [ ] ERR-006 blocks submit when the case has no branch
 - [ ] Next completes Pre-Screening Submission and creates an opened Document Underlying Upload assignment for the same operator (FR-ASSIGN-001 rules 2-5)
 - [ ] Verified at the HTTP API seam against a real PostgreSQL, with external systems faked at the network boundary.
+
+## Comments
+
+**Decisions (2026-10-23, agreed):**
+
+- Data is saved when Next or the breadcrumb passes validation; Close saves nothing (TBD-023c).
+- Birth dates range from 100 years ago to today; age is full years on today's date in the operator's timezone. Interim texts: invalid date "Harap masukkan tanggal yang valid" (code `DATE_INVALID`), out of range "Tanggal Lahir di luar rentang yang diizinkan" (`DATE_OUT_OF_RANGE`) (TBD-023f/g).
+- Back from Document Underlying Upload (breadcrumb or Back) needs no validation yet (TBD-027a): it completes Document Underlying Upload and opens a new Pre-Screening Submission row.
+- Only the worklist owner submits; Authors may view.
+- Tipe Nasabah other than Perorangan cannot be submitted yet (Badan Usaha: ticket 31; others: TBD-029a).
+- `fos.customer` holds all §9.28 columns; Pre-Screening writes the "Nasabah" row and, only when Data Pasangan is filled, the "Pasangan" row; a resubmit updates them and an emptied Data Pasangan deletes the "Pasangan" row. Tipe Nasabah goes to `work.customer_type` as its description.
+- With Tipe Nasabah not chosen, only its ERR-010 is reported (no data section is shown yet).
+
+**API:** `POST <desktop>/api/cases/{caseId}/assignments/{id}/submit` (Pre-Screening Submission; body `customerType`, `personal`, `spouse` with `nik`, `name`, `birthDate` yyyy-mm-dd; 422 `{errors: [{section, field, code, message}]}`), `POST …/back` (Document Underlying Upload).
+
+**Verification:** HTTP API tests cover AC-FR-APP-002-04/06/07/08/11/12/21/23/24 (Perorangan parts), AC-FR-APP-003-02/03, AC-FR-ASSIGN-001-04/05/06. Headless Chrome checked the form, error banner and field errors (Gambar 13), the date field and picker (Gambar 12, BR-UI-011), Next to Document Underlying Upload and Back.

@@ -38,3 +38,13 @@ Implementation notes (2026-10-24):
 - Mutation checks (each fails a test): no timeout in the sweep; the run not stopped on timeout; no ERR-036; Sesuai starting a new run instead of resuming at Pefindo; no bypass on SLIK; bypass not treated as timeout on PBSResponse; bypass not counted as Manual SLIK Entry; the Retry view on the step's API instead of current_api.
 - UI check `tools/uicheck/slik.js`: ERR-036 banner on Document Underlying Upload, and the Timeout SLIK variant of UI-017 (API Log History above History Pre-screening Notes, no Retry text, decision fields kept).
 
+Review (2026-10-24), proposals awaiting the user's answer (session paused before the reply):
+
+1. Bug: an RPA callback after a bypass is accepted once the Team Lead's Sesuai resumes the run (refuseSLIK keys the bypass on the run state, which is RUNNING again); a late Customer result could then reject the case during Pefindo. Fix: refuse on the case's Bypass log row (status Bypass on SLIK/SLIKPasangan), as the timeout uses its log row; add a test of a callback after the resume.
+2. Log "SLIK wait timed out" only after the commit succeeds.
+3. One shared list of the Manual SLIK Entry states (timeout, bypass) instead of three spellings (pbs.go, inManualSLIKEntry, resumeAfterManualSLIK).
+4. Rename RetryView to a neutral APILogView (field SLIKTimeout keeps the SoT variant name); drop the duplicate nil-to-empty conversion in review.go.
+5. GLOSSARY.md: Manual SLIK Entry also follows a bypass; add the term SLIK Bypass (FR-PSAPI-019, DEC-106).
+6. Open domain question: §9.15 does not list STOPPED_SLIK_BYPASS.
+7-8. No change (agreed or not needed): SLIKWQFlowAct completion (ticket 36), only Pre-Screening Submission (decision 3), no bypass with retry_max 0 (decision 7), migration 0013 seeds as written.
+

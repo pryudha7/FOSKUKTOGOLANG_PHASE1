@@ -34,6 +34,7 @@ type fakeUser struct {
 	dn       string
 	attrs    map[string][]string
 	password string
+	locked   bool
 }
 
 // StartFakeLDAP starts the fake directory with one service account.
@@ -102,6 +103,18 @@ func (f *FakeLDAP) AddUser(samAccountName, password string) {
 	})
 }
 
+// LockUser makes binds as the user fail with unwillingToPerform (53), as
+// directories do for a locked or disabled account.
+func (f *FakeLDAP) LockUser(samAccountName string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.users {
+		if vals := f.users[i].attrs["sAMAccountName"]; len(vals) > 0 && strings.EqualFold(vals[0], samAccountName) {
+			f.users[i].locked = true
+		}
+	}
+}
+
 // Filters returns every search filter the directory received, as decoded
 // from the wire.
 func (f *FakeLDAP) Filters() []string {
@@ -120,6 +133,10 @@ func (f *FakeLDAP) bind(w *gldap.ResponseWriter, r *gldap.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, u := range f.users {
+		if u.locked && strings.EqualFold(u.dn, m.UserName) {
+			resp.SetResultCode(gldap.ResultUnwillingToPerform)
+			return
+		}
 		// Like many directories, an empty password is an unauthenticated
 		// bind and succeeds (RFC 4513 §5.1.2): the client must refuse it.
 		if strings.EqualFold(u.dn, m.UserName) && (m.Password == "" || string(m.Password) == u.password) {

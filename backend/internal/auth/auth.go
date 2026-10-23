@@ -41,8 +41,8 @@ type LoginError struct {
 func (e *LoginError) Error() string { return "login refused: " + e.Code }
 
 var (
-	// ErrInvalidCredential is ERR-001 for a wrong username or password or an
-	// unknown user.
+	// ErrInvalidCredential is ERR-001 for a wrong username or password, an
+	// unknown user, or a directory refusing the user's bind.
 	ErrInvalidCredential = &LoginError{Code: "ERR-001", FailReason: "INVALID_CREDENTIAL"}
 	// ErrNotRegistered is ERR-001 for a directory user who is not a FOS
 	// operator. The operator sees the same message as ErrInvalidCredential.
@@ -87,71 +87,106 @@ var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("dummy-password"), bcrypt.
 // (FR-LOGIN-003) and, on success, opens a session whose token is returned.
 // Every attempt is written to login_log (DB-RULE-071).
 func (s *Service) LoginDatabase(ctx context.Context, a Attempt) (Operator, string, error) {
-	op, hash, err := s.findOperator(ctx, a.Username)
+	l := s.newLogin(ctx, MethodDatabase, a)
+	rec, found, err := s.findOperator(ctx, a.Username)
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(a.Password))
-		return s.refuse(ctx, MethodDatabase, a, "", ErrInvalidCredential)
 	case err != nil:
-		slog.Error("operator lookup failed", "error", err)
-		return s.refuse(ctx, MethodDatabase, a, "", ErrDatabaseUnavailable)
+		return l.refuse("", err)
+	case !found:
+		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(a.Password))
+		return l.refuse("", ErrInvalidCredential)
+	case bcrypt.CompareHashAndPassword([]byte(rec.passwordHash), []byte(a.Password)) != nil:
+		return l.refuse(rec.UserID, ErrInvalidCredential)
 	}
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(a.Password)) != nil {
-		return s.refuse(ctx, MethodDatabase, a, op.UserID, ErrInvalidCredential)
-	}
-	return s.admit(ctx, MethodDatabase, a, op)
+	return l.admit(rec.Operator)
 }
 
 // LoginLDAP authenticates against the directory, then requires the user to
 // be a registered FOS operator (FR-LOGIN-002).
 func (s *Service) LoginLDAP(ctx context.Context, a Attempt) (Operator, string, error) {
+	l := s.newLogin(ctx, MethodLDAP, a)
 	if !s.ldap.Complete() {
 		slog.Error("LDAP login refused: LDAP configuration incomplete (ENV-008)")
-		return s.refuse(ctx, MethodLDAP, a, "", ErrLDAPUnavailable)
+		return l.refuse("", ErrLDAPUnavailable)
 	}
-	if err := authenticateLDAP(s.ldap, a.Username, a.Password); err != nil {
-		var refusal *LoginError
-		if !errors.As(err, &refusal) {
-			refusal = ErrLDAPUnavailable
-		}
-		return s.refuse(ctx, MethodLDAP, a, "", refusal)
+	if refusal := authenticateLDAP(s.ldap, a.Username, a.Password); refusal != nil {
+		return l.refuse("", refusal)
 	}
-	op, _, err := s.findOperator(ctx, a.Username)
+	rec, found, err := s.findOperator(ctx, a.Username)
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		return s.refuse(ctx, MethodLDAP, a, "", ErrNotRegistered)
 	case err != nil:
-		slog.Error("operator lookup failed", "error", err)
-		return s.refuse(ctx, MethodLDAP, a, "", ErrDatabaseUnavailable)
+		return l.refuse("", err)
+	case !found:
+		return l.refuse("", ErrNotRegistered)
 	}
-	return s.admit(ctx, MethodLDAP, a, op)
+	return l.admit(rec.Operator)
 }
 
-// findOperator matches the username case-insensitively (TBD-012, agreed).
-func (s *Service) findOperator(ctx context.Context, username string) (Operator, string, error) {
-	var (
-		op   Operator
-		hash string
-	)
+type operatorRecord struct {
+	Operator
+	passwordHash string
+}
+
+// findOperator matches the username case-insensitively (TBD-012, agreed). A
+// lookup failure is ErrDatabaseUnavailable.
+func (s *Service) findOperator(ctx context.Context, username string) (operatorRecord, bool, *LoginError) {
+	var rec operatorRecord
 	err := s.db.QueryRow(ctx,
 		`SELECT user_id, full_name, password_hash FROM fos.operator WHERE lower(user_id) = lower($1)`,
-		username).Scan(&op.UserID, &op.FullName, &hash)
-	return op, hash, err
+		username).Scan(&rec.UserID, &rec.FullName, &rec.passwordHash)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return operatorRecord{}, false, nil
+	case err != nil:
+		slog.Error("operator lookup failed", "error", err)
+		return operatorRecord{}, false, ErrDatabaseUnavailable
+	}
+	return rec, true, nil
 }
 
-func (s *Service) admit(ctx context.Context, m Method, a Attempt, op Operator) (Operator, string, error) {
-	token, err := s.openSession(ctx, op.UserID, a.Endpoint)
+// login is one attempt on one login path; it ends in admit or refuse, each
+// of which writes the login_log row.
+type login struct {
+	s      *Service
+	ctx    context.Context
+	method Method
+	a      Attempt
+}
+
+func (s *Service) newLogin(ctx context.Context, m Method, a Attempt) login {
+	return login{s: s, ctx: ctx, method: m, a: a}
+}
+
+func (l login) admit(op Operator) (Operator, string, error) {
+	token, err := l.s.openSession(l.ctx, op.UserID, l.a.Endpoint)
 	if err != nil {
 		slog.Error("open session failed", "error", err)
-		return s.refuse(ctx, m, a, op.UserID, ErrDatabaseUnavailable)
+		return l.refuse(op.UserID, ErrDatabaseUnavailable)
 	}
-	s.logAttempt(ctx, m, a, op.UserID, nil)
+	l.log(op.UserID, nil)
 	return op, token, nil
 }
 
-func (s *Service) refuse(ctx context.Context, m Method, a Attempt, operatorUserID string, e *LoginError) (Operator, string, error) {
-	s.logAttempt(ctx, m, a, operatorUserID, e)
+func (l login) refuse(operatorUserID string, e *LoginError) (Operator, string, error) {
+	l.log(operatorUserID, e)
 	return Operator{}, "", e
+}
+
+// log writes one login_log row (FR-LOGIN-006); refusal is nil on success. A
+// write failure never changes the login outcome (DB-RULE-072).
+func (l login) log(operatorUserID string, refusal *LoginError) {
+	result, failReason, errorCode := "SUCCESS", "", ""
+	if refusal != nil {
+		result, failReason, errorCode = "FAIL", refusal.FailReason, refusal.Code
+	}
+	_, err := l.s.db.Exec(l.ctx, `
+		INSERT INTO fos.login_log
+			(login_id, operator_user_id, auth_method, result, fail_reason, error_code, client_ip, user_agent, attempted_at)
+		VALUES ($1, NULLIF($2, ''), $3, $4, NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), $9)`,
+		l.a.Username, operatorUserID, string(l.method), result, failReason, errorCode, l.a.ClientIP, l.a.UserAgent, l.s.now())
+	if err != nil {
+		slog.Error("LOGIN_LOG_WRITE_FAILED", "error", err)
+	}
 }
 
 // SessionOperator returns the operator owning a live session token.
@@ -182,21 +217,4 @@ func (s *Service) openSession(ctx context.Context, userID string, endpoint Endpo
 func hashToken(token string) []byte {
 	sum := sha256.Sum256([]byte(token))
 	return sum[:]
-}
-
-// logAttempt writes one login_log row (FR-LOGIN-006); refusal is nil on
-// success. A write failure never changes the login outcome (DB-RULE-072).
-func (s *Service) logAttempt(ctx context.Context, m Method, a Attempt, operatorUserID string, refusal *LoginError) {
-	result, failReason, errorCode := "SUCCESS", "", ""
-	if refusal != nil {
-		result, failReason, errorCode = "FAIL", refusal.FailReason, refusal.Code
-	}
-	_, err := s.db.Exec(ctx, `
-		INSERT INTO fos.login_log
-			(login_id, operator_user_id, auth_method, result, fail_reason, error_code, client_ip, user_agent, attempted_at)
-		VALUES ($1, NULLIF($2, ''), $3, $4, NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), $9)`,
-		a.Username, operatorUserID, string(m), result, failReason, errorCode, a.ClientIP, a.UserAgent, s.now())
-	if err != nil {
-		slog.Error("LOGIN_LOG_WRITE_FAILED", "error", err)
-	}
 }

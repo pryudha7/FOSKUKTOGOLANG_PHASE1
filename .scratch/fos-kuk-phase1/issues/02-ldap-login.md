@@ -23,4 +23,6 @@
 - A directory user who is not a FOS operator gets ERR-001 / `NOT_REGISTERED`; operator matching is case-insensitive.
 - An empty password is refused before any bind: directories treat it as an unauthenticated bind that succeeds (RFC 4513 §5.1.2).
 
-**Tests** use an in-process fake directory (`apptest.FakeLDAP`) that matches attributes exactly and records the filters it receives.
+- Any refusal of the user bind by the directory (e.g. 49 invalid credentials, 53 for a locked account) is ERR-001 / `INVALID_CREDENTIAL`; only a lost connection or timeout is ERR-002. A failed search (e.g. wrong `LDAP_BASE_DN`) is ERR-002.
+
+**Tests** use an in-process fake directory (`apptest.FakeLDAP`) that matches `(attribute=value)` filters case-insensitively like Active Directory, accepts unauthenticated binds like many directories, and records the filters it receives.

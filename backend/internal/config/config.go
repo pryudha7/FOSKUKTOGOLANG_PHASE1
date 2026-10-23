@@ -4,6 +4,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"os"
 	"strconv"
@@ -70,11 +71,17 @@ func FromEnv() (Config, error) {
 	if len(missing) > 0 {
 		return Config{}, fmt.Errorf("missing configuration: %s", strings.Join(missing, ", "))
 	}
+	// SoT §4.2: "Path login LDAP dan Database harus berbeda"; the auth method
+	// is chosen by the path.
 	if cfg.LoginPathDB == cfg.LoginPathLDAP {
 		return Config{}, fmt.Errorf("LOGIN_PATH_DB and LOGIN_PATH_LDAP must differ")
 	}
-	if secs, err := strconv.Atoi(optional("LDAP_TIMEOUT_SECONDS")); err == nil && secs > 0 {
-		cfg.LDAP.Timeout = time.Duration(secs) * time.Second
+	if v := optional("LDAP_TIMEOUT_SECONDS"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+			cfg.LDAP.Timeout = time.Duration(secs) * time.Second
+		} else {
+			slog.Error("LDAP_TIMEOUT_SECONDS is not a positive number of seconds; LDAP login will be refused (ENV-008)")
+		}
 	}
 	for _, p := range strings.Split(proxies, ",") {
 		prefix, err := netip.ParsePrefix(strings.TrimSpace(p))

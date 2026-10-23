@@ -94,6 +94,63 @@ func TestLDAPLoginWithWrongPasswordOrUnknownUserIsRefusedWithERR001(t *testing.T
 	}
 }
 
+// FR-LOGIN-002 step 4: any refusal of the user bind is ERR-001, so the
+// operator cannot tell a locked account from a wrong password.
+func TestLDAPLoginForLockedAccountIsRefusedWithERR001(t *testing.T) {
+	h, dir := ldapHarness(t)
+	dir.LockUser("ao002")
+
+	login := h.NewClient().LoginLDAP(t, "ao002", "Ldap#Pass1")
+	assertRefused(t, login, http.StatusUnauthorized, "ERR-001", errERR001)
+	if rows := loginLog(t, h); len(rows) != 1 || deref(rows[0].FailReason) != "INVALID_CREDENTIAL" {
+		t.Fatalf("login_log = %+v", rows)
+	}
+}
+
+// ENV-008: a key left as the SoT placeholder "TBD", or an unusable timeout,
+// counts as empty when the configuration is loaded from the environment.
+func TestLDAPLoginWithPlaceholderConfigurationGivesERR002(t *testing.T) {
+	for name, env := range map[string][2]string{
+		"base DN is TBD":  {"LDAP_BASE_DN", "TBD"},
+		"timeout invalid": {"LDAP_TIMEOUT_SECONDS", "sepuluh"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := apptest.StartFakeLDAP(t)
+			dir.AddUser("ao002", "Ldap#Pass1")
+			loaded := loadConfigFromEnv(t, dir, env[0], env[1])
+			h := apptest.New(t, func(c *config.Config) { c.LDAP = loaded.LDAP })
+
+			login := h.NewClient().LoginLDAP(t, "ao002", "Ldap#Pass1")
+			assertRefused(t, login, http.StatusServiceUnavailable, "ERR-002", errERR002)
+			if f := dir.Filters(); len(f) != 0 {
+				t.Fatalf("LDAP was searched: %q", f)
+			}
+		})
+	}
+}
+
+// loadConfigFromEnv runs config.FromEnv with a complete environment pointing
+// at dir, except that key is set to value.
+func loadConfigFromEnv(t *testing.T, dir *apptest.FakeLDAP, key, value string) config.Config {
+	t.Helper()
+	env := map[string]string{
+		"APP_ENV": "test", "LISTEN_ADDR": ":0", "DATABASE_URL": "unused",
+		"LOGIN_PATH_DB": apptest.LoginPathDB, "LOGIN_PATH_LDAP": apptest.LoginPathLDAP,
+		"ENDPOINT_PATH_DESKTOP": apptest.EndpointPathDesktop, "TRUSTED_PROXY_CIDRS": "127.0.0.1/32",
+		"LDAP_URL": dir.URL, "LDAP_BIND_DN": dir.BindDN, "LDAP_BIND_PASSWORD": dir.BindPassword,
+		"LDAP_BASE_DN": dir.BaseDN, "LDAP_SEARCH_FILTER": "SamAccountName=%v", "LDAP_TIMEOUT_SECONDS": "2",
+	}
+	env[key] = value
+	for k, v := range env {
+		t.Setenv(k, v)
+	}
+	cfg, err := config.FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv: %v", err)
+	}
+	return cfg
+}
+
 // Usernames match the FOS operator case-insensitively (agreed).
 func TestLDAPLoginMatchesOperatorCaseInsensitively(t *testing.T) {
 	h, dir := ldapHarness(t)

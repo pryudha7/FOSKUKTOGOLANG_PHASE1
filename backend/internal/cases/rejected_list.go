@@ -2,6 +2,7 @@ package cases
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -28,8 +29,9 @@ func (e *Executor) rejectedListCheck() check {
 }
 
 // tryRejectedList matches the Customer's identity number and Customer Type
-// against ACTIVE rows (DB-RULE-049). A failed query is a system failure,
-// never a pass (fail-closed); the run stops broken, case_status unchanged.
+// against ACTIVE rows (DB-RULE-049). Any failure, a missing identity
+// included, is a system failure, never a pass and never retried
+// (fail-closed, FR-PSAPI-007): the run stops broken, case_status unchanged.
 func (e *Executor) tryRejectedList(ctx context.Context, caseID string, _ int) (attempt, error) {
 	timeoutMS, err := e.s.settings.Int(ctx, "process/rejectedlist/query_timeout_ms")
 	if err != nil {
@@ -67,18 +69,21 @@ type rejectedParty struct {
 // the reject's transaction: a new row, or the existing (id_number,
 // customer_type) row updated and made ACTIVE again.
 func (e *Executor) recordRejection(ctx context.Context, tx pgx.Tx, caseID, api string) error {
-	var customerType *string
-	if err := tx.QueryRow(ctx, `SELECT customer_type FROM fos.work WHERE case_id = $1`, caseID).Scan(&customerType); err != nil {
+	customerType, err := caseCustomerType(ctx, tx, caseID)
+	if err != nil {
 		return err
 	}
 	// Recorded by the Team Lead who submitted Sesuai or Retry (agreed).
 	var by *string
 	if err := tx.QueryRow(ctx, `
-		SELECT COALESCE(worked_by_user_id, assigned_user_id) FROM fos.assignments
+		SELECT worked_by_user_id FROM fos.assignments
 		WHERE case_id = $1 AND assignment_name = $2 AND assignment_status = $3
 		ORDER BY completed_at DESC NULLS LAST, assignment_id DESC LIMIT 1`,
 		caseID, AssignmentPreScreeningReview, string(AssignmentCompleted)).Scan(&by); err != nil {
 		return fmt.Errorf("Rejected List recorder: %w", err)
+	}
+	if value(by) == "" {
+		return errors.New("Rejected List recorder: the last Pre Screening assignment has no worker")
 	}
 
 	parties, err := collectIn(ctx, tx, func(r pgx.Rows) (rejectedParty, error) {
@@ -96,13 +101,13 @@ func (e *Executor) recordRejection(ctx context.Context, tx pgx.Tx, caseID, api s
 		       full_name,
 		       CASE WHEN customer_type = $5 THEN establishment_date ELSE birth_date END
 		FROM fos.customer
-		WHERE case_id = $1 AND customer_type IN ($6, $5, $3)
+		WHERE case_id = $1 AND customer_type IN ($6, $3)
 		ORDER BY customer_type = $3`,
-		caseID, value(customerType), partySpouse, customerTypeIndividual, customerTypeBusinessEntity, partyCustomer)
+		caseID, customerType, partySpouse, customerTypeIndividual, customerTypeBusinessEntity, customerParty(customerType))
 	if err != nil {
 		return err
 	}
-	reason := fmt.Sprintf("• Reject Pre-screening %q", api)
+	reason := `• Reject Pre-screening "` + api + `"` // DB-RULE-052
 	now := e.s.now()
 	for _, p := range parties {
 		if p.idNumber == "" || p.fullName == "" || p.birthDate == nil {

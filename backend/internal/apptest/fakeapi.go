@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// FakeAPI is an outbound Pre-Screening API for tests. Each call takes the
+// FakeAPI is an outbound API of the Pre-Screening Check, for tests. Each call takes the
 // next scripted reply; when the script runs out the last reply repeats.
 type FakeAPI struct {
 	URL string

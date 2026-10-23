@@ -33,3 +33,12 @@ Implementation notes (2026-10-23):
 - Outbound calls share `internal/cases/outbound.go` (configuration, call, log fill); Dukcapil moved onto it.
 - AC-FR-PSAPI-007-05 and the Business Entity half of AC-FR-PSAPI-007-09 (recording a Business Entity) cannot happen yet: nothing rejects a Business Entity until DHN's reject is enabled or Pefindo (ticket 13). The recording code handles it (NPWP, Nama Badan Usaha, Tanggal Akta Pendirian) but has no test until then.
 - Ticket 09 tests now wait for Dukcapil to finish and read only Dukcapil log rows, since DHN and the Rejected List run after it.
+
+Review fixes agreed with the user (2026-10-23):
+
+- Any failure to save a step's result (other than closing or a lost run) stops the run STOPPED_BROKEN instead of retrying the step forever (FR-PSAPI-001 rule 9); e.g. an incomplete Spouse on a Check Rejection.
+- The recorder is only `worked_by_user_id` of the last completed Pre Screening assignment, as agreed; the Team Lead always opens it before submitting (tests now do too).
+- Recording takes only the customer row of the case's Tipe Nasabah plus the Spouse; reason is built with literal quotes (DB-RULE-052).
+- Missing identity stays a Fail at DHN (like Dukcapil) and a broken stop at the Rejected List (no retry there, FR-PSAPI-007); explained in code.
+- Shared `outboundAPI` descriptor, `send`/`failed` helpers, `caseCustomerType`, `customerIdentity` in party.go; glossary wording in comments.
+- Tests: query timeout (table locked), AC-FR-PSAPI-007-09 in its stated direction, an unsavable rejection stops once.

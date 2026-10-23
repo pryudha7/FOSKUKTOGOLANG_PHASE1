@@ -207,3 +207,53 @@ func TestRecoveryRepeatsTheRejectedListCheck(t *testing.T) {
 		t.Fatal("the Rejected List was logged")
 	}
 }
+
+// FR-PSAPI-007 Kegagalan 1: a query past process/rejectedlist/query_timeout_ms
+// is a failure, never a pass: the run stops broken at the Rejected List.
+func TestRejectedListQueryTimeoutStopsTheRunBroken(t *testing.T) {
+	var lock interface{ Rollback(context.Context) error }
+	h, _, _, caseID := checksWith(t, dukcapilOK, dhnOK, func(h *apptest.Harness, _ string) {
+		exec(t, h, `UPDATE fos.dynamic_system_settings SET value = '200' WHERE purpose = 'process/rejectedlist/query_timeout_ms'`)
+		tx, err := h.DB.Begin(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Released on cleanup too, so a failing test does not hang the pool.
+		t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+		if _, err := tx.Exec(context.Background(), `LOCK TABLE fos.rejected_list IN ACCESS EXCLUSIVE MODE`); err != nil {
+			t.Fatal(err)
+		}
+		lock = tx
+	})
+	eventually(t, "the run to stop", func() bool { return run(t, h, caseID).State != "RUNNING" })
+	_ = lock.Rollback(context.Background())
+	if got := run(t, h, caseID); got.State != "STOPPED_BROKEN" || got.Step != "Rejected List" || caseStatus(t, h, caseID) != "Pending-Prescreening" {
+		t.Fatalf("run %+v, status %s", got, caseStatus(t, h, caseID))
+	}
+}
+
+// AC-FR-PSAPI-007-09: a Business Entity whose NPWP is listed as an
+// Individual does not match.
+func TestRejectedListMatchesTheCustomerType(t *testing.T) {
+	h, _, _, caseID := checksWith(t, dukcapilOK, dhnOK, func(h *apptest.Harness, caseID string) {
+		exec(t, h, `UPDATE fos.work SET customer_type = 'Badan Usaha' WHERE case_id = $1`, caseID)
+		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name, establishment_date) VALUES ($1, 'Badan Usaha', '012345678901234', 'PT Maju', '2010-05-01')`, caseID)
+		listRejected(t, h, "012345678901234", "Orang", "1990-01-01", "ACTIVE", "Perorangan")
+	})
+	eventually(t, "the run to reach SLIK", func() bool { return run(t, h, caseID).Step == "SLIK" })
+}
+
+// FR-PSAPI-001 rule 9: when the Rejected List entry cannot be saved, the
+// run stops broken instead of rejecting again and again.
+func TestUnsavableRejectionStopsTheRunOnce(t *testing.T) {
+	h, dukcapil, _, caseID := checksWith(t, []apptest.FakeReply{apptest.DukcapilMismatch}, dhnOK, func(h *apptest.Harness, caseID string) {
+		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, id_number, full_name) VALUES ($1, 'Pasangan', '3171019876543210', 'Siti Aminah')`, caseID)
+	})
+	eventually(t, "the run to stop", func() bool { return run(t, h, caseID).State != "RUNNING" })
+	if got := run(t, h, caseID); got.State != "STOPPED_BROKEN" || got.Step != "Dukcapil" || caseStatus(t, h, caseID) != "Pending-Prescreening" {
+		t.Fatalf("run %+v, status %s", got, caseStatus(t, h, caseID))
+	}
+	if len(rejectedList(t, h)) != 0 || len(dukcapil.Requests()) != 1 {
+		t.Fatalf("list %+v, calls %d", rejectedList(t, h), len(dukcapil.Requests()))
+	}
+}

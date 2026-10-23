@@ -19,7 +19,12 @@ func toReview(t *testing.T) (*apptest.Harness, *apptest.Client, *apptest.Client,
 	if r.Status != http.StatusOK {
 		t.Fatalf("create = %d %s", r.Status, r.Raw)
 	}
-	return h, c, relogin(t, h, "TL01"), caseID, r.Body["assignmentId"]
+	// The Team Lead opens Pre Screening before deciding, as on UI-017.
+	tl := relogin(t, h, "TL01")
+	if p := tl.OpenAssignment(t, caseID, r.Body["assignmentId"]); p.Status != http.StatusOK {
+		t.Fatalf("open Pre Screening = %d %s", p.Status, p.Raw)
+	}
+	return h, c, tl, caseID, r.Body["assignmentId"]
 }
 
 func review(t *testing.T, c *apptest.Client, caseID string, id any, code, notes string) apptest.Response {

@@ -13,11 +13,7 @@ import (
 // The Dukcapil check (FR-PSAPI-003) checks an Individual Customer's
 // personal data, never the Spouse's or a Business Entity's.
 
-const (
-	apiDukcapil = "Dukcapil"
-	// dukcapilKeyHeader carries the API key (DEC-060).
-	dukcapilKeyHeader = "x-Gateway-APIKey"
-)
+var dukcapilAPI = outboundAPI{logName: "Dukcapil", settings: "dukcapil", keyHeader: "x-Gateway-APIKey"}
 
 // dukcapilRequest is the body, in the SoT's field order.
 type dukcapilRequest struct {
@@ -27,51 +23,30 @@ type dukcapilRequest struct {
 }
 
 func (e *Executor) dukcapilCheck() check {
-	return check{apiName: apiDukcapil, try: e.tryDukcapil, retry: e.retrySettings("dukcapil")}
+	return check{apiName: dukcapilAPI.logName, try: e.tryDukcapil, retry: e.retrySettings(dukcapilAPI)}
 }
 
 func (e *Executor) tryDukcapil(ctx context.Context, caseID string, attemptNumber int) (attempt, error) {
-	var customerType *string
-	if err := e.s.db.QueryRow(ctx, `SELECT customer_type FROM fos.work WHERE case_id = $1`, caseID).Scan(&customerType); err != nil {
-		return attempt{}, err
-	}
-	if value(customerType) != customerTypeIndividual {
-		return attempt{outcome: outcomeSkip}, nil
-	}
-	cfg, err := e.apiConfig(ctx, "dukcapil", dukcapilKeyHeader)
+	customerType, err := caseCustomerType(ctx, e.s.db, caseID)
 	if err != nil {
 		return attempt{}, err
 	}
-	log := &apiLog{name: apiDukcapil, submittedAt: e.s.now(), method: http.MethodPost, attempt: attemptNumber}
-
+	if customerType != customerTypeIndividual {
+		return attempt{outcome: outcomeSkip}, nil
+	}
+	cfg, err := e.apiConfig(ctx, dukcapilAPI)
+	if err != nil {
+		return attempt{}, err
+	}
+	log := &apiLog{name: dukcapilAPI.logName, submittedAt: e.s.now(), method: http.MethodPost, attempt: attemptNumber}
 	// FR-PSAPI-002 rule 6: the request is built from the case data each time;
 	// missing data is a Fail of the attempt (FR-PSAPI-003, agreed).
 	body, err := e.dukcapilBody(ctx, caseID)
 	if err != nil {
-		log.status, log.response, log.method = apiFail, err.Error(), ""
-		return attempt{outcomeFail, log}, nil
+		return failed(log, err), nil
 	}
 	log.request = string(body)
-
-	if cfg.simulate {
-		// No call; the configured response is logged as Success (FR-PSAPI-003).
-		log.status, log.response, log.method = apiSuccess, cfg.simulateResponse, ""
-		return attempt{outcomeSuccess, log}, nil
-	}
-	u, err := cfg.endpoint(cfg.path)
-	if err != nil {
-		return attempt{}, fmt.Errorf("Dukcapil: %w", err)
-	}
-	answered, err := e.call(ctx, cfg, log, u, body, map[string]string{"Content-Type": "application/json"})
-	if err != nil {
-		return attempt{}, err
-	}
-	o := outcomeFail
-	if answered {
-		o = evaluateDukcapil(log.response)
-	}
-	log.status = o.logStatus()
-	return attempt{o, log}, nil
+	return e.send(ctx, cfg, log, cfg.path, body, map[string]string{"Content-Type": "application/json"}, evaluateDukcapil)
 }
 
 // dukcapilBody is the request for the case's Individual Customer.

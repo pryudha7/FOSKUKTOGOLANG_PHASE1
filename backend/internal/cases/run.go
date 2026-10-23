@@ -119,7 +119,7 @@ func newExecutor(s *Service) *Executor {
 		s: s, owner: fmt.Sprintf("%s/%d/%s", host, os.Getpid(), hex.EncodeToString(b)),
 		http: &http.Client{}, getenv: os.Getenv, ctx: ctx, cancel: cancel, active: map[int64]bool{},
 	}
-	e.checks = map[string]check{apiDukcapil: e.dukcapilCheck(), apiDHN: e.dhnCheck(), stepRejectedList: e.rejectedListCheck()}
+	e.checks = map[string]check{dukcapilAPI.logName: e.dukcapilCheck(), dhnAPI.logName: e.dhnCheck(), stepRejectedList: e.rejectedListCheck()}
 	return e
 }
 
@@ -285,8 +285,7 @@ func (e *Executor) execute(runID int64) {
 			return // closing or lost: the attempt is not recorded and is repeated on recovery
 		}
 		if err != nil {
-			slog.Error("Pre-Screening Check run stopped by a system failure", "run_id", r.id, "case_id", r.caseID, "step", r.step, "error", err)
-			e.finish(ctx, r, nil, func(context.Context, pgx.Tx, runRef) (string, error) { return runStoppedBroken, nil })
+			e.stopBroken(ctx, r, err)
 			return
 		}
 		switch a.outcome {
@@ -300,8 +299,7 @@ func (e *Executor) execute(runID int64) {
 		case outcomeFail:
 			max, gap, err := c.retry(ctx)
 			if err != nil {
-				slog.Error("Pre-Screening Check run stopped by a system failure", "run_id", r.id, "step", r.step, "error", err)
-				e.finish(ctx, r, nil, func(context.Context, pgx.Tx, runRef) (string, error) { return runStoppedBroken, nil })
+				e.stopBroken(ctx, r, err)
 				return
 			}
 			if r.attempt >= 1+max {
@@ -350,7 +348,7 @@ func (e *Executor) recordAttempt(ctx context.Context, r runRef, log *apiLog, ste
 	})
 	if err != nil {
 		if ctx.Err() == nil && !errors.Is(err, errRunLost) {
-			slog.Error("Pre-Screening Check attempt not recorded", "run_id", r.id, "error", err)
+			e.stopBroken(ctx, r, fmt.Errorf("attempt not recorded: %w", err))
 		}
 		return false
 	}
@@ -369,7 +367,22 @@ func (e *Executor) finish(ctx context.Context, r runRef, log *apiLog, end func(c
 		return err
 	})
 	if err != nil && ctx.Err() == nil && !errors.Is(err, errRunLost) {
-		slog.Error("Pre-Screening Check run not finished", "run_id", r.id, "error", err)
+		e.stopBroken(ctx, r, fmt.Errorf("run not finished: %w", err))
+	}
+}
+
+// stopBroken stops the run on a system failure: a missing setting, or a
+// result that could not be saved (e.g. the Rejected List entry). The run
+// never repeats a step forever (FR-PSAPI-001 rule 9); case_status does not
+// change (rule 10); the Problem Flow is ticket 14.
+func (e *Executor) stopBroken(ctx context.Context, r runRef, cause error) {
+	slog.Error("Pre-Screening Check run stopped by a system failure", "run_id", r.id, "case_id", r.caseID, "step", r.step, "error", cause)
+	err := e.inOwnedRun(ctx, r, nil, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE fos.prescreening_runs SET state = $2, updated_at = $3 WHERE run_id = $1`, r.id, runStoppedBroken, e.s.now())
+		return err
+	})
+	if err != nil && ctx.Err() == nil && !errors.Is(err, errRunLost) {
+		slog.Error("Pre-Screening Check run could not be stopped", "run_id", r.id, "error", err)
 	}
 }
 

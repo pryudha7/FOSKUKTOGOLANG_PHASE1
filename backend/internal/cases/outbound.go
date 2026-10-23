@@ -13,8 +13,16 @@ import (
 	"time"
 )
 
-// Outbound Pre-Screening APIs share their configuration shape (§9.25,
-// FR-PSAPI-002) and the way an attempt is called and logged (FR-PSAPI-004).
+// The outbound APIs of the Pre-Screening Check share their configuration
+// shape (§9.25, FR-PSAPI-002) and the way an attempt is called and logged
+// (FR-PSAPI-004).
+
+// outboundAPI names one API: its Connect API Log api_name, its settings key
+// (api/<settings>/..., secret/<settings>/apikey_ref) and the header that
+// carries its key.
+type outboundAPI struct {
+	logName, settings, keyHeader string
+}
 
 // maxResponseBytes bounds a response read into the log.
 const maxResponseBytes = 10 << 20
@@ -30,10 +38,11 @@ type apiConfig struct {
 }
 
 // apiConfig reads api/<api>/* and the key named by secret/<api>/apikey_ref;
-// a missing one is a system failure of the step (DB-RULE-084). keyHeader is
-// masked in the log whatever api/log/masked_headers says (DEC-060).
-func (e *Executor) apiConfig(ctx context.Context, api, keyHeader string) (apiConfig, error) {
+// a missing one is a system failure of the step (DB-RULE-084). The key
+// header is masked in the log whatever api/log/masked_headers says (DEC-060).
+func (e *Executor) apiConfig(ctx context.Context, a outboundAPI) (apiConfig, error) {
 	st := e.s.settings
+	api, keyHeader := a.settings, a.keyHeader
 	c := apiConfig{keyHeader: keyHeader}
 	var err error
 	if c.maskedHeaders, err = e.s.maskedHeaderNames(ctx); err != nil {
@@ -69,13 +78,13 @@ func (e *Executor) apiConfig(ctx context.Context, api, keyHeader string) (apiCon
 }
 
 // retrySettings reads api/<api>/retry_max and retry_gap_ms (FR-PSAPI-002).
-func (e *Executor) retrySettings(api string) func(context.Context) (int, time.Duration, error) {
+func (e *Executor) retrySettings(a outboundAPI) func(context.Context) (int, time.Duration, error) {
 	return func(ctx context.Context) (int, time.Duration, error) {
-		max, err := e.s.settings.Int(ctx, "api/"+api+"/retry_max")
+		max, err := e.s.settings.Int(ctx, "api/"+a.settings+"/retry_max")
 		if err != nil {
 			return 0, 0, err
 		}
-		gap, err := e.s.settings.Int(ctx, "api/"+api+"/retry_gap_ms")
+		gap, err := e.s.settings.Int(ctx, "api/"+a.settings+"/retry_gap_ms")
 		return int(max), time.Duration(gap) * time.Millisecond, err
 	}
 }
@@ -140,6 +149,37 @@ func (e *Executor) call(ctx context.Context, c apiConfig, log *apiLog, u *url.UR
 		log.response = callError(err, u, c.timeout)
 	}
 	return answered, nil
+}
+
+// send completes an attempt whose log holds the request: a simulation is
+// logged as Success with the configured response (FR-PSAPI-003); otherwise
+// path is called and a body is judged by evaluate, anything else is a Fail.
+func (e *Executor) send(ctx context.Context, c apiConfig, log *apiLog, path string, body []byte, headers map[string]string, evaluate func(string) outcome) (attempt, error) {
+	if c.simulate {
+		log.status, log.response, log.method = apiSuccess, c.simulateResponse, ""
+		return attempt{outcomeSuccess, log}, nil
+	}
+	u, err := c.endpoint(path)
+	if err != nil {
+		return attempt{}, fmt.Errorf("%s: %w", log.name, err)
+	}
+	answered, err := e.call(ctx, c, log, u, body, headers)
+	if err != nil {
+		return attempt{}, err
+	}
+	o := outcomeFail
+	if answered {
+		o = evaluate(log.response)
+	}
+	log.status = o.logStatus()
+	return attempt{o, log}, nil
+}
+
+// failed is an attempt that failed before any call, e.g. on missing
+// request data (agreed for ticket 09): logged as Fail and retried.
+func failed(log *apiLog, cause error) attempt {
+	log.status, log.response, log.method = apiFail, cause.Error(), ""
+	return attempt{outcomeFail, log}
 }
 
 // noBodyMessage is the Response of an answer without a body (FR-PSAPI-004

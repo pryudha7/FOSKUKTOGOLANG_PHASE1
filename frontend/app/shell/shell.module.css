@@ -72,11 +72,8 @@
   cursor: pointer;
 }
 
-.expanded .item {
-  background: transparent;
-}
-
-/* Hover: darker row, white bold label (AC-FR-NAV-001-03). */
+/* Rows sit on ≈ #252C32 in both states; hover darkens them to ≈ #1E2328
+   with a white bold label (UI-008, AC-FR-NAV-001-03). */
 .item:hover,
 .item:focus-visible {
   background: #1e2328;
@@ -150,9 +147,8 @@
 
 .userName {
   margin-left: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.25;
+  text-align: left;
 }
 
 .avatar {

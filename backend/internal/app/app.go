@@ -153,11 +153,12 @@ func toNamedJSON(n *auth.Named) *namedJSON {
 }
 
 // creatableCaseTypes lists the parent case types an operator may create
-// (FR-NAV-003). Only the AO and SAO roles create cases (DEC-029, DEC-030);
-// "Financing" is the display label of Loan Financing, the one parent case
-// type today. Child case types are never listed.
+// (FR-NAV-003). Only the AO and SAO roles create cases (DEC-029, DEC-030),
+// matched on the stable role_code (§9.3) so renaming a role keeps the rule.
+// "Financing" is the label of the Financing Case, the one parent case type
+// today; child case types are never listed.
 func creatableCaseTypes(role auth.Named) []string {
-	if role.Name == "AO" || role.Name == "SAO" {
+	if role.Code == "AO" || role.Code == "SAO" {
 		return []string{"Financing"}
 	}
 	return []string{}

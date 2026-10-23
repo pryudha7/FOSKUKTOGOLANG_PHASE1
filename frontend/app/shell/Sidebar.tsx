@@ -30,12 +30,11 @@ export default function Sidebar({
   current: MenuKey;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
 
   return (
     <nav
       className={`${styles.sidebar} ${expanded ? styles.expanded : ""}`}
-      aria-label="Navigasi"
+      aria-label="Navigation"
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
       onFocus={() => setExpanded(true)}
@@ -51,26 +50,8 @@ export default function Sidebar({
       <ul className={styles.menu}>
         {me.caseTypes.length > 0 && (
           <li>
-            <MenuButton
-              icon={createOpen ? <CloseIcon /> : <PlusIcon />}
-              label="Create"
-              expanded={expanded}
-              onClick={() => setCreateOpen(!createOpen)}
-              ariaExpanded={createOpen}
-              trailing={<ChevronIcon open={createOpen} />}
-            />
-            {createOpen && expanded && (
-              <ul className={styles.submenu}>
-                {me.caseTypes.map((caseType) => (
-                  <li key={caseType}>
-                    {/* Starting a Financing case (FR-APP-001) arrives in ticket 05. */}
-                    <button type="button" className={styles.submenuItem}>
-                      {caseType}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            {/* Remounted per expansion, so Create starts closed each time. */}
+            <CreateMenu key={String(expanded)} caseTypes={me.caseTypes} expanded={expanded} />
           </li>
         )}
         <li>
@@ -107,31 +88,63 @@ function MenuButton({
   expanded,
   current = false,
   onClick,
-  ariaExpanded,
-  trailing,
 }: {
   icon: ReactNode;
   label: string;
   expanded: boolean;
   current?: boolean;
   onClick?: () => void;
-  ariaExpanded?: boolean;
-  trailing?: ReactNode;
 }) {
   return (
     <button
       type="button"
       className={`${styles.item} ${current ? styles.current : ""}`}
       aria-current={current ? "page" : undefined}
-      aria-expanded={ariaExpanded}
       aria-label={expanded ? undefined : label}
       title={expanded ? undefined : label}
       onClick={onClick}
     >
       <span className={styles.icon}>{icon}</span>
       {expanded && <span className={styles.label}>{label}</span>}
-      {expanded && trailing && <span className={styles.trailing}>{trailing}</span>}
     </button>
+  );
+}
+
+// FR-NAV-003: closed shows + and a right arrow; open shows X, a down arrow
+// and the parent case types underneath (UI-008, Gambar 7 and 8).
+function CreateMenu({ caseTypes, expanded }: { caseTypes: string[]; expanded: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className={styles.item}
+        aria-expanded={open}
+        aria-label={expanded ? undefined : "Create"}
+        title={expanded ? undefined : "Create"}
+        onClick={() => setOpen(!open)}
+      >
+        <span className={styles.icon}>{open ? <CloseIcon /> : <PlusIcon />}</span>
+        {expanded && <span className={styles.label}>Create</span>}
+        {expanded && (
+          <span className={styles.trailing}>
+            <ChevronIcon open={open} />
+          </span>
+        )}
+      </button>
+      {open && expanded && (
+        <ul className={styles.submenu}>
+          {caseTypes.map((caseType) => (
+            <li key={caseType}>
+              {/* Starting a Financing Case (FR-APP-001) arrives in ticket 05. */}
+              <button type="button" className={styles.submenuItem}>
+                {caseType}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 

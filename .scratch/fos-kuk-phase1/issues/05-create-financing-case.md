@@ -21,4 +21,5 @@
 - [ ] Team Lead is the creating Branch Officer's report-to operator
 - [ ] Authors cannot create a Financing Case (ERR-022)
 - [ ] Going back to an earlier assignment creates a new assignment row
+- [ ] Choosing "Financing" in the sidebar Create menu starts the case (AC-FR-NAV-003-03, moved from ticket 04); decide the case type's identity sent in `/api/me` `caseTypes`
 - [ ] Verified at the HTTP API seam against a real PostgreSQL, with external systems faked at the network boundary.

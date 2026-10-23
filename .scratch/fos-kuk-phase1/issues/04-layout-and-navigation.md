@@ -22,4 +22,10 @@
 - "FOS" stands in for the expanded logo; the displayed name is the operator's full name; the Create label uses the normal menu colour #D3D5D6; icons are simple SVGs approximating UI-008.
 - "Log off" calls `POST <endpoint>/api/logout` (from ticket 03) with no confirmation and returns to the session's login page (TBD-013).
 
+**After review (agreed):**
+
+- Create is matched on the stable `role_code` (§9.3) AO / SAO, so renaming a role keeps the rule; the idle exemption keeps matching the role *name*, as FR-ACCESS-005 states.
+- Rows use ≈ #252C32 in both states and darken to ≈ #1E2328 on hover; Create starts closed on every expansion; the operator name wraps.
+- **AC-FR-NAV-003-03 moves to ticket 05**: choosing "Financing" starts the case there. Ticket 05 also settles the case type's identity (code vs label) with the Work table (§9.4); until then `caseTypes` carries the display label.
+
 **Verification:** the Create rule is tested at the HTTP API seam. The UI was driven in headless Chrome (Playwright) for an AO and a TL operator: collapsed sidebar with Home current, expanded menus, Create submenu with only "Financing", hover, avatar popup with "Log off", logout ending the session, and no Create for TL. The same run also exercised the UI-019 idle popup from ticket 03 with a virtual clock (appears at 14:00, counts down, OK resets, expiry logs off).

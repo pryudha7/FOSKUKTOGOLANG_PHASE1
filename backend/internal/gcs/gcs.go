@@ -66,8 +66,8 @@ func (c *Client) Put(ctx context.Context, object, contentType string, body []byt
 }
 
 // Get opens an object's content.
-func (c *Client) Get(ctx context.Context, object string) (io.ReadCloser, error) {
-	resp, err := c.do(ctx, http.MethodGet, c.objectURL(object)+"?alt=media", "", nil)
+func (c *Client) Get(ctx context.Context, bucket, object string) (io.ReadCloser, error) {
+	resp, err := c.do(ctx, http.MethodGet, c.objectURL(bucket, object)+"?alt=media", "", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -75,8 +75,8 @@ func (c *Client) Get(ctx context.Context, object string) (io.ReadCloser, error) 
 }
 
 // Delete removes an object.
-func (c *Client) Delete(ctx context.Context, object string) error {
-	resp, err := c.do(ctx, http.MethodDelete, c.objectURL(object), "", nil)
+func (c *Client) Delete(ctx context.Context, bucket, object string) error {
+	resp, err := c.do(ctx, http.MethodDelete, c.objectURL(bucket, object), "", nil)
 	if err != nil {
 		return err
 	}
@@ -84,8 +84,8 @@ func (c *Client) Delete(ctx context.Context, object string) error {
 	return nil
 }
 
-func (c *Client) objectURL(object string) string {
-	return fmt.Sprintf("%s/storage/v1/b/%s/o/%s", c.cfg.APIBaseURL, url.PathEscape(c.cfg.BucketName), url.PathEscape(object))
+func (c *Client) objectURL(bucket, object string) string {
+	return fmt.Sprintf("%s/storage/v1/b/%s/o/%s", c.cfg.APIBaseURL, url.PathEscape(bucket), url.PathEscape(object))
 }
 
 // do sends an authorised request; a non-2xx answer is an error naming only
@@ -140,12 +140,14 @@ type serviceAccount struct {
 }
 
 // accessToken returns a cached OAuth token, or exchanges a signed JWT for a
-// new one (RFC 7523).
+// new one (RFC 7523). The exchange runs without the lock, so other calls are
+// not held up; concurrent refreshes each fetch a token and the last is kept.
 func (c *Client) accessToken(ctx context.Context) (string, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.token != "" && c.now().Before(c.expiry) {
-		return c.token, nil
+	token, valid := c.token, c.token != "" && c.now().Before(c.expiry)
+	c.mu.Unlock()
+	if valid {
+		return token, nil
 	}
 	raw, err := os.ReadFile(c.cfg.Credential)
 	if err != nil {
@@ -188,9 +190,11 @@ func (c *Client) accessToken(ctx context.Context) (string, error) {
 	if json.NewDecoder(resp.Body).Decode(&tok) != nil || tok.AccessToken == "" {
 		return "", errors.New("gcs token: invalid response")
 	}
+	c.mu.Lock()
 	c.token = tok.AccessToken
 	c.expiry = now.Add(time.Duration(tok.ExpiresIn)*time.Second - time.Minute)
-	return c.token, nil
+	c.mu.Unlock()
+	return tok.AccessToken, nil
 }
 
 func parseKey(p string) (*rsa.PrivateKey, error) {

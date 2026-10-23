@@ -42,3 +42,13 @@ Implementation notes (2026-10-23):
 - The GCS client speaks the JSON API with a service-account JWT; tests run against a fake that checks the signature. `STORAGE_EMULATOR_HOST` (Google's emulator convention) points the backend at a local stand-in for manual UI checks only.
 - Deferred, still TBD in the SoT: Submit without a file does nothing (TBD-036a); a file that cannot be fetched from GCS on download answers 502 without a message (TBD-037e); a replaced object that fails to delete is only logged (TBD-031e); the attachments panel shows three items before "View all" and short times such as "0m ago" (Gambar 18, TBD-020).
 - The breadcrumb, Back and upload icon are hidden or inert for a read-only (Authors) look.
+
+Review fixes agreed with the user (2026-10-23):
+
+- `dynamic_system_settings` gained `updated_at`/`updated_by` (§9.25); CHECK constraints the SoT does not list were dropped.
+- Create shows disabled until ticket 33 (AC-UI-011-05).
+- Downloads with a GCS key empty give ERR-025 and log the key; downloads read the bucket stored on the row (DB-RULE-023).
+- A failure reading the list is ERR-027 too, and the page still opens.
+- The attachments panel no longer downloads on click or loads thumbnails (TBD-033/037, not to be implemented yet): names are plain blue text, thumbnails a generic tile.
+- Interim texts live in one place (`cases`); the per-file limit is read once per request; an oversized request is ERR-041; the GCS token exchange runs outside the lock; an operator missing from the operator data gets no Nomor Memo instead of a failed page.
+- Left as is: `STORAGE_EMULATOR_HOST` (manual UI checks only), "View all" shown for any non-empty list (Gambar 18), a concurrent upload to the same row may get ERR-025.

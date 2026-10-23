@@ -22,7 +22,8 @@ const (
 
 	// The Tipe Nasabah description whose form this package implements
 	// (Badan Usaha: ticket 31; other types: TBD-029a).
-	customerTypeIndividual = "Perorangan"
+	customerTypeIndividual     = "Perorangan"
+	customerTypeBusinessEntity = "Badan Usaha"
 )
 
 var (

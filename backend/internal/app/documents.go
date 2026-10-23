@@ -11,16 +11,6 @@ import (
 	"fos/internal/cases"
 )
 
-// documentMessages are the Underlying Document errors' texts (§12). ERR-021,
-// ERR-024, ERR-025 and ERR-027 are TBD in the SoT; these are agreed interim
-// texts (ticket 07).
-var documentMessages = map[string]string{
-	"ERR-025": "Upload dokumen gagal. Silakan coba lagi.",
-	"ERR-027": "Daftar dokumen gagal dimuat. Silakan coba lagi.",
-}
-
-func documentError(code string) *errorJSON { return &errorJSON{code, documentMessages[code]} }
-
 type storedFileJSON struct {
 	FileID   string `json:"fileId"`
 	FileName string `json:"fileName"`
@@ -50,7 +40,7 @@ type underlyingJSON struct {
 func toUnderlyingJSON(p cases.UnderlyingPage) underlyingJSON {
 	out := underlyingJSON{CustomerType: p.CustomerType, MemoNumber: p.MemoNumber, TotalLimitMB: p.TotalLimitMB, Categories: []categoryJSON{}, Editable: p.Editable}
 	if p.ListFailed {
-		out.ListError = documentError("ERR-027")
+		out.ListError = &errorJSON{"ERR-027", cases.MsgListFailed}
 	}
 	for _, c := range p.Categories {
 		cat := categoryJSON{Code: c.Code, Label: c.Label, Documents: []documentJSON{}}
@@ -72,7 +62,8 @@ const maxFormField = 4 << 10
 // uploadDocument handles POST .../assignments/{id}/documents: Submit on the
 // Upload Document modal (FR-FILE-002). The form carries category,
 // documentType and name, then the file part "file"; only the first file is
-// used (FR-FILE-002 rule 1).
+// used (FR-FILE-002 rule 1). The file is read up to the per-file limit, so a
+// larger request is ERR-041 without being read in full.
 func (s *server) uploadDocument(ep endpoint) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sess, ok := s.session(w, r, ep)
@@ -87,74 +78,23 @@ func (s *server) uploadDocument(ep endpoint) http.HandlerFunc {
 		max, err := s.cases.MaxFileBytes(r.Context())
 		if err != nil {
 			slog.Error("upload refused: per-file limit setting unusable", "error", err)
-			writeUploadFailed(w)
+			writeStorageFailed(w)
 			return
 		}
 		// The body may exceed the file limit only by the form's own size.
 		r.Body = http.MaxBytesReader(w, r.Body, max+1<<20)
-		mr, err := r.MultipartReader()
+		req, haveFile, err := readUploadForm(r, max)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		var req cases.UploadRequest
-		haveFile := false
-		for {
-			part, err := mr.NextPart()
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			var tooBig *http.MaxBytesError
-			if errors.As(err, &tooBig) {
-				req.TooLarge = true
-				break
-			}
-			if err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			switch part.FormName() {
-			case "category", "documentType", "name":
-				b, err := io.ReadAll(io.LimitReader(part, maxFormField))
-				if err != nil {
-					w.WriteHeader(http.StatusBadRequest)
-					return
-				}
-				switch part.FormName() {
-				case "category":
-					req.Category = string(b)
-				case "documentType":
-					req.DocumentType = string(b)
-				default:
-					req.Name = string(b)
-				}
-			case "file":
-				if haveFile {
-					continue
-				}
-				haveFile = true
-				req.OriginalFileName, req.ContentType = part.FileName(), part.Header.Get("Content-Type")
-				var buf bytes.Buffer
-				n, err := io.Copy(&buf, io.LimitReader(part, max+1))
-				if errors.As(err, &tooBig) || n > max {
-					req.TooLarge = true
-				} else if err != nil {
-					w.WriteHeader(http.StatusBadRequest)
-					return
-				}
-				req.Data = buf.Bytes()
-			}
-			if req.TooLarge {
-				break
-			}
-		}
-		if !haveFile {
+		if !haveFile && !req.TooLarge {
 			w.WriteHeader(http.StatusBadRequest) // Submit without a file: TBD-036a
 			return
 		}
 		f, err := s.cases.UploadDocument(r.Context(), sess, caseID, id, req)
-		if errors.Is(err, cases.ErrUploadFailed) {
-			writeUploadFailed(w)
+		if errors.Is(err, cases.ErrStorageFailed) {
+			writeStorageFailed(w)
 			return
 		}
 		if writeAssignmentError(w, "upload document", err) {
@@ -164,11 +104,62 @@ func (s *server) uploadDocument(ep endpoint) http.HandlerFunc {
 	}
 }
 
-// writeUploadFailed answers ERR-025 in the modal's error list form.
-func writeUploadFailed(w http.ResponseWriter) {
+// readUploadForm reads the upload form, marking the request TooLarge when it
+// passes the per-file limit (ERR-041).
+func readUploadForm(r *http.Request, max int64) (req cases.UploadRequest, haveFile bool, err error) {
+	mr, err := r.MultipartReader()
+	if err != nil {
+		return req, false, err
+	}
+	var tooBig *http.MaxBytesError
+	fields := map[string]*string{"category": &req.Category, "documentType": &req.DocumentType, "name": &req.Name}
+	for {
+		part, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			return req, haveFile, nil
+		}
+		if errors.As(err, &tooBig) {
+			req.TooLarge = true
+			return req, haveFile, nil
+		}
+		if err != nil {
+			return req, false, err
+		}
+		if field, ok := fields[part.FormName()]; ok {
+			b, err := io.ReadAll(io.LimitReader(part, maxFormField))
+			if errors.As(err, &tooBig) {
+				req.TooLarge = true
+				return req, haveFile, nil
+			}
+			if err != nil {
+				return req, false, err
+			}
+			*field = string(b)
+			continue
+		}
+		if part.FormName() != "file" || haveFile {
+			continue
+		}
+		haveFile = true
+		req.OriginalFileName, req.ContentType = part.FileName(), part.Header.Get("Content-Type")
+		var buf bytes.Buffer
+		n, err := io.Copy(&buf, io.LimitReader(part, max+1))
+		if errors.As(err, &tooBig) || n > max {
+			req.TooLarge = true
+			return req, haveFile, nil
+		}
+		if err != nil {
+			return req, false, err
+		}
+		req.Data = buf.Bytes()
+	}
+}
+
+// writeStorageFailed answers ERR-025 in the modal's error list form.
+func writeStorageFailed(w http.ResponseWriter) {
 	writeJSON(w, http.StatusBadGateway, struct {
 		Errors []errorJSON `json:"errors"`
-	}{[]errorJSON{*documentError("ERR-025")}})
+	}{[]errorJSON{{"ERR-025", cases.MsgStorageFailed}}})
 }
 
 // downloadDocument handles GET <desktop>/api/cases/{caseId}/documents/{fileId}:
@@ -186,6 +177,9 @@ func (s *server) downloadDocument(ep endpoint) http.HandlerFunc {
 			return
 		case errors.Is(err, cases.ErrNoFileAccess):
 			writeJSON(w, http.StatusForbidden, errorJSON{"ERR-035", "Unable to open the attachment. You lack the required permissions."})
+			return
+		case errors.Is(err, cases.ErrStorageFailed):
+			writeStorageFailed(w)
 			return
 		case errors.Is(err, cases.ErrDownloadFailed):
 			w.WriteHeader(http.StatusBadGateway) // message: TBD-037e

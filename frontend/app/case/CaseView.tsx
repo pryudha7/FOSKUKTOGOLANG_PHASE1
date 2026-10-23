@@ -79,7 +79,7 @@ export default function CaseView({
           )}
         </div>
       </div>
-      <AttachmentsPanel endpointPath={endpointPath} caseId={caseId} attachments={frame.attachments} />
+      <AttachmentsPanel attachments={frame.attachments} />
     </div>
   );
 }

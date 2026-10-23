@@ -35,18 +35,18 @@ func (s *Service) OpenDocument(ctx context.Context, sess auth.Session, caseID, f
 	}
 	var (
 		d       Download
-		object  string
+		stored  storedObject
 		ctype   *string
 		allowed bool
 	)
 	err = s.db.QueryRow(ctx, `
-		SELECT d.file_name, d.content_type, d.object_name,
+		SELECT d.file_name, d.content_type, d.bucket_name, d.object_name,
 		       w.created_by = $3 OR EXISTS (
 		           SELECT 1 FROM fos.assignments a
 		           WHERE a.case_id = w.case_id AND a.assigned_user_id = $3 AND a.assignment_status <> $4)
 		FROM fos.case_document d JOIN fos.work w ON w.case_id = d.case_id
 		WHERE d.case_id = $1 AND d.file_id = $2`, caseID, id, sess.UserID, string(AssignmentCompleted)).
-		Scan(&d.FileName, &ctype, &object, &allowed)
+		Scan(&d.FileName, &ctype, &stored.bucket, &stored.object, &allowed)
 	if isNotFound(err) {
 		return Download{}, ErrNotFound
 	}
@@ -57,8 +57,11 @@ func (s *Service) OpenDocument(ctx context.Context, sess auth.Session, caseID, f
 		slog.Warn("file access refused (ERR-035)", "user_id", sess.UserID, "case_id", caseID, "file_id", fileID)
 		return Download{}, ErrNoFileAccess
 	}
+	if err := s.storageConfigured(); err != nil {
+		return Download{}, err
+	}
 	d.ContentType = value(ctype)
-	if d.Body, err = s.storage.Get(ctx, object); err != nil {
+	if d.Body, err = s.storage.Get(ctx, stored.bucket, stored.object); err != nil {
 		slog.Error("fetching the file from GCS failed", "case_id", caseID, "file_id", fileID, "error", err)
 		return Download{}, ErrDownloadFailed
 	}

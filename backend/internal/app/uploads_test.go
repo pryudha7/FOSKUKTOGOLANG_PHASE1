@@ -435,8 +435,8 @@ func TestPerFileLimitFollowsDynamicSystemSettings(t *testing.T) {
 	if s := try(2000); s != http.StatusCreated {
 		t.Fatalf("2000 bytes under GLOBAL 3000 = %d", s)
 	}
-	exec(t, h, `INSERT INTO fos.dynamic_system_settings (app_scope, purpose, value, value_type)
-		VALUES ('LOAN_APPLICATION', 'validation/upload/max_file_bytes', '1000', 'INTEGER')`)
+	exec(t, h, `INSERT INTO fos.dynamic_system_settings (app_scope, purpose, value, value_type, updated_at, updated_by)
+		VALUES ('LOAN_APPLICATION', 'validation/upload/max_file_bytes', '1000', 'INTEGER', now(), 'test')`)
 	h.Clock.Advance(61 * time.Second)
 	c = relogin(t, h, "AO001")
 	if s := try(2000); s != http.StatusUnprocessableEntity {
@@ -464,5 +464,55 @@ func TestFailedReferenceSaveRemovesTheUploadedObject(t *testing.T) {
 	}
 	if len(gcs.Objects()) != 0 {
 		t.Fatalf("orphan objects = %v", gcs.Objects())
+	}
+}
+
+// Agreed decision 9: with a GCS key empty, downloads are refused with
+// ERR-025 and the log names the key.
+func TestDownloadWithIncompleteGCSConfigurationGivesERR025(t *testing.T) {
+	h, _ := uploadHarness(t)
+	c, caseID, id := underlying(t, h)
+	documentList(t, c.OpenAssignment(t, caseID, id))
+	upload(t, c, caseID, id, "KK", "KK", "kk.pdf", []byte("x"))
+	file := caseDocuments(t, h, caseID)[0].FileID
+
+	// A second backend on the same database, its credential unset.
+	_, configure := apptest.StartFakeGCS(t)
+	other := apptest.New(t, configure, func(cfg *config.Config) { cfg.DatabaseURL = h.Config.DatabaseURL; cfg.GCS.Credential = "" })
+	logs := apptest.CaptureLogs(t)
+	c2 := relogin(t, other, "AO001")
+	r := download(t, c2, caseID, file)
+	if got := uploadErrors(t, r, http.StatusBadGateway); got[0] != "ERR-025" {
+		t.Fatalf("errors = %v", got)
+	}
+	if !strings.Contains(logs.String(), "GCS_CREDENTIAL") {
+		t.Fatalf("log does not name the key: %s", logs)
+	}
+}
+
+// DB-RULE-023: a download reads the bucket its reference names, not the
+// configured one.
+func TestDownloadUsesTheStoredBucket(t *testing.T) {
+	h, _ := uploadHarness(t)
+	c, caseID, id := underlying(t, h)
+	documentList(t, c.OpenAssignment(t, caseID, id))
+	upload(t, c, caseID, id, "KK", "KK", "kk.pdf", []byte("x"))
+	file := caseDocuments(t, h, caseID)[0].FileID
+	exec(t, h, `UPDATE fos.case_document SET bucket_name = 'fos-archive' WHERE file_id = $1`, file)
+	if r := download(t, c, caseID, file); r.Status != http.StatusBadGateway {
+		t.Fatalf("download from a bucket without the object = %d", r.Status)
+	}
+}
+
+// AC-FR-FILE-005-09: a failure reading the list is ERR-027 too; the page
+// still opens.
+func TestFailedDocumentListReadGivesERR027(t *testing.T) {
+	h := caseHarness(t)
+	c, caseID, id := underlying(t, h)
+	documentList(t, c.OpenAssignment(t, caseID, id))
+	exec(t, h, `ALTER TABLE fos.case_document RENAME TO case_document_gone`)
+	r := c.OpenAssignment(t, caseID, id)
+	if e, _ := field(t, r, "page", "listError").(map[string]any); r.Status != http.StatusOK || e["code"] != "ERR-027" {
+		t.Fatalf("open = %d %s", r.Status, r.Raw)
 	}
 }

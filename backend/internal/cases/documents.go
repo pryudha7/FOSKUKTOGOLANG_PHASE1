@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// listPreScreening is the list_source of the Document Underlying Upload list
-// (§9.11).
+// listPreScreening is the list_source of the Underlying Document list on
+// UI-011 (§9.11).
 const listPreScreening = "PRESCREENING"
 
 // UnderlyingPage is what UI-011 shows (FR-FILE-003, FR-FILE-005, FR-APP-008).
@@ -50,7 +50,7 @@ type StoredFile struct {
 
 // totalLimitMB is FR-FILE-004 rule 1; the SoT leaves the mechanism free
 // (DEC-043).
-var totalLimitMB = map[string]int{customerTypeIndividual: 10, "Badan Usaha": 100}
+var totalLimitMB = map[string]int{customerTypeIndividual: 10, customerTypeBusinessEntity: 100}
 
 // categoryCode is the codename of a category label: the label without
 // spaces or punctuation, e.g. "Dokumen Pre-Screening" → "DokumenPreScreening"
@@ -88,9 +88,14 @@ func (s *Service) underlyingPage(ctx context.Context, userID, caseID string, edi
 			page.ListFailed = true
 		}
 	}
-	var err error
-	page.Categories, err = s.documentList(ctx, caseID)
-	return page, err
+	categories, err := s.documentList(ctx, caseID)
+	if err != nil {
+		slog.Error("reading the document list failed (ERR-027)", "case_id", caseID, "error", err)
+		page.ListFailed = true
+		categories = []DocumentCategory{}
+	}
+	page.Categories = categories
+	return page, nil
 }
 
 // formMemoNumber forms and stores the case's Nomor Memo,
@@ -100,8 +105,13 @@ func (s *Service) underlyingPage(ctx context.Context, userID, caseID string, edi
 func (s *Service) formMemoNumber(ctx context.Context, userID, caseID string) (string, error) {
 	var branch *string
 	var timezone string
-	if err := s.db.QueryRow(ctx, `SELECT branch_code, timezone FROM fos.operator WHERE user_id = $1`, userID).
-		Scan(&branch, &timezone); err != nil {
+	err := s.db.QueryRow(ctx, `SELECT branch_code, timezone FROM fos.operator WHERE user_id = $1`, userID).
+		Scan(&branch, &timezone)
+	if isNotFound(err) {
+		slog.Error("Nomor Memo not formed: the operator is not in the operator data", "user_id", userID, "case_id", caseID)
+		return "", nil
+	}
+	if err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(value(branch)) == "" {
@@ -173,7 +183,7 @@ func (s *Service) initDocuments(ctx context.Context, caseID, customerType string
 	return tx.Commit(ctx)
 }
 
-// documentList reads the case's Document Underlying Upload list with the
+// documentList reads the case's Underlying Document list (UI-011) with the
 // stored file of each row (FR-FILE-003 rule 1).
 func (s *Service) documentList(ctx context.Context, caseID string) ([]DocumentCategory, error) {
 	type row struct {

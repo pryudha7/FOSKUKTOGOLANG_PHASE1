@@ -39,7 +39,7 @@ CREATE TABLE fos.case_document_category (
     document_category VARCHAR NOT NULL,
     sort_order        INTEGER NOT NULL,
     source_code       VARCHAR,
-    list_source       VARCHAR NOT NULL CHECK (list_source IN ('PRESCREENING', 'DOCUMENT_UPLOAD')),
+    list_source       VARCHAR NOT NULL,                                         -- PRESCREENING or DOCUMENT_UPLOAD
     created_at        TIMESTAMP NOT NULL,
     PRIMARY KEY (case_id, document_category)                                    -- DB-RULE-033
 );
@@ -54,7 +54,7 @@ CREATE TABLE fos.case_document_requirement (
     is_mandatory              BOOLEAN NOT NULL,
     team_lead_checked         BOOLEAN NOT NULL DEFAULT FALSE,
     financing_analyst_checked BOOLEAN NOT NULL DEFAULT FALSE,
-    list_source               VARCHAR NOT NULL CHECK (list_source IN ('PRESCREENING', 'DOCUMENT_UPLOAD')),
+    list_source               VARCHAR NOT NULL,
     source_row_uuid           UUID,
     created_at                TIMESTAMP NOT NULL,
     FOREIGN KEY (case_id, document_category) REFERENCES fos.case_document_category (case_id, document_category),
@@ -63,18 +63,20 @@ CREATE TABLE fos.case_document_requirement (
 
 CREATE TABLE fos.dynamic_system_settings (
     setting_id  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    app_scope   VARCHAR NOT NULL CHECK (app_scope IN ('LOAN_APPLICATION', 'GOLD', 'GLOBAL')),
+    app_scope   VARCHAR NOT NULL,                                               -- LOAN_APPLICATION, GOLD or GLOBAL
     purpose     VARCHAR NOT NULL,
     value       TEXT NOT NULL,
-    value_type  VARCHAR NOT NULL CHECK (value_type IN ('STRING', 'INTEGER', 'BOOLEAN', 'JSON')),
+    value_type  VARCHAR NOT NULL,                                               -- STRING, INTEGER, BOOLEAN or JSON
     description TEXT,
+    updated_at  TIMESTAMP NOT NULL,
+    updated_by  VARCHAR NOT NULL,
     UNIQUE (app_scope, purpose)                                                 -- DB-RULE-083
 );
 
 -- The per-file limit is set per database (§9.25); 10 MB agreed for TBD-036.
-INSERT INTO fos.dynamic_system_settings (app_scope, purpose, value, value_type, description)
+INSERT INTO fos.dynamic_system_settings (app_scope, purpose, value, value_type, description, updated_at, updated_by)
 VALUES ('LOAN_APPLICATION', 'validation/upload/max_file_bytes', '10485760', 'INTEGER',
-        'Batas ukuran maksimum per file dalam byte (FR-FILE-002, FR-APP-004).');
+        'Batas ukuran maksimum per file dalam byte (FR-FILE-002, FR-APP-004).', now() AT TIME ZONE 'UTC', 'system');
 
 -- Master data until the import file arrives (§9.10): the Perorangan
 -- category and documents of Gambar 16 (agreed for ticket 07).

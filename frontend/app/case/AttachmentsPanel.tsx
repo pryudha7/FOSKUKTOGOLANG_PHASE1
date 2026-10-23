@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import NoAccessPopup from "./NoAccessPopup";
-import { downloadFile } from "./documents";
 import { shortRelativeTime } from "./relativeTime";
 import type { Attachment } from "./types";
 import styles from "./case.module.css";
@@ -11,23 +9,14 @@ import styles from "./case.module.css";
 // three; the number is not stated in the SoT).
 const compactCount = 3;
 
-const imageName = /\.(jpe?g|png|gif|bmp)$/i;
-
 // FR-CASE-006 attachments panel (Gambar 17, 18), closed by default. The
 // open/close control sits at the top right of the page, level with the
-// Stage Bar (UI-013). A file name downloads the file (DEC-114).
-export default function AttachmentsPanel({
-  endpointPath,
-  caseId,
-  attachments,
-}: {
-  endpointPath: string;
-  caseId: string;
-  attachments: Attachment[];
-}) {
+// Stage Bar (UI-013). What a click on a file name or thumbnail does, and the
+// thumbnail's source, are TBD-033/TBD-037: names show as links that do
+// nothing yet, and every thumbnail is a plain file tile.
+export default function AttachmentsPanel({ attachments }: { attachments: Attachment[] }) {
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
-  const [noAccess, setNoAccess] = useState(false);
   const count = attachments.length;
   if (!open) {
     return (
@@ -42,7 +31,6 @@ export default function AttachmentsPanel({
       </aside>
     );
   }
-  const fileURL = (a: Attachment) => `${endpointPath}/api/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(a.fileId)}`;
   const shown = all ? attachments : attachments.slice(0, compactCount);
   return (
     <aside className={styles.attachmentsOpen}>
@@ -57,20 +45,11 @@ export default function AttachmentsPanel({
       <ul className={styles.attachmentList}>
         {shown.map((a) => (
           <li key={a.fileId} className={styles.attachmentItem}>
-            {imageName.test(a.fileName) ? (
-              <img className={styles.attachmentThumb} src={fileURL(a)} alt="" />
-            ) : (
-              <span className={styles.attachmentThumbFile} aria-hidden="true" />
-            )}
+            <span className={styles.attachmentThumbFile} aria-hidden="true" />
             <span className={styles.attachmentText}>
-              <button
-                type="button"
-                className={styles.attachmentLink}
-                title={a.fileName}
-                onClick={async () => setNoAccess((await downloadFile(endpointPath, caseId, a)) === "forbidden")}
-              >
+              <span className={styles.attachmentLink} title={a.fileName}>
                 {a.fileName}
-              </button>
+              </span>
               <span className={styles.attachmentMeta}>
                 {a.categoryLabel} • {a.uploadedBy} • {shortRelativeTime(a.createdAt)}
               </span>
@@ -83,7 +62,6 @@ export default function AttachmentsPanel({
           {all ? "View less" : "View all"}
         </button>
       )}
-      {noAccess && <NoAccessPopup onClose={() => setNoAccess(false)} />}
     </aside>
   );
 }

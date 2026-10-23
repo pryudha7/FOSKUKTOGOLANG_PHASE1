@@ -12,12 +12,13 @@ Where the FOS KUK rebuild stands, so the next session can continue without re-de
 | 04 | UI-008 sidebar, Create menu (AO/SAO), avatar Log off | f26b5ba, 1afbc13 |
 | 05 | Create Financing Case, Case ID / Customer Code, Case View frame (stage bar, info panel, lifecycle popup, attachments panel) | b512c0b, aa8d56d |
 | 30 | Pre-Screening Submission (Perorangan): validation, customer rows, Next to Document Underlying Upload, Back | 6a7229c, 4d258a9 |
+| 07 | Underlying Document list (master snapshot), Upload Document modal to GCS with replacement, download with ERR-035, attachments panel, Nomor Memo | cc1f096, (review fixes) |
 
 Each ticket file in `.scratch/fos-kuk-phase1/issues/` has a **Comments** section with the decisions agreed with the user (many are interim answers to SoT TBDs) and what was deferred.
 
 ## Next
 
-Unblocked: **07** Underlying Document + Nomor Memo (recommended: unlocks 08 and 09), **31** Badan Usaha form, **32** Case View mode Case + To do, **06** assignment lock, **27** Dashboard. Ticket **29** (operator/master-data management) waits on TBD-003/018. Open domain questions for the SoT owner: `.scratch/fos-kuk-glossary/issues/01-open-domain-questions.md`.
+Next recommended: **33** SLIK Request Data + Create (blocked on TBD-039b: where SLIK Request Data is stored; ask first). Also unblocked: **31** Badan Usaha form (now includes the Badan Usaha Document Underlying Upload variant), **32** Case View mode Case + To do, **06** assignment lock, **27** Dashboard. Ticket **29** (operator/master-data management) waits on TBD-003/018. Open domain questions for the SoT owner: `.scratch/fos-kuk-glossary/issues/01-open-domain-questions.md`.
 
 ## How each ticket was worked
 
@@ -32,4 +33,6 @@ Unblocked: **07** Underlying Document + Nomor Memo (recommended: unlocks 08 and 
 - Conversation with the user is in Bahasa Indonesia; code, glossary and docs are English (ADR 0001). Code identifiers use `GLOSSARY.md` terms (e.g. Financing Case, Underlying Document, Customer).
 - Schema follows SoT §9 exactly, PROPOSED columns included (CLAUDE.md); additions so far were agreed: `operator`, `operator_session`, `access_groups`, `work.customer_type`.
 - Every config key is required, no defaults (ENV-006). On Windows start servers from PowerShell: Git Bash rewrites `/PRWebDB1`-style values into paths.
-- Smoke runs: Postgres in Docker on 55432, backend on 18080, `next start` on 13000; seed operators with `go run ./cmd/hashpw`.
+- Smoke runs: Postgres in Docker on 55432, backend on 18080, `next start` on 13000; seed operators with `go run ./cmd/hashpw`. Uploads need `tools/uicheck/fakegcs.js` and `STORAGE_EMULATOR_HOST` (see `tools/uicheck/README.md`).
+- When editing files with Python on Windows, write with `newline='
+'`: text mode writes CRLF otherwise.

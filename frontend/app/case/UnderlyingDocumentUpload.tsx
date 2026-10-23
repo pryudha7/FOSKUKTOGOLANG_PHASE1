@@ -16,7 +16,8 @@ type UploadTarget = { category: DocumentCategory; documentType: string };
 
 // UI-011 Document Underlying Upload (Gambar 15, 16, 23): the document list
 // with upload and download, and SLIK Request Data with the Nomor Memo. The
-// other SLIK fields and Create arrive in ticket 33.
+// other SLIK fields and what Create does arrive in ticket 33; until then
+// Create shows disabled.
 export default function UnderlyingDocumentUpload({
   page,
   assignment,
@@ -104,6 +105,11 @@ export default function UnderlyingDocumentUpload({
               </button>
             )}
           </span>
+          {page.editable && (
+            <button type="button" className={styles.next} disabled>
+              Create
+            </button>
+          )}
         </footer>
       </section>
       {uploading && (

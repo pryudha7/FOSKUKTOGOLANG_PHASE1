@@ -125,7 +125,7 @@ func newExecutor(s *Service) *Executor {
 	}
 	e.checks = map[string]check{
 		dukcapilAPI.logName: e.dukcapilCheck(), dhnAPI.logName: e.dhnCheck(), stepRejectedList: e.rejectedListCheck(),
-		stepSLIK: e.slikCheck(subjectCustomer), stepSLIKSpouse: e.slikCheck(subjectSpouse),
+		stepSLIK: e.slikCheck(slikSubjects[subjectCustomer]), stepSLIKSpouse: e.slikCheck(slikSubjects[subjectSpouse]),
 	}
 	return e
 }
@@ -313,7 +313,7 @@ func (e *Executor) execute(runID int64) {
 				e.finish(ctx, r, a.log, e.fail)
 				return
 			}
-			if !e.recordAttempt(ctx, r, a.log, nil, r.step, r.attempt+1) {
+			if !e.recordAttempt(ctx, r, attempt{log: a.log}, r.step, r.attempt+1) {
 				return
 			}
 			select {
@@ -347,16 +347,15 @@ func (e *Executor) advance(ctx context.Context, r runRef, a attempt) bool {
 		return false
 	}
 	if r.step != stepSLIKSpouse {
-		return e.recordAttempt(ctx, r, a.log, a.apply, next, 1)
+		return e.recordAttempt(ctx, r, a, next, 1)
 	}
 	waiting := false
 	err := e.inOwnedRun(ctx, r, a.log, func(tx pgx.Tx) error {
 		if err := applyOf(a)(ctx, tx); err != nil {
 			return err
 		}
-		var pending bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM fos.slik_report WHERE case_id = $1 AND status <> $2)`,
-			r.caseID, slikReceived).Scan(&pending); err != nil {
+		pending, err := pendingSLIK(ctx, tx, r.caseID)
+		if err != nil {
 			return err
 		}
 		state, deadline := runRunning, (*time.Time)(nil)
@@ -368,7 +367,7 @@ func (e *Executor) advance(ctx context.Context, r runRef, a attempt) bool {
 			d := e.s.now().Add(time.Duration(sla) * time.Second)
 			state, deadline, waiting = runWaitingSLIK, &d, true
 		}
-		_, err := tx.Exec(ctx, `UPDATE fos.prescreening_runs SET state = $2, current_step = $3, attempt = 1, wait_deadline_at = $4,
+		_, err = tx.Exec(ctx, `UPDATE fos.prescreening_runs SET state = $2, current_step = $3, attempt = 1, wait_deadline_at = $4,
 			heartbeat_at = $5, updated_at = $5 WHERE run_id = $1`, r.id, state, next, deadline, e.s.now())
 		return err
 	})
@@ -389,15 +388,13 @@ func applyOf(a attempt) func(context.Context, pgx.Tx) error {
 	return a.apply
 }
 
-// recordAttempt writes the attempt's log row, its extra change (if any) and
-// the run's next position in one transaction, only while this executor
-// still owns the run.
-func (e *Executor) recordAttempt(ctx context.Context, r runRef, log *apiLog, apply func(context.Context, pgx.Tx) error, step string, attemptNumber int) bool {
-	err := e.inOwnedRun(ctx, r, log, func(tx pgx.Tx) error {
-		if apply != nil {
-			if err := apply(ctx, tx); err != nil {
-				return err
-			}
+// recordAttempt writes the attempt's log row, its extra change and the
+// run's next position in one transaction, only while this executor still
+// owns the run.
+func (e *Executor) recordAttempt(ctx context.Context, r runRef, a attempt, step string, attemptNumber int) bool {
+	err := e.inOwnedRun(ctx, r, a.log, func(tx pgx.Tx) error {
+		if err := applyOf(a)(ctx, tx); err != nil {
+			return err
 		}
 		_, err := tx.Exec(ctx, `UPDATE fos.prescreening_runs SET current_step = $2, attempt = $3, heartbeat_at = $4, updated_at = $4 WHERE run_id = $1`,
 			r.id, step, attemptNumber, e.s.now())

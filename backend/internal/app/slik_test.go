@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"fos/internal/apptest"
 )
@@ -129,15 +130,16 @@ func callPBS(t *testing.T, h *apptest.Harness, kode string, data []byte) apptest
 	return h.CallService(t, pbsPath, rpaUser, rpaPassword, map[string]string{"Kode": kode}, "File", "result.zip", data)
 }
 
-// formFields reads a multipart request the SLIK fake received.
-func formFields(t *testing.T, c apptest.FakeRequest) (map[string]string, map[string]int) {
+// formFields reads a multipart request the SLIK fake received: the text
+// fields, and the files by "field:name" with their content.
+func formFields(t *testing.T, c apptest.FakeRequest) (map[string]string, map[string]string) {
 	t.Helper()
 	_, params, err := mime.ParseMediaType(c.Header.Get("Content-Type"))
 	if err != nil {
 		t.Fatalf("content type %q", c.Header.Get("Content-Type"))
 	}
 	mr := multipart.NewReader(strings.NewReader(c.Body), params["boundary"])
-	fields, files := map[string]string{}, map[string]int{}
+	fields, files := map[string]string{}, map[string]string{}
 	for {
 		p, err := mr.NextPart()
 		if err != nil {
@@ -146,7 +148,7 @@ func formFields(t *testing.T, c apptest.FakeRequest) (map[string]string, map[str
 		var b bytes.Buffer
 		_, _ = b.ReadFrom(p)
 		if p.FileName() != "" {
-			files[p.FormName()+":"+p.FileName()] = b.Len()
+			files[p.FormName()+":"+p.FileName()] = b.String()
 		} else {
 			fields[p.FormName()] = b.String()
 		}
@@ -170,7 +172,7 @@ func TestSLIKRequestsCustomerThenSpouse(t *testing.T) {
 		if c.Method != http.MethodPost || c.Path != "/v1/slik/check" || c.Header.Get("x-api-key") != apptest.SLIKAPIKey || len(fields) != 8 ||
 			fields["tujuan_permintaan"] != "TP-1" || fields["pilihan_fasilitas"] != "PF-1" || fields["alamat_sesuai_identitas"] != "Jl. Sudirman No. 1, Jakarta" ||
 			fields["tipe_pencarian"] != "TC-1" || fields["segmentasi"] != "SG-1" || !strings.HasPrefix(fields["nomor_memo"], "032/AO001/") ||
-			files["underlying:"+zipName] == 0 {
+			files["underlying:"+zipName] == "" {
 			t.Fatalf("call %d: fields %v files %v", i, fields, files)
 		}
 		refs = append(refs, fields["kode_reff_pengguna"])
@@ -201,18 +203,24 @@ func TestSLIKRequestsCustomerThenSpouse(t *testing.T) {
 	}
 }
 
-// AC-FR-PSAPI-008-02, -03: a 4000 is a Fail retried with the same kode reff
-// and no new slik_report; without a Spouse only SLIK runs.
+// AC-FR-PSAPI-008-02, -03, -04: a 4000 is a Fail retried with the same kode
+// reff, the same ZIP and no new slik_report; without a Spouse only SLIK runs.
 func TestSLIKFailRetriesWithTheSameKodeReff(t *testing.T) {
 	h, fs, caseID := slikCase(t, false, apptest.SLIKInvalid, apptest.SLIKAccepted)
 	calls := fs.Calls()
 	if len(calls) != 2 {
 		t.Fatalf("SLIK calls = %d", len(calls))
 	}
-	a, _ := formFields(t, calls[0])
-	b, _ := formFields(t, calls[1])
+	a, za := formFields(t, calls[0])
+	b, zb := formFields(t, calls[1])
 	if a["kode_reff_pengguna"] != b["kode_reff_pengguna"] || count(t, h, `SELECT count(*) FROM fos.slik_report WHERE case_id = $1`, caseID) != 1 {
 		t.Fatalf("kode reff %s / %s", a["kode_reff_pengguna"], b["kode_reff_pengguna"])
+	}
+	if len(za) != 1 || fmt.Sprint(za) != fmt.Sprint(zb) {
+		t.Fatal("the retry sent another ZIP")
+	}
+	if n := count(t, h, `SELECT count(*) FROM fos.case_document WHERE case_id = $1 AND document_type = 'SLIK_ZIP_REQUEST'`, caseID); n != 1 {
+		t.Fatalf("ZIP request docs = %d", n)
 	}
 	names := apiNames(apiLogs(t, h, caseID))
 	if names[len(names)-2] != "SLIK Fail" || names[len(names)-1] != "SLIK Success" {
@@ -467,6 +475,126 @@ func TestOnlyTheKTPFileIsRead(t *testing.T) {
 	_, _ = w.Write([]byte(`{"header":{},"individual":{}}`))
 	_ = zw.Close()
 	if r := callPBS(t, h, kode, buf.Bytes()); r.Body["Code"] != "1" {
+		t.Fatalf("answer = %s", r.Raw)
+	}
+}
+
+// FR-PSAPI-008: a Badan Usaha case uploads SLIK by hand; the run passes SLIK
+// and SLIK Pasangan without a call or a slik_report.
+func TestBadanUsahaMakesNoSLIKRequest(t *testing.T) {
+	fs := apptest.StartFakeAPI(t, apptest.SLIKAccepted)
+	h, _, _, caseID := checksWith(t, dukcapilOK, dhnOK, func(h *apptest.Harness, caseID string) {
+		h.UseSLIK(t, fs)
+		exec(t, h, `UPDATE fos.work SET customer_type = 'Badan Usaha' WHERE case_id = $1`, caseID)
+		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, npwp, full_name) VALUES ($1, 'Badan Usaha', '012345678901000', 'PT Contoh')`, caseID)
+	})
+	eventually(t, "the run to reach Pefindo", func() bool { return run(t, h, caseID).Step == "Pefindo" || run(t, h, caseID).State != "RUNNING" })
+	if got := run(t, h, caseID); got.State != "RUNNING" || got.Step != "Pefindo" {
+		t.Fatalf("run = %+v", got)
+	}
+	if len(fs.Calls()) != 0 || count(t, h, `SELECT count(*) FROM fos.slik_report WHERE case_id = $1`, caseID) != 0 {
+		t.Fatal("SLIK requested for Badan Usaha")
+	}
+}
+
+// Agreed: a result for a case that no longer waits (here rejected on the
+// Customer's result) is stored but changes nothing: Code 0, no second
+// rejection, no resumed run.
+func TestLateSLIKResultIsKeptWithoutEffect(t *testing.T) {
+	h, _, caseID := slikCase(t, true)
+	kc, ks := referenceCode(t, h, caseID, "CUSTOMER"), referenceCode(t, h, caseID, "SPOUSE")
+	callPBS(t, h, kc, slikZip(t, kc, "3171011234567890", facility("2", repeat(7, month{"2", "10"})...)))
+	listed := len(rejectedList(t, h))
+
+	r := callPBS(t, h, ks, slikZip(t, ks, spouseNIK, facility("2", repeat(7, month{"2", "10"})...)))
+	if r.Body["Code"] != "0" || r.Body["message"] != "SLIK result for "+ks+" received; case "+caseID+" is no longer waiting for SLIK" {
+		t.Fatalf("answer = %s", r.Raw)
+	}
+	if n := count(t, h, `SELECT count(*) FROM fos.slik_report WHERE case_id = $1 AND subject_type = 'SPOUSE' AND status = 'RECEIVED'`, caseID); n != 1 {
+		t.Fatal("late result not stored")
+	}
+	if got := run(t, h, caseID); got.State != "STOPPED_REJECTED" || len(rejectedList(t, h)) != listed {
+		t.Fatalf("run %+v, rejected list %d (was %d)", got, len(rejectedList(t, h)), listed)
+	}
+	if got := pbsLogs(t, h, caseID); len(got) != 2 || !strings.HasPrefix(got[1], "Success ") {
+		t.Fatalf("PBS logs = %v", got)
+	}
+}
+
+// Agreed: a result for a subject not yet requested is Code 1 and not stored.
+func TestSLIKResultBeforeTheRequestIsRefused(t *testing.T) {
+	h, _, caseID := slikCase(t, true)
+	ks := referenceCode(t, h, caseID, "SPOUSE")
+	exec(t, h, `UPDATE fos.slik_report SET status = 'PENDING_REQUEST' WHERE reference_code = $1`, ks)
+	r := callPBS(t, h, ks, slikZip(t, ks, spouseNIK, facility("1")))
+	if r.Body["Code"] != "1" || r.Body["message"] != "an unexpected error occurred. Reason: SLIK for "+ks+" has not been requested" {
+		t.Fatalf("answer = %s", r.Raw)
+	}
+	if n := count(t, h, `SELECT count(*) FROM fos.case_document WHERE case_id = $1 AND document_type = 'SLIK_ZIP_SPOUSE'`, caseID); n != 0 {
+		t.Fatal("ZIP stored")
+	}
+}
+
+// The last result and the executor's move to WAITING_SLIK meet on the run
+// row: a result that arrives while the executor still holds the run sees
+// the wait once it ends, and resumes the run.
+func TestSLIKResultWaitsForTheRunBeingParked(t *testing.T) {
+	h, _, caseID := slikCase(t, false)
+	kode := referenceCode(t, h, caseID, "CUSTOMER")
+	ctx := context.Background()
+	exec(t, h, `UPDATE fos.prescreening_runs SET state = 'RUNNING', current_step = 'SLIK', wait_deadline_at = NULL WHERE case_id = $1`, caseID)
+	tx, err := h.DB.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(ctx) })
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM fos.prescreening_runs WHERE case_id = $1 FOR UPDATE`, caseID); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan apptest.Response, 1)
+	go func() { done <- callPBS(t, h, kode, slikZip(t, kode, "3171011234567890", facility("1"))) }()
+	select {
+	case r := <-done:
+		t.Fatalf("answered while the run was held: %s", r.Raw)
+	case <-time.After(500 * time.Millisecond):
+	}
+	if _, err := tx.Exec(ctx, `UPDATE fos.prescreening_runs SET state = 'WAITING_SLIK', current_step = 'Pefindo', wait_deadline_at = now() + interval '1 hour' WHERE case_id = $1`, caseID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-done; r.Body["Code"] != "0" {
+		t.Fatalf("answer = %s", r.Raw)
+	}
+	if n := count(t, h, `SELECT count(*) FROM fos.prescreening_runs WHERE case_id = $1 AND state = 'RUNNING' AND current_step = 'Pefindo' AND wait_deadline_at IS NULL`, caseID); n != 1 {
+		t.Fatalf("run = %+v", run(t, h, caseID))
+	}
+}
+
+// The service only takes POST: other methods are 405 and logged.
+func TestPBSResponseOnlyTakesPOST(t *testing.T) {
+	h := apptest.New(t)
+	req, _ := http.NewRequest(http.MethodGet, h.Server.URL+pbsPath, nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed || resp.Header.Get("Allow") != "POST" {
+		t.Fatalf("GET = %d, Allow %q", resp.StatusCode, resp.Header.Get("Allow"))
+	}
+	if n := count(t, h, `SELECT count(*) FROM fos.connect_api_log WHERE api_type = 'Service Rest' AND http_status_code = 405 AND http_method = 'GET' AND api_status = 'Fail'`); n != 1 {
+		t.Fatal("405 not logged")
+	}
+}
+
+// An empty File part is Code 1 like a missing one.
+func TestPBSResponseWithAnEmptyFileIsRefused(t *testing.T) {
+	h, _, caseID := slikCase(t, false)
+	kode := referenceCode(t, h, caseID, "CUSTOMER")
+	if r := callPBS(t, h, kode, []byte{}); r.Body["Code"] != "1" || r.Body["message"] != "an unexpected error occurred. Reason: the request needs Kode and File" {
 		t.Fatalf("answer = %s", r.Raw)
 	}
 }

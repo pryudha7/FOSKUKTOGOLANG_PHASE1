@@ -15,8 +15,9 @@ import (
 // result: a kode reff and its ZIP.
 
 const (
-	apiPBSResponse     = "SLIKPBSResponse"
-	apiTypeServiceRest = "Service Rest"
+	apiPBSResponse        = "SLIKPBSResponse"
+	runStoppedSLIKTimeout = "STOPPED_SLIK_TIMEOUT"
+	apiTypeServiceRest    = "Service Rest"
 	// timeoutResponse marks a case whose SLIK wait ran out (FR-PSAPI-011).
 	timeoutResponse = "Timeout SLIK API No Response"
 
@@ -53,37 +54,40 @@ func (r PBSResult) Answer(now time.Time) []byte {
 	return b
 }
 
-func unexpected(reason string) string { return "an unexpected error occurred. Reason: " + reason }
+// UnexpectedReason is the Code 1 message (FR-PSAPI-009 Response).
+func UnexpectedReason(reason string) string { return "an unexpected error occurred. Reason: " + reason }
 
-// ReceiveSLIK takes one SLIK result from the RPA account rpaUser. Steps 3
-// to 5 run under a row lock on the kode reff's slik_report, so two calls for
-// the same code are never processed twice (PROPOSED); the run resumes, or
-// the case is rejected, in the same transaction.
-func (s *Service) ReceiveSLIK(ctx context.Context, rpaUser, kode string, zipData []byte) PBSResult {
+// ReceiveSLIK takes one SLIK result from the RPA account rpaUser. The
+// result is stored and judged under row locks on the reference code's
+// slik_report and the case's run, so two calls for one code are never
+// processed twice and a run never misses the last result. What goes on
+// afterwards (the resumed run) starts when the caller calls resume, after
+// the answer is sent (FR-PSAPI-009 step 6).
+func (s *Service) ReceiveSLIK(ctx context.Context, rpaUser, kode string, zipData []byte) (res PBSResult, resume func()) {
 	res, runID, err := s.receiveSLIK(ctx, rpaUser, kode, zipData)
 	if err != nil {
-		slog.Error("SLIK result not processed", "kode", kode, "case_id", res.CaseID, "error", err)
-		res.Code, res.Message, res.LogStatus, res.Stored = "1", unexpected("the SLIK result could not be processed"), apiFail, nil
+		slog.Error("SLIK result not processed", "case_id", res.CaseID, "error", err)
+		res.Code, res.Message, res.LogStatus, res.Stored = "1", UnexpectedReason("the SLIK result could not be processed"), apiFail, nil
+		runID = 0
 	}
-	if runID != 0 {
-		s.runs.launch(runID)
+	return res, func() {
+		if runID != 0 {
+			s.runs.launch(runID)
+		}
 	}
-	return res
+}
+
+// pendingSLIK reports whether a SLIK result of the case is still awaited.
+func pendingSLIK(ctx context.Context, q rowQuerier, caseID string) (bool, error) {
+	var pending bool
+	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM fos.slik_report WHERE case_id = $1 AND status <> $2)`, caseID, slikReceived).Scan(&pending)
+	return pending, err
 }
 
 func (s *Service) receiveSLIK(ctx context.Context, rpaUser, kode string, zipData []byte) (PBSResult, int64, error) {
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return PBSResult{}, 0, err
-	}
-	defer tx.Rollback(ctx)
-
-	var (
-		reportID                int64
-		caseID, subject, status string
-	)
-	err = tx.QueryRow(ctx, `SELECT slik_report_id, case_id, subject_type, status FROM fos.slik_report WHERE reference_code = $1 FOR UPDATE`, kode).
-		Scan(&reportID, &caseID, &subject, &status)
+	var caseID, subjectCode, status string
+	err := s.db.QueryRow(ctx, `SELECT case_id, subject_type, status FROM fos.slik_report WHERE reference_code = $1`, kode).
+		Scan(&caseID, &subjectCode, &status)
 	if isNotFound(err) {
 		return PBSResult{Code: "2", Message: "Case not found", LogStatus: apiFail}, 0, nil
 	}
@@ -91,42 +95,57 @@ func (s *Service) receiveSLIK(ctx context.Context, rpaUser, kode string, zipData
 		return PBSResult{}, 0, err
 	}
 	res := PBSResult{CaseID: caseID}
-	var timedOut bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM fos.connect_api_log WHERE case_id = $1 AND api_name = $2 AND response = $3)`,
-		caseID, apiPBSResponse, timeoutResponse).Scan(&timedOut); err != nil {
-		return res, 0, err
-	}
-	switch {
-	case timedOut: // FR-PSAPI-011 rule 3; reason text TBD-044 (ticket 12)
-		res.Code, res.Message, res.LogStatus = "1", unexpected("the SLIK waiting time for case "+caseID+" has passed"), apiFail
-		return res, 0, nil
-	case status == slikReceived: // FR-PSAPI-009 step 7 (agreed text)
-		res.Code, res.Message, res.LogStatus = "1", unexpected("SLIK result for "+kode+" has already been received"), apiFail
+	refused := func(reason string) (PBSResult, int64, error) {
+		res.Code, res.Message, res.LogStatus = "1", UnexpectedReason(reason), apiFail
 		return res, 0, nil
 	}
-
+	if r, refusedNow := s.refuseSLIK(ctx, s.db, caseID, kode, status); refusedNow {
+		return refused(r)
+	}
 	file, err := pickSLIKFile(zipData)
 	if err != nil {
 		// No usable file: the report keeps waiting and the RPA may resend.
-		res.Code, res.Message, res.LogStatus = "1", unexpected(err.Error()), apiFail
-		return res, 0, nil
+		return refused(err.Error())
 	}
 
-	docType, zipName := docZIPCustomer, kode+".zip"
-	if subject == subjectSpouse {
-		docType, zipName = docZIPSpouse, kode+" - Spouse.zip"
-	}
-	doc := generatedDoc{category: categoryResponse, docType: docType, fileName: zipName, contentType: "application/zip", data: zipData, createdBy: rpaUser}
+	// The ZIP goes to GCS before the transaction, outside the locks
+	// (DB-RULE-025); it is removed again unless the transaction commits.
+	subject := slikSubjects[subjectCode]
+	doc := generatedDoc{category: categoryResponse, docType: subject.zipDoc, fileName: subject.zipName(kode),
+		contentType: "application/zip", data: zipData, createdBy: rpaUser}
 	sd, err := s.putGenerated(ctx, caseID, doc)
 	if err != nil {
 		return res, 0, fmt.Errorf("storing the SLIK ZIP: %w", err)
 	}
 	committed := false
-	defer func() { s.settleGenerated(ctx, sd, committed) }()
+	defer func() { s.settleGenerated(context.WithoutCancel(ctx), sd, committed) }()
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return res, 0, err
+	}
+	defer tx.Rollback(ctx)
+	var reportID int64
+	if err := tx.QueryRow(ctx, `SELECT slik_report_id, status FROM fos.slik_report WHERE reference_code = $1 FOR UPDATE`, kode).
+		Scan(&reportID, &status); err != nil {
+		return res, 0, err
+	}
+	// The run is locked too: the executor's advance after SLIK Pasangan and
+	// this call then see each other's results (no run left waiting).
+	var runID int64
+	var runState string
+	err = tx.QueryRow(ctx, `SELECT run_id, state FROM fos.prescreening_runs WHERE run_id = `+latestRun+` FOR UPDATE`, caseID).Scan(&runID, &runState)
+	if err != nil && !isNotFound(err) {
+		return res, 0, err
+	}
+	// A call that waited for the lock finds the result already in.
+	if r, refusedNow := s.refuseSLIK(ctx, tx, caseID, kode, status); refusedNow {
+		return refused(r)
+	}
+
 	if err := s.slotGenerated(ctx, tx, caseID, doc, &sd); err != nil {
 		return res, 0, err
 	}
-
 	now := s.now()
 	worst, err := storeSLIK(ctx, tx, reportID, file, now)
 	if err != nil {
@@ -138,49 +157,48 @@ func (s *Service) receiveSLIK(ctx context.Context, rpaUser, kode string, zipData
 		reportID, slikReceived, now, sd.fileID); err != nil {
 		return res, 0, err
 	}
-	if subject == subjectCustomer {
+	if subjectCode == subjectCustomer {
 		if _, err := tx.Exec(ctx, `UPDATE fos.work SET slik_worst_collect = $2 WHERE case_id = $1`, caseID, worst); err != nil {
 			return res, 0, err
 		}
 	}
 
-	rejects, err := slikRejects(ctx, tx, reportID)
-	if err != nil {
-		return res, 0, err
-	}
-	var runID int64
 	res.Code, res.LogStatus = "0", apiSuccess
 	res.Message = "Case " + caseID + " successfully resume to Pipeline Data Entry"
-	switch {
-	case rejects:
-		// FR-PSAPI-010 rule 4: at once, even with one result in.
-		api := slikAPI.logName
-		if subject == subjectSpouse {
-			api = slikSpouseAPI.logName
-		}
-		if err := s.runs.rejectCase(ctx, tx, caseID, rejectionReason(api, slikCriterion)); err != nil {
+	resumeID := int64(0)
+	if runState != runRunning && runState != runWaitingSLIK {
+		// The case no longer waits (rejected, failed, ...): the result is kept
+		// but changes nothing (agreed; SoT silent).
+		res.Message = "SLIK result for " + kode + " received; case " + caseID + " is no longer waiting for SLIK"
+	} else {
+		rejects, err := slikRejects(ctx, tx, reportID)
+		if err != nil {
 			return res, 0, err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE fos.prescreening_runs SET state = $2, updated_at = $3 WHERE case_id = $1 AND state IN ($4, $5)`,
-			caseID, runStoppedRejected, now, runRunning, runWaitingSLIK); err != nil {
+		pending, err := pendingSLIK(ctx, tx, caseID)
+		if err != nil {
 			return res, 0, err
 		}
-		res.LogStatus = apiRejected
-	default:
-		var pending bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM fos.slik_report WHERE case_id = $1 AND status <> $2)`, caseID, slikReceived).Scan(&pending); err != nil {
-			return res, 0, err
-		}
-		if pending {
+		switch {
+		case rejects:
+			// FR-PSAPI-010 rule 4: at once, even with one result in.
+			if err := s.runs.rejectCase(ctx, tx, caseID, rejectionReason(subject.api.logName, slikCriterion)); err != nil {
+				return res, 0, err
+			}
+			if _, err := tx.Exec(ctx, `UPDATE fos.prescreening_runs SET state = $2, updated_at = $3 WHERE run_id = $1`, runID, runStoppedRejected, now); err != nil {
+				return res, 0, err
+			}
+			res.LogStatus = apiRejected
+		case pending:
 			res.Message = "SLIK result for " + kode + " received; waiting for the other result" // agreed for TBD-044
-			break
-		}
-		// Every result is in: the waiting run goes on (Pefindo, ...).
-		err := tx.QueryRow(ctx, `
-			UPDATE fos.prescreening_runs SET state = $2, owner_id = $3, heartbeat_at = $4, wait_deadline_at = NULL, updated_at = $4
-			WHERE case_id = $1 AND state = $5 RETURNING run_id`, caseID, runRunning, s.runs.owner, now, runWaitingSLIK).Scan(&runID)
-		if err != nil && !isNotFound(err) {
-			return res, 0, err
+		case runState == runWaitingSLIK:
+			// Every result is in: the waiting run goes on (Pefindo, ...).
+			if _, err := tx.Exec(ctx, `
+				UPDATE fos.prescreening_runs SET state = $2, owner_id = $3, heartbeat_at = $4, wait_deadline_at = NULL, updated_at = $4
+				WHERE run_id = $1`, runID, runRunning, s.runs.owner, now); err != nil {
+				return res, 0, err
+			}
+			resumeID = runID
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -188,7 +206,30 @@ func (s *Service) receiveSLIK(ctx context.Context, rpaUser, kode string, zipData
 	}
 	committed = true
 	res.Stored = &sd.fileID
-	return res, runID, nil
+	return res, resumeID, nil
+}
+
+// refuseSLIK is the reason a result for the reference code is refused with
+// Code 1, if it is: the case's SLIK wait ran out (FR-PSAPI-011 rule 3), the
+// result is in already (FR-PSAPI-009 step 7), or it was never requested.
+// Texts are interim (TBD-044, agreed).
+func (s *Service) refuseSLIK(ctx context.Context, q rowQuerier, caseID, kode, status string) (string, bool) {
+	var timedOut bool
+	if err := q.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM fos.connect_api_log WHERE case_id = $1 AND api_name = $2 AND response = $3)
+		    OR EXISTS (SELECT 1 FROM fos.prescreening_runs WHERE case_id = $1 AND state = $4)`,
+		caseID, apiPBSResponse, timeoutResponse, runStoppedSLIKTimeout).Scan(&timedOut); err != nil {
+		return "the SLIK result could not be processed", true
+	}
+	switch {
+	case timedOut:
+		return "the SLIK waiting time for case " + caseID + " has passed", true
+	case status == slikReceived:
+		return "SLIK result for " + kode + " has already been received", true
+	case status == slikPendingRequest:
+		return "SLIK for " + kode + " has not been requested", true
+	}
+	return "", false
 }
 
 // InboundLog is one Connect API Log row of a call into FOS (FR-PSAPI-004

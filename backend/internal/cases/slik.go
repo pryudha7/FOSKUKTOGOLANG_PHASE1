@@ -20,7 +20,8 @@ import (
 
 // The SLIK request (FR-PSAPI-008) asks SFS for the Individual Customer's
 // SLIK report, then the Spouse's when there is one. A request only passes
-// or fails; the result arrives later through PBSResponse (pbs.go).
+// or fails; the result arrives later through PBSResponse (pbs.go). Each
+// subject has one reference code (kode_reff_pengguna), reused on retry.
 
 const (
 	stepSLIK       = "SLIK"
@@ -44,29 +45,39 @@ const (
 	categoryPreScreening = "DokumenPreScreening"
 )
 
+// slikSubject is what differs between the Customer's SLIK and the Spouse's:
+// the customer row, the API name and the ZIP result slot and name.
+type slikSubject struct {
+	code, party string
+	api         outboundAPI
+	zipDoc      string
+	zipName     func(referenceCode string) string
+}
+
+var slikSubjects = map[string]slikSubject{
+	subjectCustomer: {subjectCustomer, partyCustomer, outboundAPI{logName: "SLIK", settings: "slik", keyHeader: "x-api-key"},
+		docZIPCustomer, func(code string) string { return code + ".zip" }},
+	subjectSpouse: {subjectSpouse, partySpouse, outboundAPI{logName: "SLIKPasangan", settings: "slik", keyHeader: "x-api-key"},
+		docZIPSpouse, func(code string) string { return code + " - Spouse.zip" }},
+}
+
 var (
-	slikAPI       = outboundAPI{logName: "SLIK", settings: "slik", keyHeader: "x-api-key"}
-	slikSpouseAPI = outboundAPI{logName: "SLIKPasangan", settings: "slik", keyHeader: "x-api-key"}
 
 	// jakarta is Asia/Jakarta, which has no daylight saving.
 	jakarta = time.FixedZone("Asia/Jakarta", 7*3600)
 )
 
-func (e *Executor) slikCheck(subject string) check {
-	api := slikAPI
-	if subject == subjectSpouse {
-		api = slikSpouseAPI
-	}
+func (e *Executor) slikCheck(subject slikSubject) check {
 	return check{
-		apiName: api.logName,
+		apiName: subject.api.logName,
 		try: func(ctx context.Context, caseID string, n int) (attempt, error) {
-			return e.trySLIK(ctx, caseID, n, subject, api)
+			return e.trySLIK(ctx, caseID, n, subject)
 		},
-		retry: e.retrySettings(api),
+		retry: e.retrySettings(subject.api),
 	}
 }
 
-func (e *Executor) trySLIK(ctx context.Context, caseID string, attemptNumber int, subject string, api outboundAPI) (attempt, error) {
+func (e *Executor) trySLIK(ctx context.Context, caseID string, attemptNumber int, subject slikSubject) (attempt, error) {
 	customerType, err := caseCustomerType(ctx, e.s.db, caseID)
 	if err != nil {
 		return attempt{}, err
@@ -75,28 +86,24 @@ func (e *Executor) trySLIK(ctx context.Context, caseID string, attemptNumber int
 	if customerType != customerTypeIndividual {
 		return attempt{outcome: outcomeSkip}, nil
 	}
-	party := partyCustomer
-	if subject == subjectSpouse {
-		party = partySpouse
-	}
 	var identity *string
-	err = e.s.db.QueryRow(ctx, `SELECT id_number FROM fos.customer WHERE case_id = $1 AND customer_type = $2`, caseID, party).Scan(&identity)
-	if isNotFound(err) && subject == subjectSpouse {
+	err = e.s.db.QueryRow(ctx, `SELECT id_number FROM fos.customer WHERE case_id = $1 AND customer_type = $2`, caseID, subject.party).Scan(&identity)
+	if isNotFound(err) && subject.code == subjectSpouse {
 		return attempt{outcome: outcomeSkip}, nil // no Spouse data: no SLIK Pasangan
 	}
 	if err != nil && !isNotFound(err) {
 		return attempt{}, err
 	}
-	cfg, err := e.apiConfig(ctx, api)
+	cfg, err := e.apiConfig(ctx, subject.api)
 	if err != nil {
 		return attempt{}, err
 	}
-	log := &apiLog{name: api.logName, submittedAt: e.s.now(), method: http.MethodPost, attempt: attemptNumber}
+	log := &apiLog{name: subject.api.logName, submittedAt: e.s.now(), method: http.MethodPost, attempt: attemptNumber}
 	if value(identity) == "" {
 		return failed(log, errors.New("SLIK request data missing: the NIK is empty")), nil
 	}
 
-	report, err := e.slikReport(ctx, caseID, subject, value(identity))
+	report, err := e.slikReport(ctx, caseID, subject.code, value(identity))
 	if err != nil {
 		if errors.Is(err, errBranchMissing) {
 			return failed(log, err), nil
@@ -176,8 +183,8 @@ type slikReportRef struct {
 
 var errBranchMissing = errors.New("SLIK request data missing: the case has no branch code")
 
-// slikReport returns the subject's row, creating it with its kode reff the
-// first time so every retry reuses the code (DB-RULE-057).
+// slikReport returns the subject's row, creating it with its reference code
+// the first time so every retry reuses the code (DB-RULE-057).
 func (e *Executor) slikReport(ctx context.Context, caseID, subject, identity string) (slikReportRef, error) {
 	var r slikReportRef
 	err := e.s.db.QueryRow(ctx, `SELECT slik_report_id, reference_code, status FROM fos.slik_report WHERE case_id = $1 AND subject_type = $2`,
@@ -344,12 +351,17 @@ func (s *Service) readObject(ctx context.Context, o storedObject) ([]byte, error
 		return nil, err
 	}
 	defer body.Close()
-	return io.ReadAll(io.LimitReader(body, maxResponseBytes*10))
+	const limit = maxResponseBytes * 10
+	data, err := io.ReadAll(io.LimitReader(body, limit+1))
+	if err == nil && len(data) > limit {
+		err = fmt.Errorf("a stored document is larger than %d bytes", limit)
+	}
+	return data, err
 }
 
-// lastReviewer is the Team Lead who submitted the case's last Pre Screening
-// (Sesuai or Retry): the recorder of what the Pre-Screening Check makes
-// (agreed for ticket 10).
+// lastReviewer is the Team Lead who submitted the case's last Pre-Screening
+// Review (Sesuai or Retry): the recorder of what the Pre-Screening Check
+// makes (agreed for ticket 10).
 func lastReviewer(ctx context.Context, q rowQuerier, caseID string) (string, error) {
 	var by *string
 	if err := q.QueryRow(ctx, `

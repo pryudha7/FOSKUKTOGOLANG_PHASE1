@@ -15,8 +15,8 @@ CREATE TABLE fos.slik_report (
     status                                  VARCHAR NOT NULL,               -- PENDING_REQUEST, REQUESTED, RECEIVED (DB-RULE-058)
     requested_at                            TIMESTAMP,
     received_at                             TIMESTAMP,
-    zip_document_id                         UUID REFERENCES fos.case_document (file_id) ON DELETE SET NULL,
-    pdf_document_id                         UUID REFERENCES fos.case_document (file_id) ON DELETE SET NULL,
+    zip_document_id                         UUID REFERENCES fos.case_document (file_id),
+    pdf_document_id                         UUID REFERENCES fos.case_document (file_id),
     source_file_name                        VARCHAR,
     inquiry_id                              VARCHAR,
     report_number                           VARCHAR,
@@ -129,8 +129,7 @@ CREATE TABLE fos.slik_facility (
     formed_date                           DATE,
     updated_date                          DATE,
     data_period                           CHAR(6),
-    detail_json                           JSONB NOT NULL,
-    UNIQUE (slik_report_id, sequence_number)
+    detail_json                           JSONB NOT NULL
 );
 CREATE INDEX slik_facility_report_idx ON fos.slik_facility (slik_report_id); -- DB-RULE-061
 

@@ -24,7 +24,8 @@ const maxPBSBytes = 64 << 20
 
 // pbsResponse handles POST /api/NBS/v1/PBSResponse (FR-PSAPI-009): Basic
 // auth of the RPA account, multipart Kode and File. The answer is sent at
-// once; its log row is written after it (DEC-073).
+// once; its log row is written after it (DEC-073), and a resumed run starts
+// after both.
 func (s *server) pbsResponse(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	entry := cases.InboundLog{
@@ -33,32 +34,39 @@ func (s *server) pbsResponse(w http.ResponseWriter, r *http.Request) {
 	}
 	user, password, ok := r.BasicAuth()
 	entry.AuthUsername = user
+	refuse := func(status int) {
+		w.WriteHeader(status)
+		entry.HTTPStatus, entry.Status, entry.Duration = status, "Fail", time.Since(start)
+		entry.ResponseHeader = w.Header().Clone()
+		s.cases.LogInbound(r.Context(), entry)
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		refuse(http.StatusMethodNotAllowed)
+		return
+	}
 	rpaUser := ""
 	if ok {
 		var err error
 		if rpaUser, ok, err = s.auth.VerifyServiceAccount(r.Context(), user, password, rpaRole); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			entry.HTTPStatus, entry.Status, entry.Duration = http.StatusInternalServerError, "Fail", time.Since(start)
-			s.cases.LogInbound(r.Context(), entry)
+			refuse(http.StatusInternalServerError)
 			return
 		}
 	}
 	if !ok {
 		w.Header().Set("WWW-Authenticate", `Basic realm="FOS"`)
-		w.WriteHeader(http.StatusUnauthorized)
-		entry.HTTPStatus, entry.Status, entry.Duration = http.StatusUnauthorized, "Fail", time.Since(start)
-		entry.ResponseHeader = w.Header().Clone()
-		s.cases.LogInbound(r.Context(), entry)
+		refuse(http.StatusUnauthorized)
 		return
 	}
 	entry.APIName = "SLIKPBSResponse"
 
 	kode, fileName, data, err := readPBSForm(w, r)
 	var res cases.PBSResult
+	resume := func() {}
 	if err != nil {
-		res = cases.PBSResult{Code: "1", Message: "an unexpected error occurred. Reason: " + err.Error(), LogStatus: "Fail"}
+		res = cases.PBSResult{Code: "1", Message: cases.UnexpectedReason(err.Error()), LogStatus: "Fail"}
 	} else {
-		res = s.cases.ReceiveSLIK(r.Context(), rpaUser, kode, data)
+		res, resume = s.cases.ReceiveSLIK(r.Context(), rpaUser, kode, data)
 	}
 	// The request is logged as JSON with a description of the file, never its
 	// content (DB-RULE-086).
@@ -87,6 +95,7 @@ func (s *server) pbsResponse(w http.ResponseWriter, r *http.Request) {
 	entry.CaseID, entry.Status, entry.Request, entry.Response = res.CaseID, res.LogStatus, string(reqJSON), string(body)
 	entry.HTTPStatus, entry.ResponseHeader, entry.Duration = http.StatusOK, w.Header().Clone(), time.Since(start)
 	s.cases.LogInbound(r.Context(), entry)
+	resume()
 }
 
 // readPBSForm reads the Kode field and the File part.
@@ -118,7 +127,7 @@ func readPBSForm(w http.ResponseWriter, r *http.Request) (kode, fileName string,
 			}
 		}
 	}
-	if kode == "" || data == nil {
+	if kode == "" || len(data) == 0 {
 		return kode, fileName, data, errors.New("the request needs Kode and File")
 	}
 	return kode, fileName, data, nil

@@ -24,9 +24,10 @@ type generatedDoc struct {
 // storedDoc is a stored generated document: its row and object, and the
 // object it replaced (to delete after the commit).
 type storedDoc struct {
-	fileID   uuid.UUID
-	object   storedObject
-	replaced *storedObject
+	caseID, docType string
+	fileID          uuid.UUID
+	object          storedObject
+	replaced        *storedObject
 }
 
 // putGenerated uploads the file to GCS (DB-RULE-025: before any row).
@@ -39,7 +40,7 @@ func (s *Service) putGenerated(ctx context.Context, caseID string, d generatedDo
 	if err := s.storage.Put(ctx, object, d.contentType, d.data); err != nil {
 		return storedDoc{}, err
 	}
-	return storedDoc{fileID: id, object: storedObject{s.storage.Bucket(), object}}, nil
+	return storedDoc{caseID: caseID, docType: d.docType, fileID: id, object: storedObject{s.storage.Bucket(), object}}, nil
 }
 
 // slotGenerated replaces the slot's row with the uploaded file inside tx.
@@ -75,8 +76,9 @@ func (s *Service) settleGenerated(ctx context.Context, sd storedDoc, committed b
 		return
 	}
 	if err := s.storage.Delete(ctx, gone.bucket, gone.object); err != nil {
-		// A leftover object is TBD-031e; the case data is consistent.
-		slog.Error("deleting a generated document object failed", "object", gone.object, "error", err)
+		// A leftover object is TBD-031e; the case data is consistent. The
+		// object name holds personal data (a NIK) and is not logged (DB-RULE-110).
+		slog.Error("deleting a generated document object failed", "case_id", sd.caseID, "document_type", sd.docType)
 	}
 }
 
@@ -87,20 +89,19 @@ func (s *Service) storeGenerated(ctx context.Context, caseID string, d generated
 	if err != nil {
 		return uuid.Nil, err
 	}
+	committed := false
+	defer func() { s.settleGenerated(context.WithoutCancel(ctx), sd, committed) }()
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		s.settleGenerated(ctx, sd, false)
 		return uuid.Nil, err
 	}
 	defer tx.Rollback(ctx)
 	if err := s.slotGenerated(ctx, tx, caseID, d, &sd); err != nil {
-		s.settleGenerated(ctx, sd, false)
 		return uuid.Nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		s.settleGenerated(ctx, sd, false)
 		return uuid.Nil, err
 	}
-	s.settleGenerated(ctx, sd, true)
+	committed = true
 	return sd.fileID, nil
 }

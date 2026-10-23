@@ -104,8 +104,6 @@ func (s *Service) LoginDatabase(ctx context.Context, a Attempt) (Operator, strin
 	return l.admit(rec)
 }
 
-// LoginLDAP authenticates against the directory, then requires the user to
-// be a registered FOS operator (FR-LOGIN-002).
 // VerifyServiceAccount checks Basic credentials of a system account (e.g.
 // the RPA calling PBSResponse, FR-PSAPI-009): an operator with roleCode and
 // a matching bcrypt password. It returns the stored user ID. No session is
@@ -127,6 +125,8 @@ func (s *Service) VerifyServiceAccount(ctx context.Context, username, password, 
 	return userID, true, nil
 }
 
+// LoginLDAP authenticates against the directory, then requires the user to
+// be a registered FOS operator (FR-LOGIN-002).
 func (s *Service) LoginLDAP(ctx context.Context, a Attempt) (Operator, string, error) {
 	l := s.newLogin(ctx, MethodLDAP, a)
 	if !s.ldap.Complete() {

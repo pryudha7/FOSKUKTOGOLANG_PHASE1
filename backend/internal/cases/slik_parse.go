@@ -207,7 +207,7 @@ func numCol(name string, v *string) column {
 }
 
 // storeSLIK writes the parsed file for one slik_report row and returns the
-// worst collectability of its facilities (0 without facilities; FR-PSAPI-010
+// worst Collectibility of its facilities (0 without facilities; FR-PSAPI-010
 // rule 6). Columns without a clear source field stay NULL (agreed).
 func storeSLIK(ctx context.Context, tx pgx.Tx, reportID int64, f slikFile, now time.Time) (int, error) {
 	header := obj(f.doc, "header")
@@ -397,8 +397,8 @@ func storeSLIK(ctx context.Context, tx pgx.Tx, reportID int64, f slikFile, now t
 }
 
 // slikRejects is the SLIK Check Rejection (FR-PSAPI-010 rule 1, DB-RULE-063):
-// a facility with collectability >= 2 and 1-15 days past due in 7 or more of
-// its 24 months, or collectability >= 2 and more than 15 days in 2 or more.
+// a facility with Collectibility >= 2 and 1-15 Days Past Due in 7 or more of
+// its 24 months, or Collectibility >= 2 and more than 15 days in 2 or more.
 func slikRejects(ctx context.Context, tx pgx.Tx, reportID int64) (bool, error) {
 	var rejects bool
 	err := tx.QueryRow(ctx, `

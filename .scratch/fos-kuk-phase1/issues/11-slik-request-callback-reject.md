@@ -37,7 +37,17 @@ SLIK field to column mapping (agreed point 9). Facility: financial_institution �
 Implementation notes (2026-10-23):
 
 - slik_report.zip_document_id/pdf_document_id are UUID: they reference Case Document, whose key is a UUID (§9.7 says BIGINT/UUID); §9.18 says BIGINT.
-- The request steps send the BMV codes stored on the case for tujuan_permintaan, pilihan_fasilitas, tipe_pencarian and segmentasi; whether SFS expects the codes or the descriptions is to be confirmed (asked the user).
-- The ZIP request and the Rejected List record are made by the Team Lead who submitted the last Pre Screening (`lastReviewer`).
+- The request steps send the BMV codes stored on the case for tujuan_permintaan, pilihan_fasilitas, tipe_pencarian and segmentasi (confirmed by the user, 2026-10-24: SFS takes the codes).
+- The ZIP request and the Rejected List record are made by the Team Lead who submitted the last Pre-Screening Review (`lastReviewer`).
 - A PBSResponse call that finds a SLIK result while the Spouse request is still running leaves the running executor to wait or go on; a Check Rejection stops either state.
 - The guard that skips a SLIK request when its slik_report is no longer PENDING_REQUEST cannot be reached today (REQUESTED is written with the run's step); it stays as protection for a reopen (TBD-042).
+
+Review fixes (2026-10-24, agreed with the user):
+
+- A result for a case that no longer waits (run not RUNNING or WAITING_SLIK, e.g. rejected on the other subject's result) is stored as RECEIVED but rejects, resumes and lists nothing: Code 0, "SLIK result for <kode> received; case <ID> is no longer waiting for SLIK". A result for a report still PENDING_REQUEST is Code 1 "SLIK for <kode> has not been requested". The SoT is silent on both.
+- The timeout refusal text "the SLIK waiting time for case <ID> has passed" stays interim (TBD-044); the refusal checks the timeout log row and also a run in STOPPED_SLIK_TIMEOUT, which ticket 12 writes.
+- PBSResponse locks the report row, then the case's run row, before judging the result, so the executor's move to WAITING_SLIK and the last result cannot miss each other. The ZIP is uploaded to GCS before the transaction; its clean-up ignores a cancelled request. The resumed run starts after the answer and its log row.
+- Only POST is served (other methods 405, logged); an empty File is Code 1. Object names (they hold the NIK) are not written to the application log; a stored document larger than its read limit is an error, not truncated.
+- 0011: no UNIQUE on slik_facility (slik_report_id, sequence_number) and no ON DELETE SET NULL on the document references; §9 has neither.
+- `process/slik/wait_sla_seconds` (3600) is seeded now although ticket 12 reads it: §9.25 lists it in the settings catalog (CONFIRMED) and FR-PSAPI-011 rule 1.
+- Tests added: Badan Usaha makes no SLIK call; a retry sends the same ZIP (AC-FR-PSAPI-008-04); late result; result before the request; the run-lock ordering; GET is 405; empty File. Mutation checks: removing the run lock, the "no longer waiting" guard or the PENDING_REQUEST refusal each fail a test.

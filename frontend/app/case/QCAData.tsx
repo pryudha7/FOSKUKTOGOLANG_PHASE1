@@ -23,6 +23,9 @@ const questions = [
   "Berapa pemasukan pemilik usaha yang digunakan untuk biaya rumah tangga?",
 ];
 
+// qcaKey is the field and options key of question i (from 0).
+const qcaKey = (i: number) => `qca${i + 1}`;
+
 // UI-033 QCA Data (Gambar 79, FR-APP-020): ten required dropdowns. Back
 // leaves as Close does; Back to Previous Step saves and opens Data
 // Permohonan Fasilitas (agreed comment 2).
@@ -33,7 +36,7 @@ export default function QCAData({ page, assignment }: { page: QCAPage; assignmen
   const body = () => ({ answers });
   const set = (i: number, code: string) => {
     setAnswers((all) => all.map((a, j) => (j === i ? code : a)));
-    flow.clear("form", `qca${i + 1}`);
+    flow.clear("form", qcaKey(i));
   };
 
   return (
@@ -69,7 +72,7 @@ export default function QCAData({ page, assignment }: { page: QCAPage; assignmen
       <h3 className={styles.sectionTitle}>QCA Data</h3>
       <div className={styles.formPanel}>
         {questions.map((q, i) => {
-          const key = `qca${i + 1}`;
+          const key = qcaKey(i);
           return (
             <CodeSelect
               key={key}

@@ -33,3 +33,11 @@ Implementation notes (2026-10-25):
 - UI check tools/uicheck/qca.js (shots/qca-*.png): Gambar 79 with ten "Select", options by sort_order, the Collateral Data crumb open, "Pertanyaan 3 : Pertanyaan 3 wajib diisi" on the banner and under the dropdown, Save storing nine and staying, Next storing ten and opening Collateral Data, reopened with Q1A now Inactive still shown.
 - Mutation checks (each fails a test): the saved Inactive answer refused or not shown; rows not replaced; unanswered stored; fewer than ten accepted; one BMV type for all questions; answers optional.
 
+Review fixes (2026-10-25, approved by the user):
+
+- A test for the breadcrumb to an earlier step that is not the previous one (QCA Data to Data Usaha Nasabah).
+- A saved answer whose code was removed from BMV (not only Inactive) shows the code itself rather than a blank label; the SoT does not cover removed codes.
+- SubmitQCA trims into its own copy rather than the caller's slice; qcaType documented; the migration comment says Save stores the answered ones; one qcaKey helper in the frontend.
+- Kept as it is, noted: no test fails a QCA dropdown load (ERR-038/ERR-039); it is the shared pageOptions, covered since ticket 16 (business.js). The GLOSSARY "QCA" entry stays. No fixed-size array for the answers (the JSON needs the length check anyway); the page dispatch pattern is older than this ticket.
+- The UI check makes the QCA test options Active at the start, so it can run again on the same smoke database. Mutations: 8, all fail a test.
+

@@ -52,7 +52,8 @@ const questions = [
     options.push(`('Q${n}B', 'QCA${n}', '', 'Jawaban ${n} B', 1, 'Active', now(), 'x', now(), 'x')`);
   }
   psql(`INSERT INTO fos.business_mapping_value (code, type, sub_type, description, sort_order, status, created_at, created_by, updated_at, updated_by) VALUES
-    ${options.join(",\n")} ON CONFLICT DO NOTHING;`);
+    ${options.join(",\n")} ON CONFLICT DO NOTHING;
+    UPDATE fos.business_mapping_value SET status = 'Active' WHERE type LIKE 'QCA%';`);
   const browser = await chromium.launch({ executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe" });
   const r = {};
   const ao = await login(browser, "pebrianto");

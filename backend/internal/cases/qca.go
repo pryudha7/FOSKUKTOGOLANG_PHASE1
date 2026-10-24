@@ -23,6 +23,7 @@ type QCAPage struct {
 	FacilityRequested, Editable bool
 }
 
+// qcaType is the BMV type of question n's answers (DEC-150).
 func qcaType(n int) string { return "QCA" + strconv.Itoa(n) }
 
 // qcaKey is the field key of question n, also its options' key.
@@ -69,6 +70,11 @@ func (s *Service) qcaPage(ctx context.Context, caseID string, editable bool) (QC
 		if err != nil {
 			return QCAPage{}, err
 		}
+		// A code since removed from BMV has no description: it shows as
+		// itself (ticket 20 review).
+		if saved.Description == "" {
+			saved.Description = code
+		}
 		page.Options[key] = append(page.Options[key], *saved)
 	}
 	page.FacilityRequested, err = facilityRequested(ctx, s.db, caseID)
@@ -90,12 +96,13 @@ func (s *Service) SubmitQCA(ctx context.Context, sess auth.Session, caseID strin
 		if err != nil {
 			return err
 		}
+		trimmed := make([]string, qcaQuestions)
 		for i, a := range answers {
-			answers[i] = strings.TrimSpace(a)
-			if answers[i] != "" && answers[i] == saved[i] {
+			trimmed[i] = strings.TrimSpace(a)
+			if trimmed[i] != "" && trimmed[i] == saved[i] {
 				continue
 			}
-			c.code(qcaKey(i+1), "Pertanyaan "+strconv.Itoa(i+1), qcaType(i+1), answers[i], true)
+			c.code(qcaKey(i+1), "Pertanyaan "+strconv.Itoa(i+1), qcaType(i+1), trimmed[i], true)
 		}
 		if c.err != nil || len(c.errs) > 0 {
 			return c.err
@@ -103,7 +110,7 @@ func (s *Service) SubmitQCA(ctx context.Context, sess auth.Session, caseID strin
 		if _, err := c.tx.Exec(c.ctx, `DELETE FROM fos.case_qca_answer WHERE case_id = $1`, caseID); err != nil {
 			return err
 		}
-		for i, a := range answers {
+		for i, a := range trimmed {
 			if a == "" {
 				continue
 			}

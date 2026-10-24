@@ -135,6 +135,13 @@ func TestQCADataNext(t *testing.T) {
 	if got := optionTexts(p["options"].(map[string]any)["qca1"]); !reflect.DeepEqual(got, []string{"Q1B=Jawaban 1 B", "Q1A=Jawaban 1 A"}) {
 		t.Fatalf("qca1 with the saved Inactive answer = %v", got)
 	}
+	// A saved code since removed from BMV shows as itself (ticket 20 review).
+	exec(t, h, `DELETE FROM fos.business_mapping_value WHERE type = 'QCA5' AND code = 'Q5B'`)
+	if got := optionTexts(pipelinePage(t, c, caseID, id)["options"].(map[string]any)["qca5"]); !reflect.DeepEqual(got, []string{"Q5A=Jawaban 5 A", "Q5B=Q5B"}) {
+		t.Fatalf("qca5 with a removed saved code = %v", got)
+	}
+	exec(t, h, `INSERT INTO fos.business_mapping_value (code, type, sub_type, description, sort_order, status, created_at, created_by, updated_at, updated_by)
+		VALUES ('Q5B', 'QCA5', '', 'Jawaban 5 B', 1, 'Active', now(), 'x', now(), 'x')`)
 	movedTo(t, h, caseID, submitQCA(t, c, caseID, id, "Collateral Data", a), "Collateral Data")
 }
 
@@ -173,5 +180,18 @@ func TestQCADataSaveAndMoves(t *testing.T) {
 	movedTo(t, h, caseID, submitQCA(t, c, caseID, id, "Data Permohonan Fasilitas", allAnswers()), "Data Permohonan Fasilitas")
 	if got := qcaRows(t, h, caseID); len(got) != 10 {
 		t.Fatalf("back did not save: %v", got)
+	}
+}
+
+// Agreed comment 2: the breadcrumb to an earlier step that is not the
+// previous one validates, saves and opens it.
+func TestQCADataBreadcrumb(t *testing.T) {
+	h, c, caseID, id := qcaData(t)
+	if got := fieldErrors(t, submitQCA(t, c, caseID, id, "Data Usaha Nasabah", make([]string, 10))); len(got) != 10 {
+		t.Fatalf("breadcrumb without answers = %v", got)
+	}
+	movedTo(t, h, caseID, submitQCA(t, c, caseID, id, "Data Usaha Nasabah", allAnswers()), "Data Usaha Nasabah")
+	if got := qcaRows(t, h, caseID); len(got) != 10 {
+		t.Fatalf("breadcrumb did not save: %v", got)
 	}
 }

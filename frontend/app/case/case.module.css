@@ -596,6 +596,10 @@
   pointer-events: none;
 }
 
+.inputDisabled + .dateLong {
+  color: #8a8c99;
+}
+
 .calendarButton {
   position: absolute;
   right: 4px;
@@ -1828,14 +1832,14 @@
   pointer-events: none;
 }
 
-.officersHeader {
+.companyOfficersHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-top: 20px;
 }
 
-.addOfficer {
+.addCompanyOfficer {
   height: 26px;
   padding: 0 16px;
   border: none;
@@ -1847,16 +1851,16 @@
   cursor: pointer;
 }
 
-.officerCard {
+.companyOfficerCard {
   position: relative;
   margin-top: 8px;
 }
 
-.officerRole {
+.companyOfficerRole {
   max-width: 200px;
 }
 
-.removeOfficer {
+.removeCompanyOfficer {
   position: absolute;
   top: 14px;
   right: 16px;

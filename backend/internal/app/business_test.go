@@ -39,13 +39,13 @@ func businessEntity(t *testing.T) (*apptest.Harness, *apptest.Client, string, in
 	return h, c, caseID, assignmentsNamed(t, h, caseID, "Badan Usaha")[0].ID
 }
 
-func seedOfficer(t *testing.T, h *apptest.Harness, caseID string, order int, role, nik, name, born string) {
+func seedCompanyOfficer(t *testing.T, h *apptest.Harness, caseID string, order int, role, nik, name, born string) {
 	t.Helper()
 	exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, sort_order, role_code, id_number, full_name, birth_date)
 		VALUES ($1, 'Pengurus', $2, $3, $4, $5, $6)`, caseID, order, role, nik, name, born)
 }
 
-type officerForm struct {
+type companyOfficerForm struct {
 	RoleCode  string `json:"roleCode"`
 	NIK       string `json:"nik"`
 	Name      string `json:"name"`
@@ -53,26 +53,26 @@ type officerForm struct {
 }
 
 type businessForm struct {
-	BusinessEntityCode       string        `json:"businessEntityCode"`
-	PlaceOfEstablishment     string        `json:"placeOfEstablishment"`
-	DeedNumber               string        `json:"deedNumber"`
-	LastDeedNumber           string        `json:"lastDeedNumber"`
-	LastDeedDate             string        `json:"lastDeedDate"`
-	Phone                    string        `json:"phone"`
-	MobilePhone              string        `json:"mobilePhone"`
-	Email                    string        `json:"email"`
-	EconomicSectorCode       string        `json:"economicSectorCode"`
-	RelationshipWithBankCode string        `json:"relationshipWithBankCode"`
-	BusinessTypeCode         string        `json:"businessTypeCode"`
-	CustomerCategoryCode     string        `json:"customerCategoryCode"`
-	Address                  string        `json:"address"`
-	GoPublic                 string        `json:"goPublic"`
-	ProvinceCode             string        `json:"provinceCode"`
-	CityCode                 string        `json:"cityCode"`
-	DistrictCode             string        `json:"districtCode"`
-	SubdistrictCode          string        `json:"subdistrictCode"`
-	BusinessGroupName        string        `json:"businessGroupName"`
-	Officers                 []officerForm `json:"officers"`
+	BusinessEntityCode       string               `json:"businessEntityCode"`
+	PlaceOfEstablishment     string               `json:"placeOfEstablishment"`
+	DeedNumber               string               `json:"deedNumber"`
+	LastDeedNumber           string               `json:"lastDeedNumber"`
+	LastDeedDate             string               `json:"lastDeedDate"`
+	Phone                    string               `json:"phone"`
+	MobilePhone              string               `json:"mobilePhone"`
+	Email                    string               `json:"email"`
+	EconomicSectorCode       string               `json:"economicSectorCode"`
+	RelationshipWithBankCode string               `json:"relationshipWithBankCode"`
+	BusinessTypeCode         string               `json:"businessTypeCode"`
+	CustomerCategoryCode     string               `json:"customerCategoryCode"`
+	Address                  string               `json:"address"`
+	GoPublic                 string               `json:"goPublic"`
+	ProvinceCode             string               `json:"provinceCode"`
+	CityCode                 string               `json:"cityCode"`
+	DistrictCode             string               `json:"districtCode"`
+	SubdistrictCode          string               `json:"subdistrictCode"`
+	BusinessGroupName        string               `json:"businessGroupName"`
+	CompanyOfficers          []companyOfficerForm `json:"companyOfficers"`
 }
 
 func validBusinessForm(h *apptest.Harness) businessForm {
@@ -82,7 +82,7 @@ func validBusinessForm(h *apptest.Harness) businessForm {
 		EconomicSectorCode: "1100", RelationshipWithBankCode: "RB1", BusinessTypeCode: "BT1", CustomerCategoryCode: "0101",
 		Address: "Jl. Usaha 5", GoPublic: "Tidak Go Public", ProvinceCode: "31", CityCode: "3171", DistrictCode: "317101",
 		SubdistrictCode: "3171011", BusinessGroupName: "Grup Contoh",
-		Officers: []officerForm{{"R1", "3171011234567801", "Ahmad Direktur", yearsAgo(h, 40, 0)}},
+		CompanyOfficers: []companyOfficerForm{{"R1", "3171011234567801", "Ahmad Direktur", yearsAgo(h, 40, 0)}},
 	}
 }
 
@@ -103,7 +103,7 @@ func TestBadanUsahaPageShowsPreScreeningAndCustomerStatus(t *testing.T) {
 		p["editable"] != true || p["latestDeedDate"] != yearsAgo(h, 0, -1) {
 		t.Fatalf("page = %v", p)
 	}
-	if officers := v["officers"].([]any); len(officers) != 1 || officers[0].(map[string]any)["nik"] != "" {
+	if officers := v["companyOfficers"].([]any); len(officers) != 1 || officers[0].(map[string]any)["nik"] != "" {
 		t.Fatalf("officers = %v", officers)
 	}
 	opts := p["options"].(map[string]any)
@@ -114,12 +114,12 @@ func TestBadanUsahaPageShowsPreScreeningAndCustomerStatus(t *testing.T) {
 		t.Fatalf("businessRole = %v", got)
 	}
 
-	seedOfficer(t, h, caseID, 2, "R2", "3171011234567802", "Budi Kedua", "1980-02-02")
-	seedOfficer(t, h, caseID, 1, "R1", "3171011234567801", "Ahmad Pertama", "1975-01-01")
+	seedCompanyOfficer(t, h, caseID, 2, "R2", "3171011234567802", "Budi Kedua", "1980-02-02")
+	seedCompanyOfficer(t, h, caseID, 1, "R1", "3171011234567801", "Ahmad Pertama", "1975-01-01")
 	exec(t, h, `INSERT INTO fos.existing_customers (id_number, customer_type, full_name, created_at, created_by, updated_at, updated_by)
 		VALUES ($1, 'Perorangan', 'x', now(), 'x', now(), 'x')`, companyNPWP)
 	p = pipelinePage(t, c, caseID, id)
-	officers := p["values"].(map[string]any)["officers"].([]any)
+	officers := p["values"].(map[string]any)["companyOfficers"].([]any)
 	if len(officers) != 2 || officers[0].(map[string]any)["name"] != "Ahmad Pertama" || officers[1].(map[string]any)["birthDate"] != "1980-02-02" {
 		t.Fatalf("officers = %v", officers)
 	}
@@ -141,7 +141,7 @@ func TestBadanUsahaPageShowsPreScreeningAndCustomerStatus(t *testing.T) {
 // refused Next stores nothing.
 func TestBadanUsahaValidation(t *testing.T) {
 	h, c, caseID, id := businessEntity(t)
-	second := officerForm{"R2", "3171011234567802", "Budi Kedua", yearsAgo(h, 30, 0)}
+	second := companyOfficerForm{"R2", "3171011234567802", "Budi Kedua", yearsAgo(h, 30, 0)}
 	for _, tc := range []struct {
 		name   string
 		change func(f *businessForm)
@@ -158,12 +158,19 @@ func TestBadanUsahaValidation(t *testing.T) {
 		{"place", func(f *businessForm) { f.PlaceOfEstablishment = strings.Repeat("a", 51) }, []fieldError{{"form", "Tempat Pendirian", "ERR-040", "Tempat Pendirian maksimal 50 karakter"}}},
 		{"group", func(f *businessForm) { f.BusinessGroupName = strings.Repeat("a", 101) }, []fieldError{{"form", "Nama Group Usaha Nasabah", "ERR-040", "Nama Group Usaha Nasabah maksimal 100 karakter"}}},
 		{"kelurahan", func(f *businessForm) { f.SubdistrictCode = "" }, []fieldError{{"form", "Kelurahan", "ERR-010", "Kelurahan wajib diisi"}}},
-		{"no role", func(f *businessForm) { f.Officers[0].RoleCode = "" }, []fieldError{{"officer-1", "Jabatan", "ERR-014", "Harap isi jabatan"}}},
-		{"officer NIK", func(f *businessForm) { f.Officers = append(f.Officers, second); f.Officers[1].NIK = "123" }, []fieldError{{"officer-2", "NIK", "ERR-007", "Harap masukkan NIK 16 digit yang valid"}}},
-		{"officer age", func(f *businessForm) { f.Officers[0].BirthDate = yearsAgo(h, 16, 0) }, []fieldError{{"officer-1", "Tanggal Lahir", "ERR-009", "Umur nasabah minimal 17 tahun"}}},
-		{"same NIK", func(f *businessForm) { s := second; s.NIK = f.Officers[0].NIK; f.Officers = append(f.Officers, s) }, []fieldError{
-			{"officer-1", "NIK", "ERR-018", "NIK tidak boleh sama"}, {"officer-2", "NIK", "ERR-018", "NIK tidak boleh sama"}}},
-		{"no officers", func(f *businessForm) { f.Officers = nil }, []fieldError{{"form", "Data Pengurus", "ERR-015", "Minimal 1 data pengurus dibutuhkan"}}},
+		{"no role", func(f *businessForm) { f.CompanyOfficers[0].RoleCode = "" }, []fieldError{{"company-officer-1", "Jabatan", "ERR-014", "Harap isi jabatan"}}},
+		{"officer NIK", func(f *businessForm) {
+			f.CompanyOfficers = append(f.CompanyOfficers, second)
+			f.CompanyOfficers[1].NIK = "123"
+		}, []fieldError{{"company-officer-2", "NIK", "ERR-007", "Harap masukkan NIK 16 digit yang valid"}}},
+		{"officer age", func(f *businessForm) { f.CompanyOfficers[0].BirthDate = yearsAgo(h, 16, 0) }, []fieldError{{"company-officer-1", "Tanggal Lahir", "ERR-009", "Umur nasabah minimal 17 tahun"}}},
+		{"same NIK", func(f *businessForm) {
+			s := second
+			s.NIK = f.CompanyOfficers[0].NIK
+			f.CompanyOfficers = append(f.CompanyOfficers, s)
+		}, []fieldError{
+			{"company-officer-1", "NIK", "ERR-018", "NIK tidak boleh sama"}, {"company-officer-2", "NIK", "ERR-018", "NIK tidak boleh sama"}}},
+		{"no officers", func(f *businessForm) { f.CompanyOfficers = nil }, []fieldError{{"form", "Data Pengurus", "ERR-015", "Minimal 1 data pengurus dibutuhkan"}}},
 	} {
 		f := validBusinessForm(h)
 		tc.change(&f)
@@ -172,21 +179,21 @@ func TestBadanUsahaValidation(t *testing.T) {
 		}
 	}
 	// An empty form names every required field, top to bottom.
-	got := fieldErrors(t, submitBusiness(t, c, caseID, id, businessForm{Officers: []officerForm{{}}}))
+	got := fieldErrors(t, submitBusiness(t, c, caseID, id, businessForm{CompanyOfficers: []companyOfficerForm{{}}}))
 	var fields []string
 	for _, e := range got {
 		fields = append(fields, e.Section+"/"+e.Field)
 	}
 	want := []string{"form/Tempat Pendirian", "form/Nomor Akta Pendirian", "form/Nomor Telepon", "form/Kode Bidang Usaha", "form/Tipe Bisnis",
 		"form/Golongan Nasabah", "form/Alamat", "form/Go Public", "form/Provinsi", "form/Kota", "form/Kecamatan", "form/Kelurahan",
-		"officer-1/Jabatan", "officer-1/NIK", "officer-1/Nama", "officer-1/Tanggal Lahir"}
+		"company-officer-1/Jabatan", "company-officer-1/NIK", "company-officer-1/Nama", "company-officer-1/Tanggal Lahir"}
 	if !reflect.DeepEqual(fields, want) {
 		t.Fatalf("empty form errors\n got %v\nwant %v", fields, want)
 	}
 	// Eleven cards are not a form the page can send.
 	f := validBusinessForm(h)
 	for i := 0; i < 10; i++ {
-		f.Officers = append(f.Officers, second)
+		f.CompanyOfficers = append(f.CompanyOfficers, second)
 	}
 	if r := submitBusiness(t, c, caseID, id, f); r.Status != http.StatusBadRequest {
 		t.Fatalf("11 officers = %d", r.Status)
@@ -203,12 +210,12 @@ func TestBadanUsahaValidation(t *testing.T) {
 // then the case enters Financing Application with a new Data Usaha Nasabah.
 func TestBadanUsahaNextStoresAndEntersFinancingApplication(t *testing.T) {
 	h, c, caseID, id := businessEntity(t)
-	seedOfficer(t, h, caseID, 1, "R1", "3171011234567801", "Ahmad Lama", "1975-01-01")
-	seedOfficer(t, h, caseID, 2, "R2", "3171011234567802", "Budi Lama", "1980-02-02")
-	seedOfficer(t, h, caseID, 3, "R2", "3171011234567803", "Citra Lama", "1985-03-03")
-	firstID := officerIDs(t, h, caseID)[0]
+	seedCompanyOfficer(t, h, caseID, 1, "R1", "3171011234567801", "Ahmad Lama", "1975-01-01")
+	seedCompanyOfficer(t, h, caseID, 2, "R2", "3171011234567802", "Budi Lama", "1980-02-02")
+	seedCompanyOfficer(t, h, caseID, 3, "R2", "3171011234567803", "Citra Lama", "1985-03-03")
+	firstID := companyOfficerIDs(t, h, caseID)[0]
 	f := validBusinessForm(h)
-	f.Officers = []officerForm{
+	f.CompanyOfficers = []companyOfficerForm{
 		{"R2", "3171011234567801", "Ahmad Baru", "1975-01-01"},
 		{"R1", "3171011234567809", "Dewi Baru", "1990-09-09"},
 	}
@@ -233,7 +240,7 @@ func TestBadanUsahaNextStoresAndEntersFinancingApplication(t *testing.T) {
 	if got := addressOf(t, h, customerID, "Badan Usaha"); got != "Jl. Usaha 5|021-5551234||0812||||||31|3171|JAKSEL|317101|3171011|12850" {
 		t.Fatalf("address = %s", got)
 	}
-	ids := officerIDs(t, h, caseID)
+	ids := companyOfficerIDs(t, h, caseID)
 	if len(ids) != 2 || ids[0] != firstID {
 		t.Fatalf("officer rows = %v (first was %d)", ids, firstID)
 	}
@@ -249,7 +256,7 @@ func TestBadanUsahaNextStoresAndEntersFinancingApplication(t *testing.T) {
 	}
 }
 
-func officerIDs(t *testing.T, h *apptest.Harness, caseID string) []int64 {
+func companyOfficerIDs(t *testing.T, h *apptest.Harness, caseID string) []int64 {
 	t.Helper()
 	rows, err := h.DB.Query(context.Background(), `SELECT customer_id FROM fos.customer WHERE case_id = $1 AND customer_type = 'Pengurus' ORDER BY sort_order`, caseID)
 	if err != nil {

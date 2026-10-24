@@ -145,8 +145,16 @@ export type UnderlyingPage = {
 
 // "documents" errors (ERR-026) belong to a document row, keyed
 // "<category>/<document type>", and are not banner items.
-// officer-<n> is card n of Data Pengurus (FR-APP-005).
-export type Section = "form" | "customer" | "spouse" | "upload" | "slik" | "documents" | "ektp" | "domicile" | `officer-${number}`;
+// company-officer-<n> is card n of Data Pengurus (FR-APP-005).
+export type Section = "form" | "customer" | "spouse" | "upload" | "slik" | "documents" | "ektp" | "domicile" | `company-officer-${number}`;
+
+// companyOfficerSection is the section of Data Pengurus card n (from 1);
+// companyOfficerNumber reads n back, or null for another section.
+export const companyOfficerSection = (n: number): Section => `company-officer-${n}`;
+export function companyOfficerNumber(section: Section): number | null {
+  const m = /^company-officer-(\d+)$/.exec(section);
+  return m ? Number(m[1]) : null;
+}
 
 // A validation failure returned with 422 by a submit: key is the stable
 // field key, field the label shown in the banner.
@@ -264,8 +272,8 @@ export type CloseRelativeForm = Region & {
 
 export type CloseRelativePage = { values: CloseRelativeForm; options: Record<string, Option[]>; failedOptions: string[]; editable: boolean };
 
-// One Data Pengurus card (FR-APP-002); birthDate is yyyy-mm-dd.
-export type Officer = { roleCode: string; nik: string; name: string; birthDate: string };
+// One Data Pengurus card, a Company Officer (FR-APP-002); birthDate is yyyy-mm-dd.
+export type CompanyOfficer = { roleCode: string; nik: string; name: string; birthDate: string };
 
 // The Badan Usaha form (FR-APP-005); goPublic is the BMV description.
 export type BusinessEntityForm = Region & {
@@ -284,7 +292,7 @@ export type BusinessEntityForm = Region & {
   address: string;
   goPublic: string;
   businessGroupName: string;
-  officers: Officer[];
+  companyOfficers: CompanyOfficer[];
 };
 
 export type BusinessEntityPage = {

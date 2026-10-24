@@ -116,6 +116,16 @@ type closeRelativeJSON struct {
 	EducationCode string `json:"educationCode"`
 }
 
+// pageOptionsJSON is a page's initial dropdowns and the failed ones (ERR-039).
+type pageOptionsJSON struct {
+	Options       map[string][]optionJSON `json:"options"`
+	FailedOptions []string                `json:"failedOptions"`
+}
+
+func toPageOptionsJSON(p cases.PageOptions) pageOptionsJSON {
+	return pageOptionsJSON{toOptionMapJSON(p.Options), p.FailedOptions}
+}
+
 func toOptionMapJSON(m map[string][]cases.Option) map[string][]optionJSON {
 	out := make(map[string][]optionJSON, len(m))
 	for k, opts := range m {
@@ -125,40 +135,35 @@ func toOptionMapJSON(m map[string][]cases.Option) map[string][]optionJSON {
 }
 
 type individualDataPageJSON struct {
-	NIK              string                  `json:"nik"`
-	Name             string                  `json:"name"`
-	BirthDate        string                  `json:"birthDate"`
-	ExistingCustomer bool                    `json:"existingCustomer"`
-	Values           individualDataJSON      `json:"values"`
-	Sector           *optionJSON             `json:"sector"`
-	Options          map[string][]optionJSON `json:"options"`
-	FailedOptions    []string                `json:"failedOptions"`
-	Editable         bool                    `json:"editable"`
+	NIK              string             `json:"nik"`
+	Name             string             `json:"name"`
+	BirthDate        string             `json:"birthDate"`
+	ExistingCustomer bool               `json:"existingCustomer"`
+	Values           individualDataJSON `json:"values"`
+	Sector           *optionJSON        `json:"sector"`
+	pageOptionsJSON
+	Editable bool `json:"editable"`
 }
 
 func toIndividualDataPageJSON(p cases.IndividualDataPage) individualDataPageJSON {
 	out := individualDataPageJSON{NIK: p.NIK, Name: p.Name, BirthDate: p.BirthDate, ExistingCustomer: p.ExistingCustomer,
-		Values: toIndividualDataJSON(p.Values), Options: toOptionMapJSON(p.Options), FailedOptions: p.FailedOptions, Editable: p.Editable}
-	if p.Sector != nil {
-		out.Sector = &optionJSON{p.Sector.Code, p.Sector.Description}
-	}
+		Values: toIndividualDataJSON(p.Values), Sector: toOptionJSON(p.Sector), pageOptionsJSON: toPageOptionsJSON(p.PageOptions), Editable: p.Editable}
 	return out
 }
 
 type spousePageJSON struct {
-	Married           bool                    `json:"married"`
-	Values            spouseJSON              `json:"values"`
-	Options           map[string][]optionJSON `json:"options"`
-	FailedOptions     []string                `json:"failedOptions"`
-	Editable          bool                    `json:"editable"`
-	Today             string                  `json:"today"`
-	EarliestBirthDate string                  `json:"earliestBirthDate"`
+	Married bool       `json:"married"`
+	Values  spouseJSON `json:"values"`
+	pageOptionsJSON
+	Editable          bool   `json:"editable"`
+	Today             string `json:"today"`
+	EarliestBirthDate string `json:"earliestBirthDate"`
 }
 
 func toSpousePageJSON(p cases.SpousePage) spousePageJSON {
 	v := p.Values
 	return spousePageJSON{
-		Married: p.Married, Options: toOptionMapJSON(p.Options), FailedOptions: p.FailedOptions, Editable: p.Editable, Today: p.Today, EarliestBirthDate: p.EarliestBirthDate,
+		Married: p.Married, pageOptionsJSON: toPageOptionsJSON(p.PageOptions), Editable: p.Editable, Today: p.Today, EarliestBirthDate: p.EarliestBirthDate,
 		Values: spouseJSON{Name: v.Name, NIK: v.NIK, BirthDate: v.BirthDate, BirthPlace: v.BirthPlace, JobCode: v.JobCode,
 			WorkDuration: v.WorkDuration, OfficeAddress: v.OfficeAddress, Phone: v.Phone, MobilePhone: v.MobilePhone,
 			regionJSON: regionJSON(v.Region), EducationCode: v.EducationCode, PrenupCode: v.PrenupCode},
@@ -166,10 +171,9 @@ func toSpousePageJSON(p cases.SpousePage) spousePageJSON {
 }
 
 type closeRelativePageJSON struct {
-	Values        closeRelativeJSON       `json:"values"`
-	Options       map[string][]optionJSON `json:"options"`
-	FailedOptions []string                `json:"failedOptions"`
-	Editable      bool                    `json:"editable"`
+	Values closeRelativeJSON `json:"values"`
+	pageOptionsJSON
+	Editable bool `json:"editable"`
 }
 
 func toCloseRelativePageJSON(p cases.CloseRelativePage) closeRelativePageJSON {
@@ -177,7 +181,7 @@ func toCloseRelativePageJSON(p cases.CloseRelativePage) closeRelativePageJSON {
 	return closeRelativePageJSON{
 		Values: closeRelativeJSON{Name: v.Name, RelationshipCode: v.RelationshipCode, Address: v.Address, HomePhone: v.HomePhone,
 			OfficePhone: v.OfficePhone, regionJSON: regionJSON(v.Region), MobilePhone: v.MobilePhone, EducationCode: v.EducationCode},
-		Options: toOptionMapJSON(p.Options), FailedOptions: p.FailedOptions, Editable: p.Editable,
+		pageOptionsJSON: toPageOptionsJSON(p.PageOptions), Editable: p.Editable,
 	}
 }
 

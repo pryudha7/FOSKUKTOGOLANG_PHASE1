@@ -39,3 +39,14 @@ Implementation notes (2026-10-24):
 - UI check tools/uicheck/business.js (screens shots/business*.png): Gambar 48-49 layout with the NPWP, name, deed date and Pengurus prefilled, Kota disabled, delete doing nothing on the last card, ERR-037 phone and email, "Pengurus 1/2 - NIK : NIK tidak boleh sama" and the card errors, "pertanian" listing three two-line items (Gambar 50) with the description shown after Enter, Golongan Nasabah by "bum", Next to Financing Application, Pending-Submission with Data Usaha Nasabah new; then the page answer faked with businessRole failed: the ERR-039 popup and Jabatan holding only the ERR-038 item.
 - Mutation checks (each fails a test): no ERR-018; officers always inserted; removed officers kept; today accepted as the last deed date; Go Public options by code; customer type ignored; no ERR-015; Next staying in Prospect; empty Jabatan as ERR-010; Golongan Nasabah from CUSTOMER_CATEGORY; Go Public not checked.
 
+Review fixes (2026-10-24, agreed with the user):
+
+- Names follow the glossary (ADR 0001): Company Officer for Pengurus (CompanyOfficer, companyOfficers, saveCompanyOfficers; JSON companyOfficers; banner section company-officer-<n>, made and read by companyOfficerSection/companyOfficerNumber in types.ts).
+- PageOptions bundles a page's options and failed dropdowns (Go and JSON, embedded in the four page structs); saveForm's second step is afterSave; keyedByDescription states the Go Public rule; toOptionJSON serves both pages.
+- The shared form pieces (useMove, TextField, CodeSelect, CodeRadios, NumberField, ShownValue, useRegion, Pair, RegionRows) moved from ProspectDataEntry.tsx to FormFields.tsx.
+- UI-025 "teks abu": the long date of a disabled date field is grey too.
+- BR-UI-012: a saved Go Public whose BMV row is no longer Active is still offered and shown. The same gap on the other BMV dropdowns (tickets 15, 17) is a follow-up, not done here.
+- Person names (Nama Pengurus; Nama Pasangan, Nama Lengkap Keluarga Dekat, Nama Gadis Ibu Kandung of ticket 17) have no maxLength, so ERR-013 shows as on Pre-Screening; the ERR-040 maxlength note does not cover ERR-013.
+- Noted: AC-FR-APP-005-01's "Details kosong" waits for the Details ticket (comment 13), so that AC is not fully passed here; more than 10 cards is refused with 400, an error path the SoT does not define.
+- Rerun after the fixes: tests, all 11 mutations caught, UI checks business.js, prospect.js and pipeline.js.
+

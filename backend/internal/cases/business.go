@@ -17,18 +17,18 @@ const (
 	// partyBusinessEntity is the customer_type and address_type of the
 	// entity itself (DB-RULE-099).
 	partyBusinessEntity = customerTypeBusinessEntity
-	partyOfficer        = "Pengurus"
+	partyCompanyOfficer = "Pengurus"
 
-	// maxOfficers bounds Data Pengurus (FR-APP-002).
-	maxOfficers = 10
+	// maxCompanyOfficers bounds Data Pengurus (FR-APP-002).
+	maxCompanyOfficers = 10
 
-	msgNoRole      = "Harap isi jabatan"                  // ERR-014
-	msgNoOfficers  = "Minimal 1 data pengurus dibutuhkan" // ERR-015
-	sectionOfficer = "officer-"                           // + card number from 1
+	msgNoRole             = "Harap isi jabatan"                  // ERR-014
+	msgNoCompanyOfficers  = "Minimal 1 data pengurus dibutuhkan" // ERR-015
+	sectionCompanyOfficer = "company-officer-"                   // + card number from 1
 )
 
-// Officer is one Data Pengurus card (FR-APP-002); BirthDate is yyyy-mm-dd.
-type Officer struct {
+// CompanyOfficer is one Data Pengurus card (FR-APP-002); BirthDate is yyyy-mm-dd.
+type CompanyOfficer struct {
 	RoleCode, NIK, Name, BirthDate string
 }
 
@@ -40,7 +40,7 @@ type BusinessEntityForm struct {
 	BusinessTypeCode, CustomerCategoryCode, Address, GoPublic                          string
 	Region
 	BusinessGroupName string
-	Officers          []Officer
+	CompanyOfficers   []CompanyOfficer
 }
 
 // BusinessEntityPage is UI-025: the Pre-Screening identity, the customer
@@ -51,17 +51,16 @@ type BusinessEntityPage struct {
 	Values                        BusinessEntityForm
 	// Sector and Category are the saved autocompletes, shown by description.
 	Sector, Category *Option
-	Options          map[string][]Option
-	FailedOptions    []string
-	Editable         bool
+	PageOptions
+	Editable bool
 	// Today and EarliestBirthDate bound the Pengurus birth dates;
 	// LatestDeedDate is the last day Tanggal Akta Perubahan Terakhir allows
 	// (yesterday), all the operator's dates.
 	Today, EarliestBirthDate, LatestDeedDate string
 }
 
-// officerSection is the banner section of card n: "Pengurus <n> - ".
-func officerSection(n int) string { return sectionOfficer + strconv.Itoa(n) }
+// companyOfficerSection is the banner section of card n: "Pengurus <n> - ".
+func companyOfficerSection(n int) string { return sectionCompanyOfficer + strconv.Itoa(n) }
 
 // bmvDescription reads the description of a BMV code, whatever its status
 // (BR-UI-012), or nil without a code.
@@ -118,20 +117,20 @@ func (s *Service) businessEntityPage(ctx context.Context, sess auth.Session, cas
 		BusinessGroupName: value(group),
 	}
 	// Pengurus are the Pre-Screening rows (DEC-112); none gives one empty card.
-	page.Values.Officers, err = collect(ctx, s, func(r pgx.Rows) (Officer, error) {
-		var o Officer
+	page.Values.CompanyOfficers, err = collect(ctx, s, func(r pgx.Rows) (CompanyOfficer, error) {
+		var o CompanyOfficer
 		var role, nik, name, born *string
 		err := r.Scan(&role, &nik, &name, &born)
-		o = Officer{value(role), value(nik), value(name), value(born)}
+		o = CompanyOfficer{value(role), value(nik), value(name), value(born)}
 		return o, err
 	}, `
 		SELECT role_code, id_number, full_name, to_char(birth_date, 'YYYY-MM-DD') FROM fos.customer
-		WHERE case_id = $1 AND customer_type = $2 ORDER BY sort_order, customer_id`, caseID, partyOfficer)
+		WHERE case_id = $1 AND customer_type = $2 ORDER BY sort_order, customer_id`, caseID, partyCompanyOfficer)
 	if err != nil {
 		return BusinessEntityPage{}, err
 	}
-	if len(page.Values.Officers) == 0 {
-		page.Values.Officers = []Officer{{}}
+	if len(page.Values.CompanyOfficers) == 0 {
+		page.Values.CompanyOfficers = []CompanyOfficer{{}}
 	}
 	if page.Sector, err = s.bmvDescription(ctx, "ECONOMIC_SECTOR", page.Values.EconomicSectorCode); err != nil {
 		return BusinessEntityPage{}, err
@@ -145,22 +144,29 @@ func (s *Service) businessEntityPage(ctx context.Context, sess auth.Session, cas
 	}
 	page.Today, page.EarliestBirthDate = today.Format(dateISO), EarliestBirthDate(today).Format(dateISO)
 	page.LatestDeedDate = today.AddDate(0, 0, -1).Format(dateISO)
-	page.Options, page.FailedOptions = s.pageOptions(ctx, map[string]string{
+	page.PageOptions = s.pageOptions(ctx, map[string]string{
 		"businessEntity": "BUSINESS_ENTITY", "relationshipWithBank": "RELATIONSHIP_WITH_BANK", "businessType": "BUSINESS_TYPE",
 		"goPublic": "GO_PUBLIC_STATUS", "province": "PROVINCE", "businessRole": "BUSINESS_ROLE",
 	})
-	// Go Public is chosen and stored by its description (§9.6).
-	for i, o := range page.Options["goPublic"] {
-		page.Options["goPublic"][i].Code = o.Description
-	}
+	page.Options["goPublic"] = keyedByDescription(page.Options["goPublic"])
 	return page, nil
+}
+
+// keyedByDescription makes each option's value its description, for a
+// dropdown chosen and stored by description (Go Public, §9.6).
+func keyedByDescription(opts []Option) []Option {
+	out := make([]Option, len(opts))
+	for i, o := range opts {
+		out[i] = Option{o.Description, o.Description}
+	}
+	return out
 }
 
 // SubmitBusinessEntity validates and stores the Badan Usaha form and its
 // Pengurus, then ends Prospect Data Entry (FR-APP-005 Process 4, agreed
 // comment 1).
 func (s *Service) SubmitBusinessEntity(ctx context.Context, sess auth.Session, caseID string, id int64, f BusinessEntityForm) error {
-	if len(f.Officers) > maxOfficers {
+	if len(f.CompanyOfficers) > maxCompanyOfficers {
 		return ErrUnsupported // more cards than the page allows
 	}
 	_, err := s.saveForm(ctx, sess, caseID, id, AssignmentBusinessEntity, func(c *fieldCheck) error {
@@ -186,7 +192,7 @@ func (s *Service) SubmitBusinessEntity(ctx context.Context, sess auth.Session, c
 		c.description("goPublic", "Go Public", "GO_PUBLIC_STATUS", t(f.GoPublic))
 		resolved := c.region(region, true)
 		c.text("businessGroupName", "Nama Group Usaha Nasabah", t(f.BusinessGroupName), false, 100)
-		officers := c.officers(f.Officers, today)
+		officers := c.companyOfficers(f.CompanyOfficers, today)
 		if c.err != nil || len(c.errs) > 0 {
 			return c.err
 		}
@@ -207,7 +213,7 @@ func (s *Service) SubmitBusinessEntity(ctx context.Context, sess auth.Session, c
 			phone: orNil(t(f.Phone)), mobile: orNil(t(f.MobilePhone)), region: resolved}); err != nil {
 			return err
 		}
-		return saveOfficers(c.ctx, c.tx, caseID, officers)
+		return saveCompanyOfficers(c.ctx, c.tx, caseID, officers)
 	}, func(tx pgx.Tx, from int64) (int64, error) {
 		return 0, s.enterFinancingApplication(ctx, tx, sess, caseID, from)
 	})
@@ -217,20 +223,20 @@ func (s *Service) SubmitBusinessEntity(ctx context.Context, sess auth.Session, c
 // officers checks the Pengurus cards (FR-APP-002): Jabatan (ERR-014), the
 // Pre-Screening person rules, and NIK unique across cards (ERR-018 on every
 // duplicate); none at all is ERR-015. It returns the trimmed cards.
-func (c *fieldCheck) officers(cards []Officer, today time.Time) []Officer {
+func (c *fieldCheck) companyOfficers(cards []CompanyOfficer, today time.Time) []CompanyOfficer {
 	if len(cards) == 0 {
-		c.errs = append(c.errs, FieldError{SectionForm, "officers", "Data Pengurus", "ERR-015", msgNoOfficers})
+		c.errs = append(c.errs, FieldError{SectionForm, "companyOfficers", "Data Pengurus", "ERR-015", msgNoCompanyOfficers})
 		return nil
 	}
 	t := strings.TrimSpace
-	out := make([]Officer, len(cards))
+	out := make([]CompanyOfficer, len(cards))
 	seen := map[string]int{}
 	for i, o := range cards {
-		out[i] = Officer{t(o.RoleCode), t(o.NIK), t(o.Name), t(o.BirthDate)}
+		out[i] = CompanyOfficer{t(o.RoleCode), t(o.NIK), t(o.Name), t(o.BirthDate)}
 		seen[out[i].NIK]++
 	}
 	for i, o := range out {
-		c.section = officerSection(i + 1)
+		c.section = companyOfficerSection(i + 1)
 		if o.RoleCode == "" {
 			c.add("role", "Jabatan", "ERR-014", msgNoRole)
 		} else {
@@ -248,14 +254,14 @@ func (c *fieldCheck) officers(cards []Officer, today time.Time) []Officer {
 	return out
 }
 
-// saveOfficers writes the cards onto the case's Pengurus rows in order: the
+// saveCompanyOfficers writes the cards onto the case's Pengurus rows in order: the
 // same rows are updated, extra cards inserted, rows of removed cards deleted
 // (DEC-112, agreed comment 5).
-func saveOfficers(ctx context.Context, tx pgx.Tx, caseID string, cards []Officer) error {
+func saveCompanyOfficers(ctx context.Context, tx pgx.Tx, caseID string, cards []CompanyOfficer) error {
 	rows, err := collectIn(ctx, tx, func(r pgx.Rows) (int64, error) {
 		var id int64
 		return id, r.Scan(&id)
-	}, `SELECT customer_id FROM fos.customer WHERE case_id = $1 AND customer_type = $2 ORDER BY sort_order, customer_id`, caseID, partyOfficer)
+	}, `SELECT customer_id FROM fos.customer WHERE case_id = $1 AND customer_type = $2 ORDER BY sort_order, customer_id`, caseID, partyCompanyOfficer)
 	if err != nil {
 		return err
 	}
@@ -265,7 +271,7 @@ func saveOfficers(ctx context.Context, tx pgx.Tx, caseID string, cards []Officer
 				WHERE customer_id = $1`, rows[i], i+1, o.RoleCode, o.NIK, o.Name, o.BirthDate)
 		} else {
 			_, err = tx.Exec(ctx, `INSERT INTO fos.customer (case_id, customer_type, sort_order, role_code, id_number, full_name, birth_date)
-				VALUES ($1, $2, $3, $4, $5, $6, $7::date)`, caseID, partyOfficer, i+1, o.RoleCode, o.NIK, o.Name, o.BirthDate)
+				VALUES ($1, $2, $3, $4, $5, $6, $7::date)`, caseID, partyCompanyOfficer, i+1, o.RoleCode, o.NIK, o.Name, o.BirthDate)
 		}
 		if err != nil {
 			return err

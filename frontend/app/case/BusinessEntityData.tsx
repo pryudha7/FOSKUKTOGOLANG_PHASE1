@@ -9,15 +9,14 @@ import DropdownsFailedPopup from "./DropdownsFailedPopup";
 import ErrorBanner from "./ErrorBanner";
 import Field from "./Field";
 import { unavailableMessage } from "./names";
-import { CodeSelect, create, Pair, RegionRows, TextField, useMove, useRegion } from "./ProspectDataEntry";
-import type { BusinessEntityForm, BusinessEntityPage, Officer, Option, Section } from "./types";
+import { CodeSelect, create, RegionRows, TextField, useMove, useRegion } from "./FormFields";
+import { companyOfficerNumber, companyOfficerSection, type BusinessEntityForm, type BusinessEntityPage, type CompanyOfficer, type Option } from "./types";
 import styles from "./case.module.css";
 
 // Data Pengurus holds 1 to 10 cards (FR-APP-002).
-const maxOfficers = 10;
-const emptyOfficer: Officer = { roleCode: "", nik: "", name: "", birthDate: "" };
+const maxCompanyOfficers = 10;
+const emptyCompanyOfficer: CompanyOfficer = { roleCode: "", nik: "", name: "", birthDate: "" };
 
-const officerSection = (i: number) => `officer-${i + 1}` as Section;
 
 // An autocomplete item in two lines: code, then the description (Gambar 50).
 const twoLines = (o: Option, match: string) => (
@@ -39,6 +38,11 @@ export default function BusinessEntityData({ page, assignment }: { page: Busines
   const [categoryText, setCategoryText] = useState(page.category?.description ?? "");
   const flow = useMove(assignment, "business-entity");
   const opts = page.options;
+  // A saved Go Public no longer Active still shows its description (BR-UI-012).
+  const goPublicOptions =
+    page.values.goPublic && !opts.goPublic.some((o) => o.code === page.values.goPublic)
+      ? [...opts.goPublic, { code: page.values.goPublic, description: page.values.goPublic }]
+      : opts.goPublic;
   const failed = (key: string) => page.failedOptions.includes(key);
   const err = (key: string) => flow.errorOf("form", key);
   const set = <K extends keyof BusinessEntityForm>(key: K, errorKey: string, v: BusinessEntityForm[K]) => {
@@ -58,20 +62,20 @@ export default function BusinessEntityData({ page, assignment }: { page: Busines
   });
   const suggestions = (type: string) => `${assignmentURL(assignment, "suggestions")}?type=${type}`;
 
-  const setOfficer = (i: number, key: keyof Officer, errorKey: string, v: string) => {
-    setForm((f) => ({ ...f, officers: f.officers.map((o, j) => (j === i ? { ...o, [key]: v } : o)) }));
-    flow.clear(officerSection(i), errorKey);
+  const setCompanyOfficer = (i: number, key: keyof CompanyOfficer, errorKey: string, v: string) => {
+    setForm((f) => ({ ...f, companyOfficers: f.companyOfficers.map((o, j) => (j === i ? { ...o, [key]: v } : o)) }));
+    flow.clear(companyOfficerSection(i + 1), errorKey);
   };
   // Tambah does nothing at 10 cards, delete nothing at 1 (FR-APP-002). The
   // cards' errors go with a change of cards: their numbers no longer hold.
-  const dropOfficerErrors = () => flow.dropErrors((e) => e.section.startsWith("officer-"));
-  const addOfficer = () => {
-    setForm((f) => (f.officers.length >= maxOfficers ? f : { ...f, officers: [...f.officers, emptyOfficer] }));
-    dropOfficerErrors();
+  const dropCompanyOfficerErrors = () => flow.dropErrors((e) => companyOfficerNumber(e.section) !== null);
+  const addCompanyOfficer = () => {
+    setForm((f) => (f.companyOfficers.length >= maxCompanyOfficers ? f : { ...f, companyOfficers: [...f.companyOfficers, emptyCompanyOfficer] }));
+    dropCompanyOfficerErrors();
   };
-  const removeOfficer = (i: number) => {
-    setForm((f) => (f.officers.length <= 1 ? f : { ...f, officers: f.officers.filter((_, j) => j !== i) }));
-    dropOfficerErrors();
+  const removeCompanyOfficer = (i: number) => {
+    setForm((f) => (f.companyOfficers.length <= 1 ? f : { ...f, companyOfficers: f.companyOfficers.filter((_, j) => j !== i) }));
+    dropCompanyOfficerErrors();
   };
 
   return (
@@ -142,7 +146,7 @@ export default function BusinessEntityData({ page, assignment }: { page: Busines
               </span>
             </Field>
             <TextField label="Alamat" required maxLength={350} value={form.address} onChange={(v) => set("address", "address", v)} error={err("address")} disabled={readOnly} />
-            <CodeSelect label="Go Public" placeholder="Pilih Go Public" required options={opts.goPublic} failedItem={failed("goPublic")} value={form.goPublic} onChange={(v) => set("goPublic", "goPublic", v)} error={err("goPublic")} disabled={readOnly} />
+            <CodeSelect label="Go Public" placeholder="Pilih Go Public" required options={goPublicOptions} failedItem={failed("goPublic")} value={form.goPublic} onChange={(v) => set("goPublic", "goPublic", v)} error={err("goPublic")} disabled={readOnly} />
             <RegionRows fields={region} />
             <div className={styles.wide}>
               <TextField label="Nama Group Usaha Nasabah" maxLength={100} value={form.businessGroupName} onChange={(v) => set("businessGroupName", "businessGroupName", v)} error={err("businessGroupName")} disabled={readOnly} />
@@ -150,41 +154,41 @@ export default function BusinessEntityData({ page, assignment }: { page: Busines
           </div>
         </div>
 
-        <div className={styles.officersHeader}>
+        <div className={styles.companyOfficersHeader}>
           <h3 className={styles.sectionTitle}>Data Pengurus</h3>
           {!readOnly && (
-            <button type="button" className={styles.addOfficer} onClick={addOfficer}>
+            <button type="button" className={styles.addCompanyOfficer} onClick={addCompanyOfficer}>
               <span aria-hidden="true">+</span> Tambah
             </button>
           )}
         </div>
-        {form.officers.map((o, i) => {
-          const section = officerSection(i);
-          const oErr = (key: string) => flow.errorOf(section, key);
+        {form.companyOfficers.map((o, i) => {
+          const section = companyOfficerSection(i + 1);
+          const cardError = (key: string) => flow.errorOf(section, key);
           return (
-            <div key={i} className={`${styles.formPanel} ${styles.officerCard}`} aria-label={`Pengurus ${i + 1}`} role="group">
+            <div key={i} className={`${styles.formPanel} ${styles.companyOfficerCard}`} aria-label={`Pengurus ${i + 1}`} role="group">
               {!readOnly && (
-                <button type="button" className={styles.removeOfficer} aria-label={`Hapus Pengurus ${i + 1}`} onClick={() => removeOfficer(i)}>
+                <button type="button" className={styles.removeCompanyOfficer} aria-label={`Hapus Pengurus ${i + 1}`} onClick={() => removeCompanyOfficer(i)}>
                   <svg width="12" height="14" viewBox="0 0 12 14" aria-hidden="true">
                     <path d="M1 3h10M4 3V1h4v2M2 3l1 10h6l1-10" fill="currentColor" stroke="currentColor" strokeWidth="1" />
                   </svg>
                 </button>
               )}
-              <div className={styles.officerRole}>
-                <CodeSelect label="Jabatan" placeholder="Pilih Jabatan" required options={opts.businessRole} failedItem={failed("businessRole")} value={o.roleCode} onChange={(v) => setOfficer(i, "roleCode", "role", v)} error={oErr("role")} disabled={readOnly} />
+              <div className={styles.companyOfficerRole}>
+                <CodeSelect label="Jabatan" placeholder="Pilih Jabatan" required options={opts.businessRole} failedItem={failed("businessRole")} value={o.roleCode} onChange={(v) => setCompanyOfficer(i, "roleCode", "role", v)} error={cardError("role")} disabled={readOnly} />
               </div>
-              <TextField label="NIK" required maxLength={16} value={o.nik} onChange={(v) => setOfficer(i, "nik", "nik", v)} error={oErr("nik")} disabled={readOnly} />
-              <TextField label="Nama" required maxLength={30} value={o.name} onChange={(v) => setOfficer(i, "name", "name", v)} error={oErr("name")} disabled={readOnly} />
-              <Field label="Tanggal Lahir" required error={oErr("birthDate")}>
+              <TextField label="NIK" required maxLength={16} value={o.nik} onChange={(v) => setCompanyOfficer(i, "nik", "nik", v)} error={cardError("nik")} disabled={readOnly} />
+              <TextField label="Nama" required value={o.name} onChange={(v) => setCompanyOfficer(i, "name", "name", v)} error={cardError("name")} disabled={readOnly} />
+              <Field label="Tanggal Lahir" required error={cardError("birthDate")}>
                 <DateField
                   ariaLabel="Tanggal Lahir"
                   value={o.birthDate}
-                  invalid={!!oErr("birthDate")}
+                  invalid={!!cardError("birthDate")}
                   disabled={readOnly}
                   min={page.earliestBirthDate}
                   max={page.today}
                   today={page.today}
-                  onChange={(v) => setOfficer(i, "birthDate", "birthDate", v)}
+                  onChange={(v) => setCompanyOfficer(i, "birthDate", "birthDate", v)}
                 />
               </Field>
             </div>

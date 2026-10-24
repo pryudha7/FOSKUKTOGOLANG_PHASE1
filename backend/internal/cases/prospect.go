@@ -87,29 +87,25 @@ type IndividualDataPage struct {
 	ExistingCustomer     bool
 	Values               IndividualDataForm
 	// Sector is the saved Bidang Usaha Tempat Bekerja, shown by description.
-	Sector  *Option
-	Options map[string][]Option
-	// FailedOptions names the dropdowns whose list could not be read (ERR-039).
-	FailedOptions []string
-	Editable      bool
+	Sector *Option
+	PageOptions
+	Editable bool
 }
 
 // SpousePage is UI-027: the form only when the customer is married.
 type SpousePage struct {
-	Married                  bool
-	Values                   SpouseForm
-	Options                  map[string][]Option
-	FailedOptions            []string
+	Married bool
+	Values  SpouseForm
+	PageOptions
 	Editable                 bool
 	Today, EarliestBirthDate string
 }
 
 // CloseRelativePage is UI-028.
 type CloseRelativePage struct {
-	Values        CloseRelativeForm
-	Options       map[string][]Option
-	FailedOptions []string
-	Editable      bool
+	Values CloseRelativeForm
+	PageOptions
+	Editable bool
 }
 
 // RegionOption is a cascading region; Value1 is a Kota's Dati II.
@@ -117,12 +113,19 @@ type RegionOption struct {
 	Code, Description, Value1 string
 }
 
+// PageOptions are a page's initial dropdowns (BR-UI-004): the options by
+// name, and the names of those whose list could not be read (ERR-039).
+type PageOptions struct {
+	Options       map[string][]Option
+	FailedOptions []string
+}
+
 // pageOptions reads the Active options of each BMV type, keyed by name. A
 // failed query leaves its list empty and names it in failed, so the page
 // still opens with ERR-038 on that dropdown and the ERR-039 popup
 // (BR-UI-004, AC-FR-APP-005-07); an empty list is no failure.
-func (s *Service) pageOptions(ctx context.Context, types map[string]string) (opts map[string][]Option, failed []string) {
-	opts, failed = map[string][]Option{}, []string{}
+func (s *Service) pageOptions(ctx context.Context, types map[string]string) PageOptions {
+	opts, failed := map[string][]Option{}, []string{}
 	for key, bmvType := range types {
 		list, err := s.options(ctx, bmvType)
 		if err != nil {
@@ -133,7 +136,7 @@ func (s *Service) pageOptions(ctx context.Context, types map[string]string) (opt
 		opts[key] = list
 	}
 	slices.Sort(failed)
-	return opts, failed
+	return PageOptions{opts, failed}
 }
 
 // partyID is the customer_id of a party of the case, if it has a row.
@@ -240,7 +243,7 @@ func (s *Service) individualDataPage(ctx context.Context, caseID string, editabl
 		}
 		page.Sector = &Option{code, description}
 	}
-	page.Options, page.FailedOptions = s.pageOptions(ctx, map[string]string{
+	page.PageOptions = s.pageOptions(ctx, map[string]string{
 		"job": "JOB", "gender": "GENDER", "sourceIncome": "SOURCE_INCOME", "relationshipWithBank": "RELATIONSHIP_WITH_BANK",
 		"customerCategory": "CUSTOMER_CATEGORY", "businessType": "BUSINESS_TYPE", "houseOwnership": "HOUSE_OWNERSHIP_STATUS",
 		"mailingAddress": "MAILING_ADDRESS", "education": "LAST_EDUCATION", "maritalStatus": "MARITAL_STATUS",
@@ -285,7 +288,7 @@ func (s *Service) spousePage(ctx context.Context, sess auth.Session, caseID stri
 			Region: office.Region, EducationCode: value(education), PrenupCode: value(prenup),
 		}
 	}
-	page.Options, page.FailedOptions = s.pageOptions(ctx, map[string]string{"job": "JOB", "education": "LAST_EDUCATION", "prenup": "PRENUP", "province": "PROVINCE"})
+	page.PageOptions = s.pageOptions(ctx, map[string]string{"job": "JOB", "education": "LAST_EDUCATION", "prenup": "PRENUP", "province": "PROVINCE"})
 	return page, nil
 }
 
@@ -316,7 +319,7 @@ func (s *Service) closeRelativePage(ctx context.Context, caseID string, editable
 			Region: a.Region, MobilePhone: a.MobilePhone, EducationCode: value(education),
 		}
 	}
-	page.Options, page.FailedOptions = s.pageOptions(ctx, map[string]string{"relationship": "FAMILY_RELATIONSHIP", "education": "LAST_EDUCATION", "province": "PROVINCE"})
+	page.PageOptions = s.pageOptions(ctx, map[string]string{"relationship": "FAMILY_RELATIONSHIP", "education": "LAST_EDUCATION", "province": "PROVINCE"})
 	return page, nil
 }
 
@@ -579,10 +582,10 @@ func (s *Service) moveProspect(ctx context.Context, sess auth.Session, caseID st
 }
 
 // saveForm validates and saves form on the operator's open assignment of
-// that name (save fills c.errs), then moves on with then, all in one
+// that name (save fills c.errs), then moves on with afterSave, all in one
 // transaction; any error leaves everything as it was.
 func (s *Service) saveForm(ctx context.Context, sess auth.Session, caseID string, id int64, form string,
-	save func(c *fieldCheck) error, then func(tx pgx.Tx, from int64) (int64, error)) (int64, error) {
+	save func(c *fieldCheck) error, afterSave func(tx pgx.Tx, from int64) (int64, error)) (int64, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return 0, err
@@ -602,7 +605,7 @@ func (s *Service) saveForm(ctx context.Context, sess auth.Session, caseID string
 	if len(c.errs) > 0 {
 		return 0, &ValidationError{c.errs}
 	}
-	next, err := then(tx, a.id)
+	next, err := afterSave(tx, a.id)
 	if err != nil {
 		return 0, err
 	}

@@ -1,4 +1,4 @@
-import type { FieldError } from "./types";
+import { companyOfficerNumber, type FieldError } from "./types";
 import styles from "./case.module.css";
 
 // Banner prefixes that tell sections apart: "Data Pasangan - " on
@@ -8,8 +8,8 @@ import styles from "./case.module.css";
 const sectionPrefixes: Partial<Record<FieldError["section"], string>> = { spouse: "Data Pasangan - ", ektp: "e-KTP - ", domicile: "Domisili - " };
 
 function sectionPrefix(section: FieldError["section"]): string {
-  const officer = /^officer-(\d+)$/.exec(section);
-  return officer ? `Pengurus ${officer[1]} - ` : (sectionPrefixes[section] ?? "");
+  const n = companyOfficerNumber(section);
+  return n !== null ? `Pengurus ${n} - ` : (sectionPrefixes[section] ?? "");
 }
 
 // UI-010 State Error banner (Gambar 13): a red block with a white warning

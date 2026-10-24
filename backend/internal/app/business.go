@@ -7,7 +7,7 @@ import (
 	"fos/internal/cases"
 )
 
-type officerJSON struct {
+type companyOfficerJSON struct {
 	RoleCode  string `json:"roleCode"`
 	NIK       string `json:"nik"`
 	Name      string `json:"name"`
@@ -32,52 +32,51 @@ type businessEntityJSON struct {
 	Address                  string `json:"address"`
 	GoPublic                 string `json:"goPublic"`
 	regionJSON
-	BusinessGroupName string        `json:"businessGroupName"`
-	Officers          []officerJSON `json:"officers"`
+	BusinessGroupName string               `json:"businessGroupName"`
+	CompanyOfficers   []companyOfficerJSON `json:"companyOfficers"`
 }
 
 func (f businessEntityJSON) toForm() cases.BusinessEntityForm {
-	officers := make([]cases.Officer, 0, len(f.Officers))
-	for _, o := range f.Officers {
-		officers = append(officers, cases.Officer(o))
+	officers := make([]cases.CompanyOfficer, 0, len(f.CompanyOfficers))
+	for _, o := range f.CompanyOfficers {
+		officers = append(officers, cases.CompanyOfficer(o))
 	}
 	return cases.BusinessEntityForm{
 		BusinessEntityCode: f.BusinessEntityCode, PlaceOfEstablishment: f.PlaceOfEstablishment, DeedNumber: f.DeedNumber,
 		LastDeedNumber: f.LastDeedNumber, LastDeedDate: f.LastDeedDate, Phone: f.Phone, MobilePhone: f.MobilePhone, Email: f.Email,
 		EconomicSectorCode: f.EconomicSectorCode, RelationshipWithBankCode: f.RelationshipWithBankCode, BusinessTypeCode: f.BusinessTypeCode,
 		CustomerCategoryCode: f.CustomerCategoryCode, Address: f.Address, GoPublic: f.GoPublic, Region: cases.Region(f.regionJSON),
-		BusinessGroupName: f.BusinessGroupName, Officers: officers,
+		BusinessGroupName: f.BusinessGroupName, CompanyOfficers: officers,
 	}
 }
 
 func toBusinessEntityJSON(f cases.BusinessEntityForm) businessEntityJSON {
-	officers := make([]officerJSON, 0, len(f.Officers))
-	for _, o := range f.Officers {
-		officers = append(officers, officerJSON(o))
+	officers := make([]companyOfficerJSON, 0, len(f.CompanyOfficers))
+	for _, o := range f.CompanyOfficers {
+		officers = append(officers, companyOfficerJSON(o))
 	}
 	return businessEntityJSON{
 		BusinessEntityCode: f.BusinessEntityCode, PlaceOfEstablishment: f.PlaceOfEstablishment, DeedNumber: f.DeedNumber,
 		LastDeedNumber: f.LastDeedNumber, LastDeedDate: f.LastDeedDate, Phone: f.Phone, MobilePhone: f.MobilePhone, Email: f.Email,
 		EconomicSectorCode: f.EconomicSectorCode, RelationshipWithBankCode: f.RelationshipWithBankCode, BusinessTypeCode: f.BusinessTypeCode,
 		CustomerCategoryCode: f.CustomerCategoryCode, Address: f.Address, GoPublic: f.GoPublic, regionJSON: regionJSON(f.Region),
-		BusinessGroupName: f.BusinessGroupName, Officers: officers,
+		BusinessGroupName: f.BusinessGroupName, CompanyOfficers: officers,
 	}
 }
 
 type businessEntityPageJSON struct {
-	NPWP              string                  `json:"npwp"`
-	Name              string                  `json:"name"`
-	EstablishmentDate string                  `json:"establishmentDate"`
-	ExistingCustomer  bool                    `json:"existingCustomer"`
-	Values            businessEntityJSON      `json:"values"`
-	Sector            *optionJSON             `json:"sector"`
-	Category          *optionJSON             `json:"category"`
-	Options           map[string][]optionJSON `json:"options"`
-	FailedOptions     []string                `json:"failedOptions"`
-	Editable          bool                    `json:"editable"`
-	Today             string                  `json:"today"`
-	EarliestBirthDate string                  `json:"earliestBirthDate"`
-	LatestDeedDate    string                  `json:"latestDeedDate"`
+	NPWP              string             `json:"npwp"`
+	Name              string             `json:"name"`
+	EstablishmentDate string             `json:"establishmentDate"`
+	ExistingCustomer  bool               `json:"existingCustomer"`
+	Values            businessEntityJSON `json:"values"`
+	Sector            *optionJSON        `json:"sector"`
+	Category          *optionJSON        `json:"category"`
+	pageOptionsJSON
+	Editable          bool   `json:"editable"`
+	Today             string `json:"today"`
+	EarliestBirthDate string `json:"earliestBirthDate"`
+	LatestDeedDate    string `json:"latestDeedDate"`
 }
 
 func toOptionJSON(o *cases.Option) *optionJSON {
@@ -91,7 +90,7 @@ func toBusinessEntityPageJSON(p cases.BusinessEntityPage) businessEntityPageJSON
 	return businessEntityPageJSON{
 		NPWP: p.NPWP, Name: p.Name, EstablishmentDate: p.EstablishmentDate, ExistingCustomer: p.ExistingCustomer,
 		Values: toBusinessEntityJSON(p.Values), Sector: toOptionJSON(p.Sector), Category: toOptionJSON(p.Category),
-		Options: toOptionMapJSON(p.Options), FailedOptions: p.FailedOptions, Editable: p.Editable,
+		pageOptionsJSON: toPageOptionsJSON(p.PageOptions), Editable: p.Editable,
 		Today: p.Today, EarliestBirthDate: p.EarliestBirthDate, LatestDeedDate: p.LatestDeedDate,
 	}
 }

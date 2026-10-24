@@ -41,3 +41,14 @@ Implementation notes (2026-10-24):
 - UI check tools/uicheck/hotprospect.js (screens shots/hot-*.png): Gambar 71 layout with Back to Previous Step disabled, 15 ERR-010 on an empty Next, Lama Usaha limited to 5 digits, Save staying without errors, Next storing the business; Gambar 72 with Margin "21" shown "21,00"; Gambar 73 modal with "Fasilitas Aktif (2)" then "Fasilitas Lunas (1)", the header tick ticking both, unticking one clearing the header and ticking it back setting it; Submit replacing the cards (Jangka Waktu 156, Margin 21,00, Outstanding 9.822.753), Tambah and delete, Next storing two rows and opening Data Permohonan Fasilitas.
 - Mutation checks (each fails a test): Save checking required fields; Save moving; customer_business written while incomplete; Jumlah Karyawan and Lama Usaha limits; empty cards kept; rows not replaced; margin over 100; SLIK Collect up to 6; the SLIK button for any customer type; months not full; groups unordered; money not rounded; a step targeting itself.
 
+Review fixes (2026-10-24, approved by the user):
+
+- A SLIK facility without kondisi_ket groups by its condition code and is titled by it ("Fasilitas 09 (1)"); before, every such facility fell into one untitled group.
+- A test for a Perorangan Next: the "Usaha" address and customer_business belong to the Nasabah row (FR-APP-016 rule 1).
+- Penghasilan Kotor Pertahun (ticket 17) now uses fieldCheck.money, which takes whether the amount is mandatory; BusinessDataForm.address() reuses trimAddress and stayAddress of the other address blocks.
+- Named fields in place of positional ones (other_financing scan, SLIK facility rows); frontend sectionNumber(prefix, section) replaces companyOfficerNumber and otherFinancingNumber.
+- Disabled Back to Previous Step shown grey; "21,00%" with the sign right after the number.
+- GLOSSARY: Other Financing and SLIK Facility.
+- Kept as they are, noted: other_financing_case_id_idx is an index §9.31 does not list (lookups by case; no column or constraint added); a failed load of the SLIK modal shows unavailableMessage until TBD-053 names a message; a SLIK margin over 100 fills the card but is refused on Next with ERR-037 (BR-UI-013); manual SLIK never creates a slik_report, so the button does not show for it.
+- Mutation "no title from the code" added; all 15 mutations fail a test. UI checks hotprospect.js, business.js and prospect.js rerun and pass.
+

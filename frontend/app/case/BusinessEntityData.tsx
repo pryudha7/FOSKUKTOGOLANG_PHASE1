@@ -10,7 +10,7 @@ import ErrorBanner from "./ErrorBanner";
 import Field from "./Field";
 import { unavailableMessage } from "./names";
 import { CodeSelect, create, RegionRows, TextField, useMove, useRegion } from "./FormFields";
-import { companyOfficerNumber, companyOfficerSection, type BusinessEntityForm, type BusinessEntityPage, type CompanyOfficer, type Option } from "./types";
+import { companyOfficerSection, sectionNumber, type BusinessEntityForm, type BusinessEntityPage, type CompanyOfficer, type Option } from "./types";
 import styles from "./case.module.css";
 
 // Data Pengurus holds 1 to 10 cards (FR-APP-002).
@@ -68,7 +68,7 @@ export default function BusinessEntityData({ page, assignment }: { page: Busines
   };
   // Tambah does nothing at 10 cards, delete nothing at 1 (FR-APP-002). The
   // cards' errors go with a change of cards: their numbers no longer hold.
-  const dropCompanyOfficerErrors = () => flow.dropErrors((e) => companyOfficerNumber(e.section) !== null);
+  const dropCompanyOfficerErrors = () => flow.dropErrors((e) => sectionNumber("company-officer", e.section) !== null);
   const addCompanyOfficer = () => {
     setForm((f) => (f.companyOfficers.length >= maxCompanyOfficers ? f : { ...f, companyOfficers: [...f.companyOfficers, emptyCompanyOfficer] }));
     dropCompanyOfficerErrors();

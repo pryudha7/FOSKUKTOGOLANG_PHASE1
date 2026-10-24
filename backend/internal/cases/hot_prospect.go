@@ -40,6 +40,13 @@ type BusinessDataForm struct {
 	Region
 }
 
+// address is the business address block (DB-RULE-105); it has no
+// Nomor Handphone.
+func (f BusinessDataForm) address() Address {
+	return Address{Address: f.Address, Phone: f.Phone, RT: f.RT, RW: f.RW, YearsOfStay: f.YearsOfStay, MonthsOfStay: f.MonthsOfStay,
+		HouseOwnershipCode: f.HouseOwnershipCode, Region: f.Region}
+}
+
 // BusinessDataPage is UI-030.
 type BusinessDataPage struct {
 	Values BusinessDataForm
@@ -119,9 +126,11 @@ func slikAvailable(ctx context.Context, q rowQuerier, caseID string) (bool, erro
 func (s *Service) otherFinancingPage(ctx context.Context, caseID string, editable bool) (OtherFinancingPage, error) {
 	page := OtherFinancingPage{Editable: editable}
 	cards, err := collect(ctx, s, func(r pgx.Rows) (OtherFinancing, error) {
-		var cols [8]*string
-		err := r.Scan(&cols[0], &cols[1], &cols[2], &cols[3], &cols[4], &cols[5], &cols[6], &cols[7])
-		return OtherFinancing{value(cols[0]), value(cols[1]), value(cols[2]), value(cols[3]), value(cols[4]), value(cols[5]), value(cols[6]), value(cols[7])}, err
+		var bank, financingType, amount, outstanding, tenor, rate, collectibility, purpose *string
+		err := r.Scan(&bank, &financingType, &amount, &outstanding, &tenor, &rate, &collectibility, &purpose)
+		return OtherFinancing{BankName: value(bank), FinancingType: value(financingType), FinancingAmount: value(amount),
+			OutstandingAmount: value(outstanding), TenorMonths: value(tenor), MarginRate: value(rate), SLIKCollect: value(collectibility),
+			Purpose: value(purpose)}, err
 	}, `
 		SELECT bank_name, financing_type, financing_amount::text, outstanding_amount::text, tenor_months::text, margin_rate::text,
 		       slik_collect::text, purpose
@@ -166,21 +175,22 @@ func (s *Service) moveHotProspect(ctx context.Context, sess auth.Session, caseID
 func (s *Service) SubmitBusinessData(ctx context.Context, sess auth.Session, caseID string, id int64, to string, f BusinessDataForm) (int64, error) {
 	return s.moveHotProspect(ctx, sess, caseID, id, AssignmentBusinessData, to, func(c *fieldCheck) error {
 		t := strings.TrimSpace
-		f = BusinessDataForm{t(f.BusinessField), t(f.BusinessCategoryCode), t(f.BusinessAgeMonths), t(f.EmployeeCount), t(f.BusinessLocationCode),
-			t(f.Address), t(f.HouseOwnershipCode), t(f.YearsOfStay), t(f.MonthsOfStay), t(f.Phone), t(f.RT), t(f.RW), trimRegion(f.Region)}
+		a := trimAddress(f.address())
+		f.BusinessField, f.BusinessCategoryCode, f.BusinessAgeMonths = t(f.BusinessField), t(f.BusinessCategoryCode), t(f.BusinessAgeMonths)
+		f.EmployeeCount, f.BusinessLocationCode = t(f.EmployeeCount), t(f.BusinessLocationCode)
 		c.text("businessField", "Jenis Bidang Usaha", f.BusinessField, true, 100)
 		c.code("businessCategory", "Kategori Bidang Usaha", "BUSINESSCATEGORY", f.BusinessCategoryCode, true)
 		c.number("businessAgeMonths", "Lama Usaha (Bulan)", f.BusinessAgeMonths, 99999, true)
 		c.number("employeeCount", "Jumlah Karyawan", f.EmployeeCount, 9999999, true)
 		c.code("businessLocation", "Jenis Tempat Usaha", "BUSINESSLOCATION", f.BusinessLocationCode, true)
-		c.text("address", "Alamat Usaha", f.Address, true, 350)
-		c.code("houseOwnership", "Status Kepemilikan Tempat Usaha", "HOUSE_OWNERSHIP_STATUS", f.HouseOwnershipCode, true)
-		c.number("yearsOfStay", "Lama Tempat Usaha (Tahun)", f.YearsOfStay, 999, true)
-		c.number("monthsOfStay", "Lama Tempat Usaha (Bulan)", f.MonthsOfStay, 11, true)
-		c.phone("phone", "Nomor Telepon", f.Phone, false)
-		c.rtRW("rt", "RT", f.RT)
-		c.rtRW("rw", "RW", f.RW)
-		resolved := c.region(f.Region, true)
+		c.text("address", "Alamat Usaha", a.Address, true, 350)
+		c.code("houseOwnership", "Status Kepemilikan Tempat Usaha", "HOUSE_OWNERSHIP_STATUS", a.HouseOwnershipCode, true)
+		c.number("yearsOfStay", "Lama Tempat Usaha (Tahun)", a.YearsOfStay, 999, true)
+		c.number("monthsOfStay", "Lama Tempat Usaha (Bulan)", a.MonthsOfStay, 11, true)
+		c.phone("phone", "Nomor Telepon", a.Phone, false)
+		c.rtRW("rt", "RT", a.RT)
+		c.rtRW("rw", "RW", a.RW)
+		resolved := c.region(a.Region, true)
 		if c.err != nil || len(c.errs) > 0 {
 			return c.err
 		}
@@ -193,9 +203,7 @@ func (s *Service) SubmitBusinessData(ctx context.Context, sess auth.Session, cas
 		if err != nil {
 			return err
 		}
-		if err := saveAddress(c.ctx, c.tx, customerID, addressBusiness, addressRow{address: orNil(f.Address), phone: orNil(f.Phone),
-			rt: orNil(f.RT), rw: orNil(f.RW), years: orNil(f.YearsOfStay), months: orNil(f.MonthsOfStay), ownership: orNil(f.HouseOwnershipCode),
-			region: resolved}); err != nil {
+		if err := saveAddress(c.ctx, c.tx, customerID, addressBusiness, stayAddress(a, resolved)); err != nil {
 			return err
 		}
 		// §9.30 columns are NOT NULL: the row only with all five (agreed comment 16).
@@ -230,8 +238,8 @@ func (s *Service) SubmitOtherFinancing(ctx context.Context, sess auth.Session, c
 			c.section = sectionOtherFinancing + strconv.Itoa(i+1)
 			c.text("bankName", "Nama Bank", o.BankName, false, 100)
 			c.text("financingType", "Jenis Pembiayaan", o.FinancingType, false, 100)
-			c.money("financingAmount", "Jumlah Pembiayaan", o.FinancingAmount)
-			c.money("outstandingAmount", "Jumlah Outstanding", o.OutstandingAmount)
+			c.money("financingAmount", "Jumlah Pembiayaan", o.FinancingAmount, false)
+			c.money("outstandingAmount", "Jumlah Outstanding", o.OutstandingAmount, false)
 			c.number("tenorMonths", "Jangka Waktu (Bulan)", o.TenorMonths, 9999, false)
 			c.percent("marginRate", "Margin / Ujrah (%)", o.MarginRate)
 			c.number("slikCollect", "SLIK Collect", o.SLIKCollect, 5, false)
@@ -296,18 +304,21 @@ func (s *Service) SLIKFacilities(ctx context.Context, sess auth.Session, caseID 
 	if !available {
 		return nil, ErrUnsupported
 	}
-	type row struct {
-		condition                                                         string
-		bank, kind, amount, outstanding, rounded, roundedOut, rate, usage *string
-		quality                                                           *int
-		started, due                                                      *time.Time
+	// One facility as read: the condition (code and kondisi_ket), the
+	// amounts as SLIK has them and rounded to rupiah, and the card's sources.
+	type facility struct {
+		condition, conditionDescription                string
+		bank, financingType, amount, outstanding       *string
+		roundedAmount, roundedOutstanding, rate, usage *string
+		quality                                        *int
+		started, due                                   *time.Time
 	}
-	rows, err := collect(ctx, s, func(r pgx.Rows) (row, error) {
-		var x row
-		return x, r.Scan(&x.condition, &x.bank, &x.kind, &x.amount, &x.outstanding, &x.rounded, &x.roundedOut, &x.rate, &x.quality, &x.usage,
-			&x.started, &x.due)
+	rows, err := collect(ctx, s, func(r pgx.Rows) (facility, error) {
+		var x facility
+		return x, r.Scan(&x.condition, &x.conditionDescription, &x.bank, &x.financingType, &x.amount, &x.outstanding, &x.roundedAmount,
+			&x.roundedOutstanding, &x.rate, &x.quality, &x.usage, &x.started, &x.due)
 	}, `
-		SELECT COALESCE(f.condition_description, ''), f.financial_institution_description, f.credit_financing_type_description,
+		SELECT COALESCE(f.condition, ''), COALESCE(f.condition_description, ''), f.financial_institution_description, f.credit_financing_type_description,
 		       f.initial_credit_limit::numeric(20, 2)::text, f.outstanding_principal::numeric(20, 2)::text,
 		       round(f.initial_credit_limit)::text, round(f.outstanding_principal)::text, f.interest_rate::numeric(20, 2)::text,
 		       f.quality, f.usage_type_description, f.credit_start_date, f.due_date
@@ -321,21 +332,28 @@ func (s *Service) SLIKFacilities(ctx context.Context, sess auth.Session, caseID 
 	groups := []SLIKFacilityGroup{}
 	at := map[string]int{}
 	for _, x := range rows {
-		card := OtherFinancing{BankName: value(x.bank), FinancingType: value(x.kind), FinancingAmount: value(x.rounded),
-			OutstandingAmount: value(x.roundedOut), MarginRate: value(x.rate), Purpose: value(x.usage)}
+		card := OtherFinancing{BankName: value(x.bank), FinancingType: value(x.financingType), FinancingAmount: value(x.roundedAmount),
+			OutstandingAmount: value(x.roundedOutstanding), MarginRate: value(x.rate), Purpose: value(x.usage)}
 		if x.started != nil && x.due != nil {
 			card.TenorMonths = strconv.Itoa(fullMonths(*x.started, *x.due))
 		}
 		if x.quality != nil {
 			card.SLIKCollect = strconv.Itoa(*x.quality)
 		}
+		// One accordion per condition; titled by kondisi_ket, or by the code
+		// when it has none.
 		i, ok := at[x.condition]
 		if !ok {
 			i = len(groups)
 			at[x.condition] = i
-			groups = append(groups, SLIKFacilityGroup{Title: x.condition})
+			title := x.conditionDescription
+			if title == "" {
+				title = x.condition
+			}
+			groups = append(groups, SLIKFacilityGroup{Title: title})
 		}
-		groups[i].Facilities = append(groups[i].Facilities, SLIKFacility{value(x.amount), value(x.outstanding), value(x.rate), card})
+		groups[i].Facilities = append(groups[i].Facilities, SLIKFacility{FinancingAmount: value(x.amount), OutstandingAmount: value(x.outstanding),
+			MarginRate: value(x.rate), Card: card})
 	}
 	for i := range groups {
 		groups[i].Title = "Fasilitas " + groups[i].Title + " (" + strconv.Itoa(len(groups[i].Facilities)) + ")"

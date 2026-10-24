@@ -167,6 +167,20 @@ func TestDataUsahaNasabahNextForABusinessEntity(t *testing.T) {
 	}
 }
 
+// FR-APP-016 rule 1: for a Perorangan the address type "Usaha" belongs to
+// the Nasabah row.
+func TestDataUsahaNasabahNextForAnIndividual(t *testing.T) {
+	h, c, caseID, id := hotProspect(t, false)
+	movedTo(t, h, caseID, submitBusinessData(t, c, caseID, id, "Data Pembiayaan Lain", validBusinessDataForm()), "Data Pembiayaan Lain")
+	nasabah, _ := customerOf(t, h, caseID, "Nasabah")
+	if got := addressOf(t, h, nasabah.ID, "Usaha"); !strings.HasPrefix(got, "Jl. Pasar 3|") {
+		t.Fatalf("Usaha address of Nasabah = %q", got)
+	}
+	if got := businessRow(t, h, nasabah.ID); got != "Toko Kelontong|BC1|99999|9999999|BL1" {
+		t.Fatalf("customer_business = %s", got)
+	}
+}
+
 // FR-APP-016 Process 4, agreed comments 2 and 16: Save keeps what is there
 // without the required check and stays; customer_business only when its
 // five fields are filled; formats are still checked.
@@ -353,7 +367,8 @@ func TestDataPembiayaanLainSLIKFacilities(t *testing.T) {
 		FROM fos.slik_report, (VALUES
 			(1, 'Bank Lunas', 'KPR', 1000::numeric, 0::numeric, '2010-01-01', '2020-01-01', 10.5::numeric, 1::smallint, 'Investasi', '02', 'Lunas'),
 			(2, 'PT Bank Mega Tbk', 'Kartu Kredit', 7000000.40, 9822753.50, '2014-01-15', '2027-01-14', 21::numeric, 1::smallint, 'Konsumsi', '00', 'Aktif'),
-			(3, 'Bank Kedua', 'KMK', 5000000, 2500000.49, '2025-03-31', '2025-04-30', NULL, 2::smallint, NULL, '00', 'Aktif')
+			(3, 'Bank Kedua', 'KMK', 5000000, 2500000.49, '2025-03-31', '2025-04-30', NULL, 2::smallint, NULL, '00', 'Aktif'),
+			(4, 'Bank Tanpa Ket', 'KMK', 1, 1, NULL, NULL, NULL, 1::smallint, NULL, '09', NULL)
 		) AS f (seq, bank, kind, amount, outstanding, started, due, rate, quality, usage, cond, cond_ket)
 		WHERE case_id = $1 AND subject_type = 'CUSTOMER'`, caseID)
 	r := c.Do(t, http.MethodGet, submitPath(caseID, oid, "slik-facilities"), nil)
@@ -365,7 +380,7 @@ func TestDataPembiayaanLainSLIKFacilities(t *testing.T) {
 	for _, g := range groups {
 		titles = append(titles, g.(map[string]any)["title"].(string))
 	}
-	if !reflect.DeepEqual(titles, []string{"Fasilitas Aktif (2)", "Fasilitas Lunas (1)"}) {
+	if !reflect.DeepEqual(titles, []string{"Fasilitas Aktif (2)", "Fasilitas Lunas (1)", "Fasilitas 09 (1)"}) {
 		t.Fatalf("titles = %v", titles)
 	}
 	mega := groups[0].(map[string]any)["facilities"].([]any)[0].(map[string]any)

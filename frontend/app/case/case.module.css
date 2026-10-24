@@ -720,6 +720,15 @@
   cursor: pointer;
 }
 
+/* A disabled outline button (e.g. Back to Previous Step on the first Hot
+   Prospect step) reads as unavailable. */
+.back:disabled {
+  border-color: #c9d0d8;
+  background: #eef0f3;
+  color: #9aa0a8;
+  cursor: default;
+}
+
 .buttons {
   display: flex;
   justify-content: space-between;
@@ -1881,6 +1890,11 @@
 
 .percentInput {
   text-align: right;
+}
+
+/* "21,00%": the sign right after the number (BR-UI-013). */
+.money:has(.percentInput) {
+  gap: 0;
 }
 
 /* A Data Pembiayaan Lain card: white inside the lavender panel. */

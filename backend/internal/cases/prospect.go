@@ -390,9 +390,7 @@ func (s *Service) SubmitIndividualData(ctx context.Context, sess auth.Session, c
 		c.code("gender", "Jenis Kelamin", "GENDER", t(f.GenderCode), true)
 		c.text("workplaceAddress", "Alamat Tempat Kerja", t(f.WorkplaceAddress), true, 350)
 		// At most 15 digits, 999.999.999.999.999 (rule 5).
-		if gross := t(f.GrossIncome); c.filled("grossIncome", "Penghasilan Kotor Pertahun", gross, true) && (!digits.MatchString(gross) || len(gross) > 15) {
-			c.invalid("grossIncome", "Penghasilan Kotor Pertahun")
-		}
+		c.money("grossIncome", "Penghasilan Kotor Pertahun", t(f.GrossIncome), true)
 		c.code("incomeSource", "Sumber Penghasilan", "SOURCE_INCOME", t(f.IncomeSourceCode), true)
 		c.code("relationshipWithBank", "Hubungan dengan Bank", "RELATIONSHIP_WITH_BANK", t(f.RelationshipWithBankCode), true)
 		c.code("customerCategory", "Golongan Nasabah", "CUSTOMER_CATEGORY", t(f.CustomerCategoryCode), true)

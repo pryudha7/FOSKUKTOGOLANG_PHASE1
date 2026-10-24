@@ -9,12 +9,12 @@ import ErrorBanner from "./ErrorBanner";
 import { CodeSelect, NumberField, PercentField, RegionRows, save, TextField, useMove, useRegion } from "./FormFields";
 import { unavailableMessage } from "./names";
 import {
-  otherFinancingNumber,
+  otherFinancingSection,
+  sectionNumber,
   type BusinessDataForm,
   type BusinessDataPage,
   type OtherFinancingCard,
   type OtherFinancingPage,
-  type Section,
   type SLIKFacilityGroup,
 } from "./types";
 import styles from "./case.module.css";
@@ -151,8 +151,6 @@ const emptyCard: OtherFinancingCard = {
   purpose: "",
 };
 
-const otherFinancingSection = (n: number) => `other-financing-${n}` as Section;
-
 // UI-031 Data Pembiayaan Lain (Gambar 72, 73, FR-APP-017): cards, none
 // required; all-empty cards are dropped by the server; Isi Data dari SLIK
 // replaces them with the facilities ticked. Back leaves as Close does
@@ -165,7 +163,7 @@ export function OtherFinancingData({ page, assignment }: { page: OtherFinancingP
   const flow = useMove(assignment, "other-financing");
   const body = () => ({ otherFinancings: cards });
   // The cards' errors go with a change of cards: their numbers no longer hold.
-  const dropCardErrors = () => flow.dropErrors((e) => otherFinancingNumber(e.section) !== null);
+  const dropCardErrors = () => flow.dropErrors((e) => sectionNumber("other-financing", e.section) !== null);
   const setCard = (i: number, key: keyof OtherFinancingCard, v: string) => {
     setCards((all) => all.map((c, j) => (j === i ? { ...c, [key]: v } : c)));
     flow.clear(otherFinancingSection(i + 1), key);

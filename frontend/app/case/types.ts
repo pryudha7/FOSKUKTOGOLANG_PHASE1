@@ -148,18 +148,14 @@ export type UnderlyingPage = {
 // company-officer-<n> is card n of Data Pengurus (FR-APP-005).
 export type Section = "form" | "customer" | "spouse" | "upload" | "slik" | "documents" | "ektp" | "domicile" | `company-officer-${number}` | `other-financing-${number}`;
 
-// companyOfficerSection is the section of Data Pengurus card n (from 1);
-// companyOfficerNumber reads n back, or null for another section.
+// Numbered sections name card n (from 1) of a list: Data Pengurus
+// (company-officer-<n>, FR-APP-005) and Data Pembiayaan Lain
+// (other-financing-<n>, FR-APP-017). sectionNumber reads n back, or null for
+// another kind of section.
 export const companyOfficerSection = (n: number): Section => `company-officer-${n}`;
-export function companyOfficerNumber(section: Section): number | null {
-  const m = /^company-officer-(\d+)$/.exec(section);
-  return m ? Number(m[1]) : null;
-}
-
-// otherFinancingNumber reads n back from other-financing-<n>, card n of
-// Data Pembiayaan Lain (FR-APP-017), or null for another section.
-export function otherFinancingNumber(section: Section): number | null {
-  const m = /^other-financing-(\d+)$/.exec(section);
+export const otherFinancingSection = (n: number): Section => `other-financing-${n}`;
+export function sectionNumber(prefix: "company-officer" | "other-financing", section: Section): number | null {
+  const m = new RegExp(`^${prefix}-(\\d+)$`).exec(section);
   return m ? Number(m[1]) : null;
 }
 
@@ -360,7 +356,8 @@ export type Assignment = {
   assignmentId: number;
   name: string;
   status: string;
-  // PreScreeningPage on Pre-Screening Submission, UnderlyingPage on
-  // Document Underlying Upload.
+  // The page of the assignment by its name (CaseView): Pre-Screening
+  // Submission, Document Underlying Upload, Pre Screening, Waiting SLIK,
+  // Pipeline Data Entry, Prospect and Hot Prospect Data Entry.
   page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | IndividualDataPage | SpousePage | CloseRelativePage | BusinessEntityPage | BusinessDataPage | OtherFinancingPage | null;
 };

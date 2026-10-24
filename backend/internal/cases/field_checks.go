@@ -155,10 +155,10 @@ func (c *fieldCheck) number(key, label, v string, max int, mandatory bool) {
 	}
 }
 
-// money is an optional whole rupiah amount, 0 to 999.999.999.999.999
-// (BR-UI-009, FR-APP-017 Field 2-3).
-func (c *fieldCheck) money(key, label, v string) {
-	if c.filled(key, label, v, false) && (!digits.MatchString(v) || len(v) > 15) {
+// money is a whole rupiah amount, 0 to 999.999.999.999.999 (BR-UI-009,
+// FR-APP-012 rule 5, FR-APP-017 Field 2-3).
+func (c *fieldCheck) money(key, label, v string, mandatory bool) {
+	if c.filled(key, label, v, mandatory) && (!digits.MatchString(v) || len(v) > 15) {
 		c.invalid(key, label)
 	}
 }

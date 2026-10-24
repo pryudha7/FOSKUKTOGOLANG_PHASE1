@@ -70,6 +70,14 @@ The kind of financing request a Financing Case represents.
 **Take Over**:
 A Submission Type in which the Financing replaces the Customer's existing financing at another bank.
 
+**Other Financing** (_Pembiayaan Lain_):
+The Customer's financing at other banks, recorded on Hot Prospect as cards typed by hand or filled from SLIK Facilities.
+_Avoid_: Existing loans
+
+**SLIK Facility** (_Fasilitas SLIK_):
+One credit or financing of the Customer listed in a SLIK result, with its bank, amounts, Collectibility and condition.
+_Avoid_: SLIK loan
+
 **Bank Letter** (_Bukti Surat dari Bank_):
 The optional letter from the other bank in a Take Over, one per Financing Case; it is removed whenever the Submission Type is chosen again.
 _Avoid_: Underlying Document (it is not part of the Pre-Screening list)

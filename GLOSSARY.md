@@ -60,9 +60,16 @@ _Avoid_: contract type, loan agreement
 The bank's return on the Financing, called Margin or Ujrah depending on the Contract.
 _Avoid_: interest, interest rate
 
+**Margin Type** (_Tipe Margin_):
+Whether a Margin Rate is Flat or Effective; the one typed fixes the other through the Financing Simulation.
+
 **Financing Simulation**:
 The calculation of instalments from a Requested Amount, Tenor and Margin Rate.
 _Avoid_: Credit Simulation
+
+**Facility Request** (_Permohonan Fasilitas_):
+The Branch Officer's request on Hot Prospect: the purpose, Requested Amount, Tenor, Margin Rate and the Customer's existing financing at the bank, submitted as a Recommendation with its Financing Simulation.
+_Avoid_: loan application
 
 **Submission Type** (_Jenis Pengajuan_):
 The kind of financing request a Financing Case represents.

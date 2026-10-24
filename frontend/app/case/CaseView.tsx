@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import type { Assignment, BusinessDataPage, BusinessEntityPage, OtherFinancingPage, CaseFrame, CloseRelativePage, IndividualDataPage, PipelinePage, PreScreeningPage, ReviewPage, SpousePage, UnderlyingPage, WaitingSLIKPage } from "./types";
+import type { Assignment, BusinessDataPage, BusinessEntityPage, FacilityRequestPage, OtherFinancingPage, CaseFrame, CloseRelativePage, IndividualDataPage, PipelinePage, PreScreeningPage, ReviewPage, SpousePage, UnderlyingPage, WaitingSLIKPage } from "./types";
 import CaseInfoPanel, { CaseHeader } from "./CaseInfoPanel";
 import StageBar from "./StageBar";
 import AttachmentsPanel from "./AttachmentsPanel";
@@ -14,6 +14,7 @@ import PipelineDataEntry from "./PipelineDataEntry";
 import { CloseRelativeData, IndividualData, SpouseData } from "./ProspectDataEntry";
 import BusinessEntityData from "./BusinessEntityData";
 import { BusinessData, OtherFinancingData } from "./HotProspectData";
+import FacilityRequestData from "./FacilityRequestData";
 import HistoryDetails from "./HistoryDetails";
 import { assignmentNames } from "./names";
 import styles from "./case.module.css";
@@ -89,6 +90,8 @@ export default function CaseView({
             <BusinessData page={assignment.page as BusinessDataPage} assignment={ref} />
           ) : assignment.page && assignment.name === assignmentNames.otherFinancingData ? (
             <OtherFinancingData page={assignment.page as OtherFinancingPage} assignment={ref} />
+          ) : assignment.page && assignment.name === assignmentNames.facilityRequest ? (
+            <FacilityRequestData page={assignment.page as FacilityRequestPage} assignment={ref} />
           ) : assignment.page && assignment.name === assignmentNames.businessEntity ? (
             <BusinessEntityData page={assignment.page as BusinessEntityPage} assignment={ref} />
           ) : assignment.page && assignment.name === assignmentNames.individualData ? (

@@ -11,6 +11,7 @@ export const assignmentNames = {
   businessEntity: "Badan Usaha", // UI-025
   businessData: "Data Usaha Nasabah", // UI-030
   otherFinancingData: "Data Pembiayaan Lain", // UI-031
+  facilityRequest: "Data Permohonan Fasilitas", // UI-032
 } as const;
 
 // The Tipe Nasabah description whose form exists today (Badan Usaha:

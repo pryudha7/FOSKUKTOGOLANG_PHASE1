@@ -12,7 +12,7 @@ import type { FieldError, Option, Region, Section } from "./types";
 import styles from "./case.module.css";
 
 // The endpoint of each form and what moves it: a step name, or Create.
-export type FormPath = "individual-data" | "spouse" | "close-relative" | "business-entity" | "business-data" | "other-financing";
+export type FormPath = "individual-data" | "spouse" | "close-relative" | "business-entity" | "business-data" | "other-financing" | "facility-request";
 export const create = "create";
 // save is Save on Hot Prospect: the form is kept and the page stays.
 export const save = "save";
@@ -182,7 +182,8 @@ function thousands(digits: string): string {
 }
 
 // A whole number typed with thousands dots, kept as digits: no minus, no
-// decimals (BR-UI-009); "Rp" is a fixed prefix for money.
+// decimals (BR-UI-009); "Rp" is a fixed prefix for money. A readOnly field
+// cannot be typed in yet looks like an active one (AC-FR-APP-018-03).
 export function NumberField({
   label,
   value,
@@ -192,6 +193,7 @@ export function NumberField({
   maxDigits,
   money = false,
   required = true,
+  readOnly = false,
   placeholder,
 }: {
   label: string;
@@ -202,6 +204,7 @@ export function NumberField({
   maxDigits: number;
   money?: boolean;
   required?: boolean;
+  readOnly?: boolean;
   placeholder?: string;
 }) {
   const input = (
@@ -211,6 +214,7 @@ export function NumberField({
       className={money ? styles.moneyInput : inputClass(disabled, !!error)}
       value={thousands(value)}
       disabled={disabled}
+      readOnly={readOnly}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value.replace(/\D/g, "").slice(0, maxDigits))}
     />
@@ -230,7 +234,8 @@ export function NumberField({
 }
 
 // A percentage (BR-UI-013): typed with digits and one comma, at most two
-// decimals, shown "21,00" with a fixed "%" once the field is left. value is
+// decimals, shown "21,00" with a fixed "%" once the field is left; a margin
+// of Data Permohonan Fasilitas has five (BR-UI-014, "12,00000"). value is
 // the API form, with a dot ("21.00").
 export function PercentField({
   label,
@@ -238,16 +243,21 @@ export function PercentField({
   onChange,
   error,
   disabled,
+  decimals = 2,
+  required = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   error?: string;
   disabled: boolean;
+  decimals?: number;
+  required?: boolean;
 }) {
   const typed = value.replace(".", ",");
+  const pattern = new RegExp(`^[0-9]*(,[0-9]{0,${decimals}})?$`);
   return (
-    <Field label={label} error={error}>
+    <Field label={label} required={required} error={error}>
       <span className={`${inputClass(disabled, !!error)} ${styles.money}`}>
         <input
           aria-label={label}
@@ -257,11 +267,11 @@ export function PercentField({
           disabled={disabled}
           onChange={(e) => {
             const v = e.target.value.replace(/[^0-9,]/g, "");
-            if (/^[0-9]*(,[0-9]{0,2})?$/.test(v)) {
+            if (pattern.test(v)) {
               onChange(v.replace(",", "."));
             }
           }}
-          onBlur={() => value !== "" && !Number.isNaN(Number(value)) && onChange(Number(value).toFixed(2))}
+          onBlur={() => value !== "" && !Number.isNaN(Number(value)) && onChange(Number(value).toFixed(decimals))}
         />
         <span aria-hidden="true">%</span>
       </span>

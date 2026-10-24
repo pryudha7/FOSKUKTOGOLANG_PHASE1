@@ -22,7 +22,7 @@ import styles from "./case.module.css";
 // The card of a Hot Prospect step (UI-030, UI-031): the assignment name as
 // title (agreed comment 6), the six-step tabbed flow, the banner, the body
 // and the buttons. A breadcrumb step saves and opens it (agreed comment 5).
-function HotProspectCard({
+export function HotProspectCard({
   title,
   step,
   flow,
@@ -57,7 +57,7 @@ function HotProspectCard({
 
 // Close (or Back, in its place) returns to the Dashboard without saving
 // (agreed comment 4).
-function leave(assignment: AssignmentRef) {
+export function leave(assignment: AssignmentRef) {
   window.location.assign(assignment.endpointPath);
 }
 

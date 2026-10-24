@@ -1948,3 +1948,108 @@
   right: 16px;
 }
 
+
+/* UI-032 Data Permohonan Fasilitas (Gambar 74-77). */
+.facilityCard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px 20px;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+/* Tujuan Pembiayaan | Tipe Akad | Pembiayaan yang di ajukan. */
+.formGrid3 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px 24px;
+  align-items: start;
+}
+
+@media (max-width: 767px) {
+  .formGrid3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.computedLabel {
+  color: #5c5d65;
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.computedLabelBold,
+.computedBold {
+  font-size: 13px;
+  font-weight: bold;
+}
+
+/* Tipe Margin narrow beside Margin / Ujrah (Gambar 76). */
+.marginPair {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 14px 24px;
+  align-items: start;
+}
+
+.addCompanyOfficer:disabled {
+  background: #c9d0d8;
+  color: #6f747b;
+  cursor: default;
+}
+
+.simulationModal {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.simulationTitle {
+  align-self: stretch;
+  margin: 0 0 14px 36px;
+  color: #6f6f6f;
+  font-size: 15px;
+  font-weight: bold;
+}
+
+.simulationPanel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px 24px;
+  width: calc(100% - 72px);
+  margin: 0 0 18px;
+  padding: 18px 18px 20px;
+  border-radius: 6px;
+  background: #e5e8fc;
+}
+
+.simulationPanel dt {
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.simulationPanel dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+
+@media (max-width: 767px) {
+  .simulationPanel {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+}
+
+.homeButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 14px;
+  border: 2px solid #3554d1;
+  border-radius: 13px;
+  background: #31f000;
+  color: #0b2b00;
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}

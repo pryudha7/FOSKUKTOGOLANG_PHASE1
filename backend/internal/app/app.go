@@ -111,6 +111,8 @@ func New(cfg config.Config, pool *pgxpool.Pool, opts ...Option) *App {
 	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/business-data", s.submitBusinessData(desktop))
 	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/other-financing", s.submitOtherFinancing(desktop))
 	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/slik-facilities", s.slikFacilities(desktop))
+	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/facility-request", s.submitFacilityRequest(desktop))
+	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/facility-simulation", s.facilitySimulation(desktop))
 	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/regions", s.regions(desktop))
 	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/suggestions", s.suggestions(desktop))
 	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/documents/{fileId}", s.downloadDocument(desktop))

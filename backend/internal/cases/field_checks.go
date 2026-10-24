@@ -178,6 +178,33 @@ func (c *fieldCheck) percent(key, label, v string) {
 	}
 }
 
+// positive is a whole number from 1 to max (FR-APP-018: Pembiayaan yang di
+// ajukan, Jangka Waktu); 0 or over max is ERR-037.
+func (c *fieldCheck) positive(key, label, v string, max int64, mandatory bool) {
+	if !c.filled(key, label, v, mandatory) {
+		return
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if !digits.MatchString(v) || err != nil || n < 1 || n > max {
+		c.invalid(key, label)
+	}
+}
+
+// marginPattern is up to three whole digits and five decimals, dot-separated.
+var marginPattern = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{1,5})?$`)
+
+// margin is a rate from 0 to 100 with at most five decimals (BR-UI-014,
+// Margin / Ujrah of Data Permohonan Fasilitas).
+func (c *fieldCheck) margin(key, label, v string, mandatory bool) {
+	if !c.filled(key, label, v, mandatory) {
+		return
+	}
+	rate, err := strconv.ParseFloat(v, 64)
+	if !marginPattern.MatchString(v) || err != nil || rate > 100 {
+		c.invalid(key, label)
+	}
+}
+
 // rtRW is RT or RW: digits only, at most 3, leading zeros kept.
 func (c *fieldCheck) rtRW(key, label, v string) {
 	switch {

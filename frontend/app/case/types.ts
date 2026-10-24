@@ -192,6 +192,41 @@ export type OtherFinancingCard = {
 
 export type OtherFinancingPage = { values: { otherFinancings: OtherFinancingCard[] }; slikAvailable: boolean; editable: boolean };
 
+// Data Permohonan Fasilitas (FR-APP-018): amounts and months as digits,
+// marginRate with a dot ("12.00000"); the totals are the server's.
+export type FacilityRequestForm = {
+  purposeCode: string;
+  requestedAmount: string;
+  tenureMonths: string;
+  existingFinancingAmount: string;
+  marginTypeCode: string;
+  marginRate: string;
+  deviationNote: string;
+  mitigationNote: string;
+  notes: string;
+};
+
+// UI-032 with Tipe Akad and what the Credit Simulation names.
+export type FacilityRequestPage = {
+  values: FacilityRequestForm;
+  contractType: string;
+  productName: string;
+  debtorName: string;
+  options: Record<string, Option[]>;
+  failedOptions: string[];
+  editable: boolean;
+};
+
+// The Financing Simulation of the values on screen: installments in whole
+// rupiah, margins with five decimals; all zero until ready (DEC-146).
+export type FinancingSimulation = {
+  ready: boolean;
+  installmentFlat: string;
+  installmentEffective: string;
+  marginFlat: string;
+  marginEffective: string;
+};
+
 // The customer's SLIK facilities for Isi Data dari SLIK: amounts and margin
 // as SLIK has them (two decimals) and the card each fills.
 export type SLIKFacility = { financingAmount: string; outstandingAmount: string; marginRate: string; card: OtherFinancingCard };
@@ -359,5 +394,5 @@ export type Assignment = {
   // The page of the assignment by its name (CaseView): Pre-Screening
   // Submission, Document Underlying Upload, Pre Screening, Waiting SLIK,
   // Pipeline Data Entry, Prospect and Hot Prospect Data Entry.
-  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | IndividualDataPage | SpousePage | CloseRelativePage | BusinessEntityPage | BusinessDataPage | OtherFinancingPage | null;
+  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | IndividualDataPage | SpousePage | CloseRelativePage | BusinessEntityPage | BusinessDataPage | OtherFinancingPage | FacilityRequestPage | null;
 };

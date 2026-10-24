@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"mime"
 	"net/http"
 
+	"fos/internal/auth"
 	"fos/internal/cases"
 )
 
@@ -101,10 +103,19 @@ const maxFormField = 4 << 10
 
 // uploadDocument handles POST .../assignments/{id}/documents: Submit on the
 // Upload Document modal (FR-FILE-002). The form carries category,
-// documentType and name, then the file part "file"; only the first file is
-// used (FR-FILE-002 rule 1). The file is read up to the per-file limit, so a
-// larger request is ERR-041 without being read in full.
+// documentType and name, then the file part "file".
 func (s *server) uploadDocument(ep endpoint) http.HandlerFunc {
+	return s.uploadFile(ep, "upload document", func(ctx context.Context, sess auth.Session, caseID string, id int64, req cases.UploadRequest) (any, error) {
+		f, err := s.cases.UploadDocument(ctx, sess, caseID, id, req)
+		return storedFileJSON{f.FileID, f.FileName}, err
+	})
+}
+
+// uploadFile answers an upload form with store's result (201): only the
+// first file is used (FR-FILE-002 rule 1), read up to the per-file limit, so
+// a larger request is ERR-041 without being read in full.
+func (s *server) uploadFile(ep endpoint, action string,
+	store func(context.Context, auth.Session, string, int64, cases.UploadRequest) (any, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sess, ok := s.session(w, r, ep)
 		if !ok {
@@ -132,15 +143,15 @@ func (s *server) uploadDocument(ep endpoint) http.HandlerFunc {
 			w.WriteHeader(http.StatusBadRequest) // Submit without a file: TBD-036a
 			return
 		}
-		f, err := s.cases.UploadDocument(r.Context(), sess, caseID, id, req)
+		stored, err := store(r.Context(), sess, caseID, id, req)
 		if errors.Is(err, cases.ErrStorageFailed) {
 			writeStorageFailed(w)
 			return
 		}
-		if writeAssignmentError(w, "upload document", err) {
+		if writeAssignmentError(w, action, err) {
 			return
 		}
-		writeJSON(w, http.StatusCreated, storedFileJSON{f.FileID, f.FileName})
+		writeJSON(w, http.StatusCreated, stored)
 	}
 }
 

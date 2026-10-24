@@ -202,6 +202,33 @@ func (s *Service) Create(ctx context.Context, creator auth.Session, caseType str
 	return Created{CaseID: caseID, AssignmentID: assignmentID}, nil
 }
 
+// startProcess records that the case started a Financing Submission
+// process, when its first assignment is created (TBD-034a, agreed).
+func startProcess(ctx context.Context, tx pgx.Tx, caseID, process string, now time.Time) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO fos.case_process_progress (case_id, process_id, first_started_at)
+		SELECT $1, process_id, $4 FROM fos.lifecycle_process
+		WHERE stage_name = $2 AND process_name = $3 ORDER BY sort_order LIMIT 1
+		ON CONFLICT (case_id, process_id) DO NOTHING`,
+		caseID, StageFinancingSubmission, process, now)
+	return err
+}
+
+// newBranchOfficerAssignment creates a new worklist assignment for the
+// case's branch_officer, starting its process.
+func newBranchOfficerAssignment(ctx context.Context, tx pgx.Tx, caseID, name string, now time.Time) (int64, error) {
+	if err := startProcess(ctx, tx, caseID, name, now); err != nil {
+		return 0, err
+	}
+	var id int64
+	err := tx.QueryRow(ctx, `
+		INSERT INTO fos.assignments (case_id, assignment_name, assignment_type, assigned_user_id, assignment_status, created_at)
+		SELECT case_id, $2, $3, branch_officer, $4, $5 FROM fos.work WHERE case_id = $1
+		RETURNING assignment_id`,
+		caseID, name, string(Worklist), string(AssignmentNew), now).Scan(&id)
+	return id, err
+}
+
 func containsCode(types []CaseType, code string) bool {
 	for _, t := range types {
 		if t.Code == code {

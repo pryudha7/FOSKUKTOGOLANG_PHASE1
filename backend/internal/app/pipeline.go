@@ -1,11 +1,11 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
-	"log/slog"
 	"net/http"
 
+	"fos/internal/auth"
 	"fos/internal/cases"
 )
 
@@ -127,39 +127,11 @@ func (s *server) changeSubmissionType(ep endpoint) http.HandlerFunc {
 }
 
 // uploadBankLetter handles POST .../assignments/{id}/bank-letter: the file
-// part "file" chosen for Bukti Surat dari Bank (FR-APP-004 rules 6-8), read
-// up to the per-file limit as the Upload Document modal's.
+// part "file" chosen for Bukti Surat dari Bank (FR-APP-004 rules 6-8),
+// answered with the item the page shows.
 func (s *server) uploadBankLetter(ep endpoint) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		sess, ok := s.session(w, r, ep)
-		if !ok {
-			return
-		}
-		caseID, id, ok := pathAssignment(r)
-		if !ok {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		max, err := s.cases.MaxFileBytes(r.Context())
-		if err != nil {
-			slog.Error("upload refused: per-file limit setting unusable", "error", err)
-			writeStorageFailed(w)
-			return
-		}
-		r.Body = http.MaxBytesReader(w, r.Body, max+1<<20)
-		req, haveFile, err := readUploadForm(r, max)
-		if err != nil || (!haveFile && !req.TooLarge) {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		f, err := s.cases.UploadBankLetter(r.Context(), sess, caseID, id, req)
-		if errors.Is(err, cases.ErrStorageFailed) {
-			writeStorageFailed(w)
-			return
-		}
-		if writeAssignmentError(w, "upload bank letter", err) {
-			return
-		}
-		writeJSON(w, http.StatusCreated, storedFileJSON{f.FileID, f.FileName})
-	}
+	return s.uploadFile(ep, "upload bank letter", func(ctx context.Context, sess auth.Session, caseID string, id int64, req cases.UploadRequest) (any, error) {
+		d, err := s.cases.UploadBankLetter(ctx, sess, caseID, id, req)
+		return toDocumentItemJSON(&d), err
+	})
 }

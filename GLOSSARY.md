@@ -70,6 +70,10 @@ The kind of financing request a Financing Case represents.
 **Take Over**:
 A Submission Type in which the Financing replaces the Customer's existing financing at another bank.
 
+**Bank Letter** (_Bukti Surat dari Bank_):
+The optional letter from the other bank in a Take Over, one per Financing Case; it is removed whenever the Submission Type is chosen again.
+_Avoid_: Underlying Document (it is not part of the Pre-Screening list)
+
 ## Customers
 
 **Customer** (_Nasabah_):

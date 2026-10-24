@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"fos/internal/auth"
 )
@@ -160,6 +161,11 @@ func (s *Service) Frame(ctx context.Context, caseID string) (Frame, error) {
 // querier is the pool or a transaction.
 type querier interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
+}
+
+// execer is the pool or a transaction, for statements.
+type execer interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 }
 
 // collect runs a query and scans every row.
@@ -378,13 +384,27 @@ func (s *Service) options(ctx context.Context, bmvType string) ([]Option, error)
 
 // optionsIn is options on q, e.g. inside a transaction.
 func optionsIn(ctx context.Context, q querier, bmvType string) ([]Option, error) {
-	opts, err := collectIn(ctx, q, func(r pgx.Rows) (Option, error) {
-		var o Option
-		return o, r.Scan(&o.Code, &o.Description)
-	}, `
+	return optionList(collectIn(ctx, q, scanOption, `
 		SELECT code, description FROM fos.business_mapping_value
-		WHERE type = $1 AND sub_type = '' AND (status = 'Active' OR COALESCE(status, '') = '')
-		ORDER BY sort_order, code`, bmvType)
+		WHERE type = $1 AND sub_type = '' AND `+activeStatus+`
+		ORDER BY sort_order, code`, bmvType))
+}
+
+// activeStatus keeps Active BMV rows; a blank status counts as Active
+// (DB-RULE-092). activeStatusOfB is the same on the alias b.
+const (
+	activeStatus    = `(status = 'Active' OR COALESCE(status, '') = '')`
+	activeStatusOfB = `(b.status = 'Active' OR COALESCE(b.status, '') = '')`
+)
+
+// scanOption reads a (code, text) row as an Option.
+func scanOption(r pgx.Rows) (Option, error) {
+	var o Option
+	return o, r.Scan(&o.Code, &o.Description)
+}
+
+// optionList is a query's options, never nil, so an empty list encodes as [].
+func optionList(opts []Option, err error) ([]Option, error) {
 	if opts == nil {
 		opts = []Option{}
 	}

@@ -319,6 +319,9 @@ func TestPipelineBankLetterUpload(t *testing.T) {
 	if !ok || first.Name != bankLetter+".PDF" || first.Original != "surat.PDF" || string(first.Data) != "letter-1" || first.CreatedBy != "AO001" {
 		t.Fatalf("stored = %+v", first)
 	}
+	if r.Body["fileId"] != first.FileID || r.Body["fileName"] != first.Name || r.Body["name"] != bankLetter || r.Body["caption"] != "DokumenInisiasi • Dokumen Inisiasi" {
+		t.Fatalf("upload answer = %s", r.Raw)
+	}
 	letter := pipelinePage(t, c, caseID, id)["bankLetter"].(map[string]any)
 	if letter["fileId"] != first.FileID || letter["name"] != bankLetter || letter["caption"] != "DokumenInisiasi • Dokumen Inisiasi" {
 		t.Fatalf("bankLetter = %v", letter)
@@ -368,7 +371,7 @@ func TestPipelineChangingSubmissionTypeDeletesTheLetter(t *testing.T) {
 		t.Fatalf("upload = %d %s", r.Status, r.Raw)
 	}
 	letter, _ := storedDocument(t, h, caseID, "DokumenInisiasi", bankLetter)
-	exec(t, h, `UPDATE fos.work SET bank_name = 'BCA', submission_type = 'Take Over' WHERE case_id = $1`, caseID)
+	exec(t, h, `UPDATE fos.work SET bank_name = 'BCA', submission_type = 'Take Over', updated_by = 'someone' WHERE case_id = $1`, caseID)
 	if r := c.Do(t, http.MethodPost, submitPath(caseID, id, "submission-type-change"), nil); r.Status != http.StatusNoContent {
 		t.Fatalf("change = %d %s", r.Status, r.Raw)
 	}
@@ -382,6 +385,9 @@ func TestPipelineChangingSubmissionTypeDeletesTheLetter(t *testing.T) {
 	}
 	if w := storedPipeline(t, h, caseID); w.Bank != nil || deref(w.SubmissionType) != "Take Over" {
 		t.Fatalf("work = %+v", w)
+	}
+	if n := count(t, h, `SELECT count(*) FROM fos.work WHERE case_id = $1 AND updated_by = 'AO001'`, caseID); n != 1 {
+		t.Fatal("the change did not record its operator")
 	}
 	if p := pipelinePage(t, c, caseID, id); p["bankLetter"] != nil || p["bankName"] != "" {
 		t.Fatalf("page = %v", p)

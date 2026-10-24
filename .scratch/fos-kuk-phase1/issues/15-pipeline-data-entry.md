@@ -35,8 +35,20 @@ Implementation notes (2026-10-24):
 - Endpoints on the assignment: GET (page), POST pipeline (Submit), GET banks?q= (autocomplete), POST submission-type-change (rule 3), POST bank-letter (upload). All but GET are for the owner of the open Pipeline Data Entry only.
 - The upload shares the Upload Document checks and storage order (storeUpload, split out of UploadDocument): category DokumenInisiasi, type and name "Bukti Surat Take Over dari Bank" plus the original extension, replacing an earlier one.
 - A Branch not Active is cleared when the owner opens the page and on Submit; a refused Submit still keeps the clearing (DB-RULE-089).
-- The UI clears Nama Bank when Jenis Pengajuan changes and locks it until the server answers, so text typed meanwhile is not wiped; a failed change puts both back with the system-failure banner.
+- The UI clears Nama Bank when Jenis Pengajuan is picked and locks it until the server answers, so text typed meanwhile is not wiped; a failed change puts both back with the system-failure banner.
 - Gambar 46: the grey clip sits under the Attachment button until a file is stored (Gambar 47 shows the item instead).
 - UI check tools/uicheck/pipeline.js (screens shots/pipeline-*.png): Gambar 45 layout and labels, ERR-010 banner and field errors, Take Over showing Nama Bank and Bukti Surat, "bca" suggesting BCA and BCA Syariah with the match bold, Enter choosing, upload showing the item "DokumenInisiasi • Dokumen Inisiasi", a Jenis Pengajuan change deleting the row and clearing Nama Bank, Submit storing Take Over|798|Murabahah|Bank Lain and opening Data Pribadi, one column at 700 px.
 - Mutation checks (each fails a test): no Pipeline assignment; contains ignored; case-sensitive match; Nama Bank kept on change; Nama Bank stored for any type; Branch not cleared on opening; products by name; no ERR-037 for an unknown product; Badan Usaha sent to Data Pribadi; letter object kept in GCS.
+
+Review fixes (2026-10-24, agreed with the user):
+
+- Jenis Pengajuan is a pick list of its own (combobox and listbox, same look as the other dropdowns), so picking Take Over again also clears Nama Bank and deletes the letter (rule 3: "termasuk dari Take Over ke Take Over setelah dipilih ulang"); a native select reports no event for the same value.
+- Submit returns to the Dashboard instead of opening the next assignment, which stays new on the worklist (FR-ASSIGN-001 rules 15-16); its page comes with tickets 16/17.
+- Changing Jenis Pengajuan, Nama Bank or Produk clears that field's error on the field and the banner.
+- A Jenis Pengajuan change records updated_at and updated_by on the case, as every other write to work does.
+- The bank-letter upload answers with the item as the page shows it (name and caption from the server); ERR-025 shows the message the server sends.
+- One upload handler serves the Upload Document modal and the Bukti Surat (uploadFile); option rows share scanOption, optionList and the Active status predicate; startProcess and newBranchOfficerAssignment moved to cases.go, execer beside querier.
+- GLOSSARY: Bank Letter (Bukti Surat dari Bank).
+- Noted only: the server accepts a Bukti Surat whatever Jenis Pengajuan is on screen, since the choice is saved only on Submit (agreed comment 4).
+- UI check pipeline.js now also picks Take Over again (row deleted, Nama Bank empty), checks the Jenis Pengajuan error goes once picked, and that Submit lands on the Dashboard with Data Pribadi new. Mutation checks: as before plus "change not recorded", all fail a test.
 

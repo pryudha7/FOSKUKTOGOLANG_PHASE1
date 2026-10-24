@@ -4,10 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"fos/internal/auth"
 )
@@ -33,6 +31,9 @@ const (
 	docNPWPBadan = "NPWP Badan Usaha"
 
 	maxResultsSetting = "ui/autocomplete/max_results"
+
+	// bmvSubmissionType lists Jenis Pengajuan (§9.6).
+	bmvSubmissionType = "SUBMISSION_TYPE"
 )
 
 // categoryInitiation is the codename of Dokumen Inisiasi (DB-RULE-087).
@@ -53,33 +54,6 @@ const (
 // invalid is ERR-037 for a value not in its source (BR-UI-007).
 func invalid(section, key, label string) FieldError {
 	return FieldError{section, key, label, "ERR-037", "Harap masukkan " + label + " yang valid."}
-}
-
-// startProcess records that the case started a Financing Submission
-// process, when its first assignment is created (TBD-034a, agreed).
-func startProcess(ctx context.Context, tx pgx.Tx, caseID, process string, now time.Time) error {
-	_, err := tx.Exec(ctx, `
-		INSERT INTO fos.case_process_progress (case_id, process_id, first_started_at)
-		SELECT $1, process_id, $4 FROM fos.lifecycle_process
-		WHERE stage_name = $2 AND process_name = $3 ORDER BY sort_order LIMIT 1
-		ON CONFLICT (case_id, process_id) DO NOTHING`,
-		caseID, StageFinancingSubmission, process, now)
-	return err
-}
-
-// newBranchOfficerAssignment creates a new worklist assignment for the
-// case's branch_officer, starting its process.
-func newBranchOfficerAssignment(ctx context.Context, tx pgx.Tx, caseID, name string, now time.Time) (int64, error) {
-	if err := startProcess(ctx, tx, caseID, name, now); err != nil {
-		return 0, err
-	}
-	var id int64
-	err := tx.QueryRow(ctx, `
-		INSERT INTO fos.assignments (case_id, assignment_name, assignment_type, assigned_user_id, assignment_status, created_at)
-		SELECT case_id, $2, $3, branch_officer, $4, $5 FROM fos.work WHERE case_id = $1
-		RETURNING assignment_id`,
-		caseID, name, string(Worklist), string(AssignmentNew), now).Scan(&id)
-	return id, err
 }
 
 // openPipeline is the end of a completed run: the case enters Pipeline Data
@@ -116,14 +90,9 @@ type DocumentItem struct {
 	FileID, FileName, Name, Caption string
 }
 
-// execer is the pool or a transaction, for statements.
-type execer interface {
-	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
-}
-
 // activeBranch matches the case's branch_code to an Active BMV BRANCH row.
 const activeBranch = `b.type = 'BRANCH' AND b.sub_type = '' AND b.code = w.branch_code
-	AND (b.status = 'Active' OR COALESCE(b.status, '') = '')`
+	AND ` + activeStatusOfB
 
 // clearInactiveBranch empties a branch_code that is not Active on BMV
 // BRANCH (Field 1, DB-RULE-089).
@@ -152,7 +121,7 @@ func (s *Service) pipelinePage(ctx context.Context, caseID string, editable bool
 	page.BranchCode, page.BranchName, page.CustomerType = value(branchCode), value(branchName), value(customerType)
 	page.SubmissionType, page.ProductCode, page.BankName = value(submission), value(product), value(bank)
 	var err error
-	if page.SubmissionTypeOptions, err = s.options(ctx, "SUBMISSION_TYPE"); err != nil {
+	if page.SubmissionTypeOptions, err = s.options(ctx, bmvSubmissionType); err != nil {
 		return PipelinePage{}, err
 	}
 	if page.ProductOptions, err = s.products(ctx); err != nil {
@@ -173,14 +142,7 @@ func (s *Service) pipelinePage(ctx context.Context, caseID string, editable bool
 // products are the Produk options: every Product Management row by code,
 // shown by name (DB-RULE-088).
 func (s *Service) products(ctx context.Context) ([]Option, error) {
-	opts, err := collect(ctx, s, func(r pgx.Rows) (Option, error) {
-		var o Option
-		return o, r.Scan(&o.Code, &o.Description)
-	}, `SELECT code, name FROM fos.product_management ORDER BY code`)
-	if opts == nil {
-		opts = []Option{}
-	}
-	return opts, err
+	return optionList(collect(ctx, s, scanOption, `SELECT code, name FROM fos.product_management ORDER BY code`))
 }
 
 // documentItem is the case's file of a category and type, if any. The
@@ -248,8 +210,8 @@ func (s *Service) SubmitPipeline(ctx context.Context, sess auth.Session, caseID 
 		Scan(&branch, &customerType); err != nil {
 		return 0, err
 	}
-	next := map[string]string{customerTypeIndividual: AssignmentIndividualData, customerTypeBusinessEntity: AssignmentBusinessEntity}[value(customerType)]
-	if next == "" {
+	nextName := map[string]string{customerTypeIndividual: AssignmentIndividualData, customerTypeBusinessEntity: AssignmentBusinessEntity}[value(customerType)]
+	if nextName == "" {
 		return 0, ErrUnsupported
 	}
 
@@ -258,7 +220,7 @@ func (s *Service) SubmitPipeline(ctx context.Context, sess auth.Session, caseID 
 	if branch == nil {
 		errs = append(errs, required(SectionForm, KeyBranch, labelBranchCode))
 	}
-	switch known, err := activeCode(ctx, tx, "SUBMISSION_TYPE", f.SubmissionType); {
+	switch known, err := activeCode(ctx, tx, bmvSubmissionType, f.SubmissionType); {
 	case err != nil:
 		return 0, err
 	case f.SubmissionType == "":
@@ -302,7 +264,7 @@ func (s *Service) SubmitPipeline(ctx context.Context, sess auth.Session, caseID 
 		id, string(AssignmentCompleted), now); err != nil {
 		return 0, err
 	}
-	nextID, err := newBranchOfficerAssignment(ctx, tx, caseID, next, now)
+	nextID, err := newBranchOfficerAssignment(ctx, tx, caseID, nextName, now)
 	if err != nil {
 		return 0, err
 	}
@@ -337,18 +299,11 @@ func (s *Service) BankSuggestions(ctx context.Context, sess auth.Session, caseID
 	if err != nil {
 		return nil, err
 	}
-	opts, err := collectIn(ctx, tx, func(r pgx.Rows) (Option, error) {
-		var o Option
-		return o, r.Scan(&o.Code, &o.Description)
-	}, `
+	return optionList(collectIn(ctx, tx, scanOption, `
 		SELECT code, description FROM fos.business_mapping_value
-		WHERE type = 'BANK' AND sub_type = '' AND (status = 'Active' OR COALESCE(status, '') = '')
+		WHERE type = 'BANK' AND sub_type = '' AND `+activeStatus+`
 		  AND strpos(lower(description), lower($1)) > 0
-		ORDER BY sort_order, code LIMIT $2`, text, limit)
-	if opts == nil {
-		opts = []Option{}
-	}
-	return opts, err
+		ORDER BY sort_order, code LIMIT $2`, text, limit))
 }
 
 // ChangeSubmissionType is a change of Jenis Pengajuan (FR-APP-004 rule 3,
@@ -363,7 +318,8 @@ func (s *Service) ChangeSubmissionType(ctx context.Context, sess auth.Session, c
 	if err := ownPipeline(ctx, tx, sess, caseID, id); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE fos.work SET bank_name = NULL WHERE case_id = $1`, caseID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE fos.work SET bank_name = NULL, updated_at = $2, updated_by = $3 WHERE case_id = $1`,
+		caseID, s.now(), sess.UserID); err != nil {
 		return err
 	}
 	var letter storedObject
@@ -387,16 +343,22 @@ func (s *Service) ChangeSubmissionType(ctx context.Context, sess auth.Session, c
 // UploadBankLetter stores Bukti Surat dari Bank when it is chosen, one per
 // case, named "Bukti Surat Take Over dari Bank" plus the original extension
 // (FR-APP-004 rules 6-8), with the Upload Document rules for type and size.
-func (s *Service) UploadBankLetter(ctx context.Context, sess auth.Session, caseID string, id int64, u UploadRequest) (StoredFile, error) {
+// It returns the item as the page shows it (rule 7).
+func (s *Service) UploadBankLetter(ctx context.Context, sess auth.Session, caseID string, id int64, u UploadRequest) (DocumentItem, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return StoredFile{}, err
+		return DocumentItem{}, err
 	}
 	err = ownPipeline(ctx, tx, sess, caseID, id)
 	tx.Rollback(ctx)
 	if err != nil {
-		return StoredFile{}, err
+		return DocumentItem{}, err
 	}
 	u.Category, u.DocumentType, u.Name = categoryInitiation, docBankLetter, docBankLetter
-	return s.storeUpload(ctx, sess, caseID, id, u)
+	f, err := s.storeUpload(ctx, sess, caseID, id, u)
+	if err != nil {
+		return DocumentItem{}, err
+	}
+	return DocumentItem{FileID: f.FileID, FileName: f.FileName, Name: docBankLetter,
+		Caption: categoryInitiation + " • " + categoryInitiationLabel}, nil
 }

@@ -42,10 +42,9 @@ export type MoveResult<E> =
   | { kind: "invalid"; errors: E[] }
   | { kind: "failed" };
 
-// moveAssignment posts a move (submit, back, or Pipeline Data Entry's
-// Submit) and, when it passes, opens the next assignment directly
-// (FR-APP-003 rule 6).
-export async function moveAssignment<E>(ref: AssignmentRef, action: "submit" | "back" | "pipeline", body?: unknown): Promise<MoveResult<E>> {
+// moveAssignment posts a tabbed-flow move (submit or back) and, when it
+// passes, opens the next assignment directly (FR-APP-003 rule 6).
+export async function moveAssignment<E>(ref: AssignmentRef, action: "submit" | "back", body?: unknown): Promise<MoveResult<E>> {
   const url = assignmentURL(ref, action);
   const res = await apiFetch(url, {
     method: "POST",

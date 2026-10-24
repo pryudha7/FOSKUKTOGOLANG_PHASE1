@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { apiFetch, assignmentURL, moveAssignment, type AssignmentRef } from "@/lib/api";
+import { apiFetch, assignmentURL, type AssignmentRef } from "@/lib/api";
 import AssignmentHeader from "./AssignmentHeader";
 import ErrorBanner from "./ErrorBanner";
 import Field from "./Field";
@@ -11,21 +11,21 @@ import { unavailableMessage } from "./names";
 import type { DocumentItem, FieldError, Option, PipelinePage } from "./types";
 import styles from "./case.module.css";
 
-// The SUBMISSION_TYPE code of a Take Over (FR-APP-004 rule 2).
+// The SUBMISSION_TYPE code of a Take Over (FR-APP-004 rule 2, DEC-116).
 const takeOver = "Take Over";
 
-// The Bukti Surat dari Bank item once uploaded (FR-APP-004 rule 7).
-const bankLetterName = "Bukti Surat Take Over dari Bank";
-const bankLetterCaption = "DokumenInisiasi • Dokumen Inisiasi";
-
-// ERR-025: storage could not be reached.
-const storageFailed = "Upload dokumen gagal. Silakan coba lagi.";
+// inputClass styles an input, select or pick list by its state.
+function inputClass(disabled: boolean, invalid: boolean): string {
+  return disabled ? styles.inputDisabled : invalid ? styles.inputInvalid : styles.input;
+}
 
 // UI-024 Pipeline Data Entry (Gambar 45-47, FR-APP-004). Jenis Pengajuan
-// and Produk are saved on Submit; changing Jenis Pengajuan clears Nama Bank
-// and deletes the letter on the server at once (rule 3); the letter is
-// stored when chosen (rule 6). Close leaves without saving (agreed). An
-// Authors look is read-only.
+// and Produk are saved on Submit, which returns to the Dashboard and leaves
+// the next assignment new (agreed); every pick of Jenis Pengajuan, the same
+// one again included, clears Nama Bank and deletes the letter on the server
+// at once (rule 3); the letter is stored when chosen (rule 6). Changing a
+// field clears its error. Close leaves without saving (agreed). An Authors
+// look is read-only.
 export default function PipelineDataEntry({
   page,
   assignment,
@@ -48,12 +48,14 @@ export default function PipelineDataEntry({
 
   const isTakeOver = submissionType === takeOver;
   const errorOf = (key: string) => errors.find((e) => e.section === "form" && e.key === key)?.message;
+  const clearError = (...keys: string[]) => setErrors((all) => all.filter((e) => !(e.section === "form" && keys.includes(e.key))));
 
   async function changeSubmissionType(next: string) {
     if (busy) {
       return;
     }
     const before = { submissionType, bankName };
+    clearError("submissionType", "bankName");
     // Cleared at once; Nama Bank is locked until the server has answered.
     setSubmissionType(next);
     setBankName("");
@@ -81,14 +83,15 @@ export default function PipelineDataEntry({
     const form = new FormData();
     form.append("file", file);
     const res = await apiFetch(assignmentURL(assignment, "bank-letter"), { method: "POST", body: form }).catch(() => null);
+    const body = res ? await res.json().catch(() => null) : null;
     if (res?.status === 201) {
-      const stored = (await res.json()) as { fileId: string; fileName: string };
-      setLetter({ ...stored, name: bankLetterName, caption: bankLetterCaption });
+      setLetter(body as DocumentItem);
       onFilesChanged();
     } else if (res?.status === 422) {
-      setErrors(((await res.json()) as { errors: FieldError[] }).errors);
+      setErrors((body as { errors: FieldError[] }).errors);
     } else {
-      setMessage(res?.status === 502 ? storageFailed : unavailableMessage);
+      // ERR-025 comes with its message (502); anything else is ERR-003.
+      setMessage((body as { errors?: { message: string }[] } | null)?.errors?.[0]?.message ?? unavailableMessage);
     }
     setBusy(false);
   }
@@ -105,20 +108,20 @@ export default function PipelineDataEntry({
     }
     setBusy(true);
     setMessage(undefined);
-    const result = await moveAssignment<FieldError>(assignment, "pipeline", {
-      submissionType,
-      productCode,
-      bankName: isTakeOver ? bankName : "",
-    });
-    if (result.kind === "moved") {
+    const res = await apiFetch(assignmentURL(assignment, "pipeline"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ submissionType, productCode, bankName: isTakeOver ? bankName : "" }),
+    }).catch(() => null);
+    if (res?.ok) {
+      window.location.assign(assignment.endpointPath);
       return;
     }
-    setErrors(result.kind === "invalid" ? result.errors : []);
-    setMessage(result.kind === "failed" ? unavailableMessage : undefined);
+    const invalid = res?.status === 422 ? ((await res.json().catch(() => null)) as { errors?: FieldError[] } | null) : null;
+    setErrors(invalid?.errors ?? []);
+    setMessage(invalid?.errors ? undefined : unavailableMessage);
     setBusy(false);
   }
-
-  const inputClass = (invalid: boolean) => (readOnly ? styles.inputDisabled : invalid ? styles.inputInvalid : styles.input);
 
   return (
     <div className={styles.assignmentArea}>
@@ -137,36 +140,37 @@ export default function PipelineDataEntry({
 
             <div className={styles.pipelineColumn}>
               <Field label="Jenis Pengajuan" required error={errorOf("submissionType")}>
-                <select
-                  aria-label="Jenis Pengajuan"
-                  className={inputClass(!!errorOf("submissionType"))}
+                <PickList
+                  label="Jenis Pengajuan"
+                  placeholder="Pilih Jenis Pengajuan"
+                  options={page.submissionTypeOptions}
                   value={submissionType}
+                  invalid={!!errorOf("submissionType")}
                   disabled={readOnly || busy}
-                  onChange={(e) => changeSubmissionType(e.target.value)}
-                >
-                  <option value="" disabled>
-                    Pilih Jenis Pengajuan
-                  </option>
-                  <OptionList options={page.submissionTypeOptions} />
-                </select>
+                  onPick={changeSubmissionType}
+                />
               </Field>
               {isTakeOver && (
                 <Field label="Nama Bank" required error={errorOf("bankName")}>
-                  <BankAutocomplete assignment={assignment} value={bankName} invalid={!!errorOf("bankName")} disabled={readOnly || busy} onChange={setBankName} />
+                  <BankAutocomplete assignment={assignment} value={bankName} invalid={!!errorOf("bankName")} disabled={readOnly || busy} onChange={(v) => (setBankName(v), clearError("bankName"))} />
                 </Field>
               )}
               <Field label="Produk" required error={errorOf("product")}>
                 <select
                   aria-label="Produk"
-                  className={inputClass(!!errorOf("product"))}
+                  className={inputClass(readOnly, !!errorOf("product"))}
                   value={productCode}
                   disabled={readOnly}
-                  onChange={(e) => setProductCode(e.target.value)}
+                  onChange={(e) => (setProductCode(e.target.value), clearError("product"))}
                 >
                   <option value="" disabled>
                     Pilih Produk
                   </option>
-                  <OptionList options={page.productOptions} />
+                  {page.productOptions.map((o) => (
+                    <option key={o.code} value={o.code}>
+                      {o.description}
+                    </option>
+                  ))}
                 </select>
               </Field>
               <Field label="Tipe Nasabah" required>
@@ -242,15 +246,99 @@ export default function PipelineDataEntry({
   );
 }
 
-function OptionList({ options }: { options: Option[] }) {
+// A dropdown that reports every pick, the current value again included,
+// which a native select does not (FR-APP-004 rule 3). It looks like the
+// other dropdowns: placeholder, chevron, list below; arrows, Enter, Escape.
+function PickList({
+  label,
+  placeholder,
+  options,
+  value,
+  invalid,
+  disabled,
+  onPick,
+}: {
+  label: string;
+  placeholder: string;
+  options: Option[];
+  value: string;
+  invalid: boolean;
+  disabled: boolean;
+  onPick: (code: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const chosen = options.find((o) => o.code === value);
+
+  function show() {
+    setActive(Math.max(0, options.findIndex((o) => o.code === value)));
+    setOpen(true);
+  }
+
+  function pick(o: Option) {
+    setOpen(false);
+    onPick(o.code);
+  }
+
   return (
-    <>
-      {options.map((o) => (
-        <option key={o.code} value={o.code}>
-          {o.description}
-        </option>
-      ))}
-    </>
+    <div className={styles.autocomplete}>
+      <button
+        type="button"
+        role="combobox"
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`${inputClass(disabled, invalid)} ${styles.pickButton}`}
+        disabled={disabled}
+        onClick={() => (open ? setOpen(false) : show())}
+        onBlur={() => setOpen(false)}
+        onKeyDown={(e) => {
+          if (!open) {
+            if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              show();
+            }
+            return;
+          }
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setActive((i) => Math.min(i + 1, options.length - 1));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setActive((i) => Math.max(i - 1, 0));
+          } else if ((e.key === "Enter" || e.key === " ") && options[active]) {
+            e.preventDefault();
+            pick(options[active]);
+          } else if (e.key === "Escape") {
+            setOpen(false);
+          }
+        }}
+      >
+        <span>{chosen?.description ?? placeholder}</span>
+        <svg width="12" height="8" viewBox="0 0 12 8" aria-hidden="true">
+          <path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+        </svg>
+      </button>
+      {open && (
+        <ul className={styles.autocompleteList} role="listbox" aria-label={label}>
+          {options.map((o, i) => (
+            <li
+              key={o.code}
+              role="option"
+              aria-selected={o.code === value}
+              className={i === active ? styles.autocompleteActive : styles.autocompleteOption}
+              // Chosen before the button's blur closes the list.
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pick(o);
+              }}
+            >
+              {o.description}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -333,7 +421,7 @@ function BankAutocomplete({
         role="combobox"
         aria-expanded={open}
         aria-autocomplete="list"
-        className={disabled ? styles.inputDisabled : invalid ? styles.inputInvalid : styles.input}
+        className={inputClass(disabled, invalid)}
         value={value}
         disabled={disabled}
         onFocus={() => setOpen(true)}

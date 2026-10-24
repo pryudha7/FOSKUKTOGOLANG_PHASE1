@@ -1,9 +1,9 @@
 // Ticket 15: UI-024 Pipeline Data Entry (Gambar 45-47). A case made through
 // the UI up to Create is moved to Pipeline Data Entry through psql (as a
 // completed run would), with test Jenis Pengajuan, products and banks; then
-// errors, Take Over with the Nama Bank autocomplete, the Bukti Surat upload,
-// a Jenis Pengajuan change deleting it, and Submit. Needs what create.js and
-// duu.js need.
+// errors cleared by a change, Take Over with the Nama Bank autocomplete, the
+// Bukti Surat upload, picking Take Over again deleting it, and Submit back to
+// the Dashboard. Needs what create.js and duu.js need.
 // Usage: node pipeline.js shots
 const { chromium } = require("playwright-core");
 const fs = require("fs");
@@ -22,6 +22,13 @@ async function login(browser, user, width = 1500) {
   await page.click('button[type="submit"]');
   await page.waitForURL("**/app/fossyariah");
   return page;
+}
+
+// pick chooses a Jenis Pengajuan from its pick list (not a native select:
+// picking the same value again must reach the page, FR-APP-004 rule 3).
+async function pick(page, label) {
+  await page.getByRole("combobox", { name: "Jenis Pengajuan" }).click();
+  await page.getByRole("option", { name: label, exact: true }).click();
 }
 
 async function uploadDoc(page, doc) {
@@ -81,7 +88,11 @@ async function uploadDoc(page, doc) {
   await ao.mouse.move(900, 500);
   await ao.waitForSelector("text=Inisiasi");
   r.initialLabels = await ao.locator("[class*=pipelinePanel] [class*=fieldLabel], [class*=identityLabel]").allInnerTexts();
-  r.submissionOptions = await ao.getByLabel("Jenis Pengajuan").locator("option").allInnerTexts();
+  r.submissionPlaceholder = await ao.getByRole("combobox", { name: "Jenis Pengajuan" }).innerText();
+  await ao.getByRole("combobox", { name: "Jenis Pengajuan" }).click();
+  r.submissionOptions = await ao.getByRole("listbox", { name: "Jenis Pengajuan" }).getByRole("option").allInnerTexts();
+  await ao.screenshot({ path: `${out}/pipeline-picklist.png` });
+  await ao.keyboard.press("Escape");
   r.productOptions = await ao.getByLabel("Produk").locator("option").allInnerTexts();
   r.bankFieldBefore = await ao.getByLabel("Nama Bank").count();
   await ao.screenshot({ path: `${out}/pipeline-initial.png` });
@@ -91,8 +102,9 @@ async function uploadDoc(page, doc) {
   r.errors = await ao.locator("[class*=errorBanner] li").allInnerTexts();
   await ao.screenshot({ path: `${out}/pipeline-errors.png` });
 
-  await ao.getByLabel("Jenis Pengajuan").selectOption({ label: "Take Over" });
+  await pick(ao, "Take Over");
   await ao.getByLabel("Nama Bank").waitFor();
+  r.errorsAfterPick = await ao.locator("[class*=errorBanner] li").allInnerTexts();
   await ao.getByLabel("Nama Bank").fill("bca");
   await ao.waitForSelector("[role=listbox] [role=option]");
   r.suggestions = await ao.locator("[role=listbox] [role=option]").allInnerTexts();
@@ -106,17 +118,20 @@ async function uploadDoc(page, doc) {
   r.letterRows = psql(`SELECT document_category || '|' || document_type || '|' || file_name FROM fos.case_document WHERE case_id = '${c}' AND document_category = 'DokumenInisiasi';`);
   await ao.screenshot({ path: `${out}/pipeline-letter.png` });
 
-  await ao.getByLabel("Jenis Pengajuan").selectOption({ label: "Pengajuan Baru" });
-  await ao.waitForFunction(() => !document.body.innerText.includes("Bukti Surat dari Bank"));
-  r.letterRowsAfterChange = psql(`SELECT count(*) FROM fos.case_document WHERE case_id = '${c}' AND document_category = 'DokumenInisiasi';`);
-  await ao.getByLabel("Jenis Pengajuan").selectOption({ label: "Take Over" });
-  r.bankAfterChange = await ao.getByLabel("Nama Bank").inputValue();
+  // Take Over again: still a change (rule 3).
+  await pick(ao, "Take Over");
+  await ao.waitForFunction(() => !document.body.innerText.includes("Bukti Surat Take Over dari Bank"));
+  r.letterRowsAfterRepick = psql(`SELECT count(*) FROM fos.case_document WHERE case_id = '${c}' AND document_category = 'DokumenInisiasi';`);
+  r.bankAfterRepick = await ao.getByLabel("Nama Bank").inputValue();
+  await pick(ao, "Pengajuan Baru");
+  r.bankFieldAfterOther = await ao.getByLabel("Nama Bank").count();
+  await pick(ao, "Take Over");
 
   await ao.getByLabel("Nama Bank").fill("Bank Lain");
   await ao.keyboard.press("Escape");
   await ao.getByLabel("Produk").selectOption({ label: "testing_mikro_aira_murabahah" });
   await ao.getByRole("button", { name: "Submit" }).click();
-  await ao.waitForURL((u) => !u.toString().endsWith(`/assignment/${id}`)).catch(async (e) => {
+  await ao.waitForURL("**/app/fossyariah").catch(async (e) => {
     await ao.screenshot({ path: `${out}/pipeline-submit-failed.png`, fullPage: true });
     throw e;
   });

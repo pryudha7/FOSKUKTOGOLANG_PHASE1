@@ -22,6 +22,7 @@ Before running: start PostgreSQL, the backend and `next start -p 13000` (see the
 | `duu.js` | Document Underlying Upload: document list, Upload Document modal, document icon download, attachments panel, ERR-035 popup (ticket 07) |
 | `slik.js` | Manual SLIK Entry after a SLIK timeout (set up through psql): ERR-036 banner on Create until the SLIK document is uploaded, then the Team Lead's Pre Screening with API Log History above History Pre-screening Notes and the decision (ticket 12); needs what `create.js`, `review.js` and `duu.js` need |
 | `waitslik.js` | UI-023 Waiting SLIK (Gambar 44): Due, Check SLIK Status against a fake SFS on port 14555, one Message panel, two with a Spouse, no Submit (ticket 36); needs what `create.js` and `duu.js` need, `SLIK_APIKEY` in the backend environment and `api/slik/baseurl` = `http://127.0.0.1:14555` |
+| `history.js` | History Details under the Team Lead's Pre Screening (log rows set up through psql): API Log History sort, filter popup, Clear filter, "Lihat semua" (UI-020, Gambar 36, 37) and Pre-Screening API Data tabs, Reject banner, SLIK descriptions and Pefindo results (UI-021, Gambar 38-40) (ticket 14); needs what `create.js`, `review.js` and `duu.js` need |
 
 No UI check for ticket 13 either: its screens (UI-021 Pefindo) are ticket 14.
 

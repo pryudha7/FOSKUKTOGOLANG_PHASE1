@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"fos/internal/cases"
 )
@@ -21,11 +22,12 @@ type recommendationJSON struct {
 }
 
 type apiLogJSON struct {
-	Name        string `json:"name"`
-	SubmittedAt string `json:"submittedAt"`
-	Status      string `json:"status"`
-	Request     string `json:"request"`
-	Response    string `json:"response"`
+	Name        string    `json:"name"`
+	At          time.Time `json:"at"`
+	SubmittedAt string    `json:"submittedAt"`
+	Status      string    `json:"status"`
+	Request     string    `json:"request"`
+	Response    string    `json:"response"`
 }
 
 type retryJSON struct {
@@ -38,6 +40,8 @@ type reviewJSON struct {
 	Editable        bool                 `json:"editable"`
 	Retry           *retryJSON           `json:"retry"`
 	SLIKTimeout     *retryJSON           `json:"slikTimeout"`
+	TruncateChars   int                  `json:"truncateChars"`
+	TruncateLines   int                  `json:"truncateLines"`
 }
 
 func toReviewJSON(p cases.ReviewPage) reviewJSON {
@@ -46,6 +50,7 @@ func toReviewJSON(p cases.ReviewPage) reviewJSON {
 		out.History = append(out.History, recommendationJSON(r))
 	}
 	out.Retry, out.SLIKTimeout = toRetryJSON(p.Retry), toRetryJSON(p.SLIKTimeout)
+	out.TruncateChars, out.TruncateLines = p.TruncateChars, p.TruncateLines
 	return out
 }
 
@@ -53,9 +58,13 @@ func toRetryJSON(v *cases.APILogView) *retryJSON {
 	if v == nil {
 		return nil
 	}
-	out := &retryJSON{Logs: []apiLogJSON{}}
-	for _, l := range v.Logs {
-		out.Logs = append(out.Logs, apiLogJSON(l))
+	return &retryJSON{Logs: toLogsJSON(v.Logs)}
+}
+
+func toLogsJSON(logs []cases.APILogEntry) []apiLogJSON {
+	out := []apiLogJSON{}
+	for _, l := range logs {
+		out = append(out, apiLogJSON{l.Name, l.At, l.SubmittedAt, l.Status, l.Request, l.Response})
 	}
 	return out
 }
@@ -148,5 +157,76 @@ func (s *server) checkSLIKStatus(ep endpoint) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, struct {
 			Statuses []statusJSON `json:"statuses"`
 		}{out})
+	}
+}
+
+type apiDataFieldJSON struct {
+	Label  string `json:"label"`
+	Value  string `json:"value"`
+	Indent bool   `json:"indent,omitempty"`
+}
+
+type apiDataProcessJSON struct {
+	Name           string               `json:"name"`
+	Rejected       bool                 `json:"rejected"`
+	RejectedOnly   bool                 `json:"rejectedOnly"`
+	Request        []apiDataFieldJSON   `json:"request"`
+	Response       []apiDataFieldJSON   `json:"response"`
+	Errors         []string             `json:"errors"`
+	Results        [][]apiDataFieldJSON `json:"results"`
+	DocumentID     string               `json:"documentId,omitempty"`
+	DocumentName   string               `json:"documentName,omitempty"`
+	DocumentAction string               `json:"documentAction,omitempty"`
+}
+
+func toFieldsJSON(fs []cases.APIDataField) []apiDataFieldJSON {
+	out := []apiDataFieldJSON{}
+	for _, f := range fs {
+		out = append(out, apiDataFieldJSON(f))
+	}
+	return out
+}
+
+// history handles GET .../assignments/{id}/history: the History Details
+// card under the assignment (UI-013): API Log History (UI-020) and
+// Pre-Screening API Data (UI-021).
+func (s *server) history(ep endpoint) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sess, ok := s.session(w, r, ep)
+		if !ok {
+			return
+		}
+		caseID, id, ok := pathAssignment(r)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		h, err := s.cases.History(r.Context(), sess, caseID, id)
+		if writeAssignmentError(w, "history details", err) {
+			return
+		}
+		processes := []apiDataProcessJSON{}
+		for _, p := range h.Processes {
+			results := [][]apiDataFieldJSON{}
+			for _, r := range p.Results {
+				results = append(results, toFieldsJSON(r))
+			}
+			errs := p.Errors
+			if errs == nil {
+				errs = []string{}
+			}
+			var docID, docName string
+			if p.Document != nil {
+				docID, docName = p.Document.ID, p.Document.Name
+			}
+			processes = append(processes, apiDataProcessJSON{p.Name, p.Rejected, p.RejectedOnly, toFieldsJSON(p.Request),
+				toFieldsJSON(p.Response), errs, results, docID, docName, p.DocumentAction})
+		}
+		writeJSON(w, http.StatusOK, struct {
+			Logs          []apiLogJSON         `json:"logs"`
+			TruncateChars int                  `json:"truncateChars"`
+			TruncateLines int                  `json:"truncateLines"`
+			Processes     []apiDataProcessJSON `json:"processes"`
+		}{toLogsJSON(h.Logs), h.TruncateChars, h.TruncateLines, processes})
 	}
 }

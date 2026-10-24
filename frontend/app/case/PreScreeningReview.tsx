@@ -68,13 +68,13 @@ export default function PreScreeningReview({ page, assignment }: { page: ReviewP
               <br />
               Please retry by click on submit button
             </p>
-            <APILogTable logs={page.retry.logs} />
+            <APILogTable logs={page.retry.logs} limit={{ chars: page.truncateChars, lines: page.truncateLines }} />
           </div>
         )}
         {page.slikTimeout && (
           <div className={styles.formPanel}>
             <h3 className={styles.panelTitle}>API Log History</h3>
-            <APILogTable logs={page.slikTimeout.logs} />
+            <APILogTable logs={page.slikTimeout.logs} limit={{ chars: page.truncateChars, lines: page.truncateLines }} />
           </div>
         )}
         {page.history.length > 0 && (

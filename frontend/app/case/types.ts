@@ -59,7 +59,33 @@ export type PreScreeningPage = {
 export type Recommendation = { decidedBy: string; submittedAt: string; decision: string; notes: string };
 
 // One Connect API Log row (UI-020); submittedAt is dd/MM/yy H:mm.
-export type APILogEntry = { name: string; submittedAt: string; status: string; request: string; response: string };
+// One Connect API Log row as UI-020 shows it; at sorts Waktu Connect.
+export type APILogEntry = { name: string; at: string; submittedAt: string; status: string; request: string; response: string };
+
+// UI-021 read-only field; indent puts it under Params.
+export type APIDataField = { label: string; value: string; indent?: boolean };
+
+// One Pre-Screening API Data sub-accordion (FR-PSAPI-005).
+export type APIDataProcess = {
+  name: string;
+  rejected: boolean;
+  rejectedOnly: boolean; // Rejected List: the banner only
+  request: APIDataField[];
+  response: APIDataField[];
+  errors: string[];
+  results: APIDataField[][];
+  documentId?: string;
+  documentName?: string;
+  documentAction?: string; // "View SLIK" or "Download PDF"
+};
+
+// The History Details card (UI-013): API Log History and Pre-Screening API Data.
+export type HistoryCard = {
+  logs: APILogEntry[];
+  truncateChars: number;
+  truncateLines: number;
+  processes: APIDataProcess[];
+};
 
 // UI-023 Waiting SLIK: whole minutes left before the SLIK SLA when opened.
 export type WaitingSLIKPage = {
@@ -80,6 +106,9 @@ export type ReviewPage = {
   // Set after Manual SLIK Entry (Timeout SLIK variant): the SLIK log rows
   // above the history and the decision fields.
   slikTimeout: { logs: APILogEntry[] } | null;
+  // How the log values are cut on display (with retry or slikTimeout).
+  truncateChars: number;
+  truncateLines: number;
 };
 
 export type StoredFile = { fileId: string; fileName: string };

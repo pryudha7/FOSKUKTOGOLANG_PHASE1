@@ -10,6 +10,7 @@ import PreScreeningSubmission from "./PreScreeningSubmission";
 import UnderlyingDocumentUpload from "./UnderlyingDocumentUpload";
 import PreScreeningReview from "./PreScreeningReview";
 import WaitingSLIK from "./WaitingSLIK";
+import HistoryDetails from "./HistoryDetails";
 import { assignmentNames } from "./names";
 import styles from "./case.module.css";
 
@@ -83,6 +84,7 @@ export default function CaseView({
               <h2 className={styles.cardTitle}>{assignment.name}</h2>
             </section>
           )}
+          <HistoryDetails assignment={ref} />
         </div>
       </div>
       <AttachmentsPanel attachments={frame.attachments} />

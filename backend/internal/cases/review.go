@@ -51,6 +51,9 @@ type ReviewPage struct {
 	// SLIKTimeout is set after Manual SLIK Entry (UI-017 Varian Timeout
 	// SLIK): the SLIK rows of the run, above the history and the decision.
 	SLIKTimeout *APILogView
+	// TruncateChars and TruncateLines cut the log values on display (UI-020),
+	// set with Retry or SLIKTimeout.
+	TruncateChars, TruncateLines int
 }
 
 // APILogView is an API Log History panel: UI-020 rows (Gambar 35). On the
@@ -64,6 +67,7 @@ type APILogView struct {
 // APILogEntry is one Connect API Log row as UI-020 shows it.
 type APILogEntry struct {
 	Name, SubmittedAt, Status, Request, Response string
+	At                                           time.Time // for sorting by Waktu Connect
 }
 
 // recommendations lists the case's Pre-Screening Review Recommendations,
@@ -129,14 +133,11 @@ func (s *Service) reviewPage(ctx context.Context, sess auth.Session, caseID stri
 	if err != nil {
 		return ReviewPage{}, err
 	}
-	logEntry := func(r pgx.Rows) (APILogEntry, error) {
-		var (
-			l  APILogEntry
-			at time.Time
-		)
-		err := r.Scan(&l.Name, &at, &l.Status, &l.Request, &l.Response)
-		l.SubmittedAt = submittedAt(at.In(loc))
-		return l, err
+	logEntry := logEntryIn(loc)
+	cut := func() error {
+		var err error
+		page.TruncateChars, page.TruncateLines, err = s.logCut(ctx)
+		return err
 	}
 	if !retrying {
 		manual, started, err := inManualSLIKEntry(ctx, s.db, caseID)
@@ -154,7 +155,7 @@ func (s *Service) reviewPage(ctx context.Context, sess auth.Session, caseID stri
 			return ReviewPage{}, err
 		}
 		page.SLIKTimeout = &APILogView{Logs: logs}
-		return page, nil
+		return page, cut()
 	}
 	// The failed API's attempts of the newest run, its last cycle only: the
 	// API inside the step when it has several (Pefindo), else the step's.
@@ -180,7 +181,7 @@ func (s *Service) reviewPage(ctx context.Context, sess auth.Session, caseID stri
 		return ReviewPage{}, err
 	}
 	page.Retry = &APILogView{Logs: logs}
-	return page, nil
+	return page, cut()
 }
 
 // SubmitReview is Submit on the Pre-Screening Review (FR-APP-010): it validates

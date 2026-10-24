@@ -1275,3 +1275,248 @@
   color: #6b6b6b;
 }
 
+/* UI-020 column menu and filter popup (Gambar 36, 37) */
+.logHead {
+  position: relative;
+}
+
+.logMenuButton {
+  float: right;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.logMenu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  font-weight: normal;
+  white-space: nowrap;
+}
+
+.logMenu button {
+  width: 100%;
+  padding: 4px 12px;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.logMenu button:hover {
+  background: #e9eef3;
+}
+
+.filterPopup {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 520px;
+  max-width: 80vw;
+  padding: 10px 16px 14px;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  font-weight: normal;
+}
+
+.filterClear {
+  align-self: center;
+  border: none;
+  background: none;
+  color: #076bc9;
+  font: inherit;
+  cursor: pointer;
+}
+
+.filterValues {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 120px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.filterValue {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+.filterSearch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #6b6b6b;
+}
+
+.filterSearch input {
+  height: 28px;
+  border: 1px solid #a6a6a6;
+  border-radius: 4px;
+}
+
+.filterButtons {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.pill {
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid #076bc9;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #076bc9;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* History Details (UI-013) and UI-021 Pre-Screening API Data (Gambar 38-40) */
+.historyCard {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+  background: #ffffff;
+  border-radius: 8px;
+  overflow: visible;
+}
+
+.historyAccordion {
+  background: #ffffff;
+}
+
+.historyAccordionHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-bottom: 1px solid #d5dbe2;
+  background: #e9eef3;
+  font: inherit;
+  font-weight: bold;
+  text-align: left;
+  cursor: pointer;
+}
+
+.apiDataPanel {
+  padding: 16px;
+  background: #e5e8fc;
+  border-radius: 8px;
+}
+
+.processAccordion {
+  border-bottom: 1px solid #d5dbe2;
+}
+
+.processHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: #e9eef3;
+  font: inherit;
+  font-weight: bold;
+  text-align: left;
+  cursor: pointer;
+}
+
+.processTabs {
+  display: flex;
+  gap: 16px;
+  padding: 0 14px;
+  background: #ffffff;
+  border-bottom: 1px solid #d5dbe2;
+}
+
+.tab,
+.tabActive {
+  padding: 8px 2px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: #6b6b6b;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tabActive {
+  border-bottom-color: #000000;
+  color: #000000;
+  font-weight: bold;
+}
+
+.processBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: #f4f4f4;
+}
+
+.rejectBanner {
+  margin: 0;
+  padding: 16px;
+  background: #ffd9dc;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.apiField,
+.apiFieldIndent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.apiFieldIndent {
+  padding-left: 16px;
+}
+
+.apiLabel {
+  color: #6b6b6b;
+}
+
+.apiResult {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 0 10px 16px;
+  border-top: 1px solid #d5dbe2;
+}
+
+.viewDocument {
+  height: 30px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 15px;
+  background: #3bf200;
+  color: #000000;
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+

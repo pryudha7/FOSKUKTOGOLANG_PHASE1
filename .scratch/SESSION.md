@@ -12,6 +12,7 @@ Where the FOS KUK rebuild stands, so the next session can continue without re-de
 | 04 | UI-008 sidebar, Create menu (AO/SAO), avatar Log off | f26b5ba, 1afbc13 |
 | 05 | Create Financing Case, Case ID / Customer Code, Case View frame (stage bar, info panel, lifecycle popup, attachments panel) | b512c0b, aa8d56d |
 | 30 | Pre-Screening Submission (Perorangan): validation, customer rows, Next to Document Underlying Upload, Back | 6a7229c, 4d258a9 |
+| 19 | Hot Prospect Data Permohonan Fasilitas (UI-032): §9.41-9.44, server-side Financing Simulation (PMT, RATE, half-up rounding) shown live, Credit Simulation modal, product limit ERR-042/043 on Next, the Data Permohonan Fasilitas recommendation with its simulation, Next to QCA Data; steps after it reachable by breadcrumb only after that recommendation; activity log (DEC-142) moved to ticket 27 | 031edfa, fbce47a |
 | 18 | Hot Prospect Data Usaha Nasabah (UI-030) and Data Pembiayaan Lain (UI-031): business address and customer_business (§9.30, written on Save only when complete), other_financing cards (§9.31) replaced per save, Isi Data dari SLIK modal from the received customer SLIK, Save, Back to Previous Step, six-step breadcrumb; Next to Data Permohonan Fasilitas | 94da3f9, b92e8bf |
 | 16 | Prospect Data Entry Badan Usaha (UI-025): entity fields, code-or-description autocompletes, Go Public by description, Data Pengurus (Company Officers) on the Pre-Screening rows; Next to Financing Application; ERR-038/ERR-039 for failed dropdowns on all Prospect pages | 610e6d7, 0bec21d |
 | 17 | Prospect Data Entry Perorangan (UI-026 to UI-028): Data Pribadi with customer status, region cascade, e-KTP copy; Data Pasangan (Kawin only); Data Keluarga Dekat; Create to Financing Application with Data Usaha Nasabah | 0bfd12f, ceada0f |
@@ -33,7 +34,7 @@ Each ticket file in `.scratch/fos-kuk-phase1/issues/` has a **Comments** section
 
 ## Next
 
-Next recommended: **19** (Hot Prospect: Data Permohonan Fasilitas, the assignment ticket 18 opens), **31** (Pre-Screening Submission Badan Usaha; Pengurus rules already in cases/business.go), **37** (Problem Flow; TBD-043 questions first). Follow-up: BR-UI-012 for saved BMV codes no longer Active on the other dropdowns (tickets 15, 17). Also unblocked: **31** Badan Usaha form (now includes the Badan Usaha Document Underlying Upload variant), **32** Case View mode Case + To do, **06** assignment lock, **27** Dashboard. Ticket **29** (operator/master-data management) waits on TBD-003/018. Open domain questions for the SoT owner: `.scratch/fos-kuk-glossary/issues/01-open-domain-questions.md`.
+Next recommended: **20** (Hot Prospect: QCA Data, the assignment ticket 19 opens), **31** (Pre-Screening Submission Badan Usaha; Pengurus rules already in cases/business.go), **37** (Problem Flow; TBD-043 questions first). Follow-up: BR-UI-012 for saved BMV codes no longer Active on the other dropdowns (tickets 15, 17). Also unblocked: **31** Badan Usaha form (now includes the Badan Usaha Document Underlying Upload variant), **32** Case View mode Case + To do, **06** assignment lock, **27** Dashboard. Ticket **29** (operator/master-data management) waits on TBD-003/018. Open domain questions for the SoT owner: `.scratch/fos-kuk-glossary/issues/01-open-domain-questions.md`.
 
 ## How each ticket was worked
 

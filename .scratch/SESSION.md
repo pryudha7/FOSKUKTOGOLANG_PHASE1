@@ -12,6 +12,7 @@ Where the FOS KUK rebuild stands, so the next session can continue without re-de
 | 04 | UI-008 sidebar, Create menu (AO/SAO), avatar Log off | f26b5ba, 1afbc13 |
 | 05 | Create Financing Case, Case ID / Customer Code, Case View frame (stage bar, info panel, lifecycle popup, attachments panel) | b512c0b, aa8d56d |
 | 30 | Pre-Screening Submission (Perorangan): validation, customer rows, Next to Document Underlying Upload, Back | 6a7229c, 4d258a9 |
+| 34 | SLIK report PDF (fpdf, Helvetica), stored with the result; copy into Dokumen Pre-Screening on opening Document Underlying Upload | 8be9b65, e638e11 |
 | 12 | SLIK SLA timeout, bypass, Manual SLIK Entry (System Input Manual, ERR-036, UI-017 Timeout SLIK, Sesuai resumes at Pefindo); SLIKWQFlowAct/UI-023/SLIKInquiry split to ticket 36 | fdd5051, 4171104 |
 | 13 | Pefindo Search, Generate Report, Download PDF, Get Report; encrypted shared token; prescreening_runs.current_api; report children split to ticket 35 | 1412cf8, ad28c09 |
 | 11 | SLIK request (ZIP, kode reff), PBSResponse service at /api/NBS/, SLIK parsing into six tables, SLIK Check Rejection; PDF split to ticket 34 | dd1b15a, a46e75f |
@@ -25,7 +26,7 @@ Each ticket file in `.scratch/fos-kuk-phase1/issues/` has a **Comments** section
 
 ## Next
 
-Next recommended: **34** (SLIK PDF), **35** (Pefindo report details), **36** (Waiting SLIK + SLIKInquiry). Also unblocked: **31** Badan Usaha form (now includes the Badan Usaha Document Underlying Upload variant), **32** Case View mode Case + To do, **06** assignment lock, **27** Dashboard. Ticket **29** (operator/master-data management) waits on TBD-003/018. Open domain questions for the SoT owner: `.scratch/fos-kuk-glossary/issues/01-open-domain-questions.md`.
+Next recommended: **35** (Pefindo report details), **36** (Waiting SLIK + SLIKInquiry). Also unblocked: **31** Badan Usaha form (now includes the Badan Usaha Document Underlying Upload variant), **32** Case View mode Case + To do, **06** assignment lock, **27** Dashboard. Ticket **29** (operator/master-data management) waits on TBD-003/018. Open domain questions for the SoT owner: `.scratch/fos-kuk-glossary/issues/01-open-domain-questions.md`.
 
 ## How each ticket was worked
 

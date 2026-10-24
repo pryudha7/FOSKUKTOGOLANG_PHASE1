@@ -550,9 +550,13 @@ type reportToStore struct {
 	receivedAt time.Time
 }
 
-// storePefindoReport replaces the subject's report and its scoring in tx,
-// before the Reject is decided (DB-RULE-074, DB-RULE-075).
+// storePefindoReport replaces the subject's report, its scoring and its
+// detail tables in tx, before the Reject is decided (DB-RULE-074,
+// DB-RULE-075, DB-RULE-112).
 func (e *Executor) storePefindoReport(ctx context.Context, tx pgx.Tx, caseID string, sr reportToStore) error {
+	if err := deleteReportDetails(ctx, tx, caseID, sr.subject); err != nil {
+		return err
+	}
 	for _, q := range []string{
 		`DELETE FROM fos.pefindo_scoring_reason WHERE pefindo_scoring_id IN (SELECT s.pefindo_scoring_id FROM fos.pefindo_scoring s
 			JOIN fos.pefindo_report r USING (pefindo_report_id) WHERE r.case_id = $1 AND r.subject_type = $2)`,
@@ -598,6 +602,9 @@ func (e *Executor) storePefindoReport(ctx context.Context, tx pgx.Tx, caseID str
 		reportTime(jsonText(report.Header.InquiryDate)), jsonOrNil(report.Management), jsonOrNil(report.OtherData),
 		jsonOrNil(report.OtherDataSource), jsonOrNil(report.DebtorHistory), jsonOrNil(report.CurrentContract),
 		jsonOrNil(report.InquiriesAnalysis), jsonOrNil(report.PastDueInformation), jsonOrNil(report.Repayment), sr.receivedAt).Scan(&id); err != nil {
+		return err
+	}
+	if err := storeReportDetails(ctx, tx, id, sr.report); err != nil {
 		return err
 	}
 	for _, s := range sr.scoring {

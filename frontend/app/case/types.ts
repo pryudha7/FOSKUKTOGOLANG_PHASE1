@@ -61,6 +61,15 @@ export type Recommendation = { decidedBy: string; submittedAt: string; decision:
 // One Connect API Log row (UI-020); submittedAt is dd/MM/yy H:mm.
 export type APILogEntry = { name: string; submittedAt: string; status: string; request: string; response: string };
 
+// UI-023 Waiting SLIK: whole minutes left before the SLIK SLA when opened.
+export type WaitingSLIKPage = {
+  editable: boolean;
+  dueMinutes: number;
+};
+
+// One subject's Check SLIK Status answer.
+export type SLIKStatus = { subject: "CUSTOMER" | "SPOUSE"; message: string };
+
 // UI-017 for the Team Lead.
 export type ReviewPage = {
   decisionOptions: Option[];
@@ -119,5 +128,5 @@ export type Assignment = {
   status: string;
   // PreScreeningPage on Pre-Screening Submission, UnderlyingPage on
   // Document Underlying Upload.
-  page: PreScreeningPage | UnderlyingPage | ReviewPage | null;
+  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | null;
 };

@@ -3,6 +3,7 @@ export const assignmentNames = {
   preScreeningSubmission: "Pre-Screening Submission",
   underlyingDocumentUpload: "Document Underlying Upload",
   preScreeningReview: "Pre Screening", // the Team Lead's Pre-Screening Review
+  waitingSLIK: "SLIKWQFlowAct", // UI-023
 } as const;
 
 // The Tipe Nasabah description whose form exists today (Badan Usaha:

@@ -448,6 +448,9 @@ func (e *Executor) advance(ctx context.Context, r runRef, a attempt) bool {
 			}
 			d := e.s.now().Add(time.Duration(sla) * time.Second)
 			state, deadline, waiting = runWaitingSLIK, &d, true
+			if err := openWaitingSLIK(ctx, tx, r.caseID, e.s.now()); err != nil {
+				return err
+			}
 		}
 		_, err = tx.Exec(ctx, `UPDATE fos.prescreening_runs SET state = $2, current_step = $3, current_api = NULL, attempt = 1,
 			wait_deadline_at = $4, heartbeat_at = $5, updated_at = $5 WHERE run_id = $1`, r.id, state, next, deadline, e.s.now())

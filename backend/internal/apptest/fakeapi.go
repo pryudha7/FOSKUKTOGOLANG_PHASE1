@@ -136,8 +136,12 @@ var (
 	SLIKInvalid  = FakeReply{Status: 400, Body: `{"code":"4000","message":"request invalid","errors":["pilihan fasilitas hanya boleh Seluruh atau Outstanding"]}`}
 )
 
-// UseSLIK points the SLIK settings at a fake.
+// UseSLIK points the SLIK settings at a fake; SLIKInquiry, which shares its
+// base URL and key, gets the same short timeout.
 func (h *Harness) UseSLIK(t *testing.T, f *FakeAPI) {
 	t.Helper()
 	h.useAPI(t, "slik", f.URL, "SLIK_APIKEY", SLIKAPIKey)
+	if _, err := h.DB.Exec(context.Background(), `UPDATE fos.dynamic_system_settings SET value = '300' WHERE purpose = 'api/slikinquiry/timeout_ms'`); err != nil {
+		t.Fatal(err)
+	}
 }

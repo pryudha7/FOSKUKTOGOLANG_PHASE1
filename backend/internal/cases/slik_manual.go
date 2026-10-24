@@ -113,6 +113,9 @@ func (e *Executor) timeOutSLIK(ctx context.Context, runID int64) error {
 	if _, err := tx.Exec(ctx, `UPDATE fos.prescreening_runs SET state = $2, updated_at = $3 WHERE run_id = $1`, runID, runStoppedSLIKTimeout, now); err != nil {
 		return err
 	}
+	if err := completeWaitingSLIK(ctx, tx, caseID, now); err != nil {
+		return err
+	}
 	if err := e.manualSLIK(ctx, tx, caseID); err != nil {
 		return err
 	}

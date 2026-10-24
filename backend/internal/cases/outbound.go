@@ -18,11 +18,11 @@ import (
 // (FR-PSAPI-004).
 
 // outboundAPI names one API: its Connect API Log api_name, its settings key
-// (api/<settings>/..., secret/<settings>/apikey_ref), the settings key of
-// its base URL when another API's (base; "" for its own) and the header that
-// carries its key ("" for an API without one).
+// (api/<settings>/..., secret/<settings>/apikey_ref), the settings keys of
+// its base URL and of its key when another API's (base, secret; "" for its
+// own) and the header that carries its key ("" for an API without one).
 type outboundAPI struct {
-	logName, settings, base, keyHeader string
+	logName, settings, base, secret, keyHeader string
 }
 
 // maxResponseBytes bounds a response read into the log.
@@ -80,7 +80,11 @@ func (e *Executor) apiConfig(ctx context.Context, a outboundAPI) (apiConfig, err
 	if keyHeader == "" {
 		return c, nil
 	}
-	keyRef, err := st.String(ctx, "secret/"+api+"/apikey_ref")
+	secret := a.secret
+	if secret == "" {
+		secret = api
+	}
+	keyRef, err := st.String(ctx, "secret/"+secret+"/apikey_ref")
 	if err != nil {
 		return c, err
 	}

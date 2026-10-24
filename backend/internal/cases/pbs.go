@@ -196,6 +196,7 @@ func (s *Service) receiveSLIK(ctx context.Context, rpaUser, kode string, zipData
 	res.Code, res.LogStatus = "0", apiSuccess
 	res.Message = "Case " + caseID + " successfully resume to Pipeline Data Entry"
 	resumeID := int64(0)
+	stillWaiting := false
 	if runState != runRunning && runState != runWaitingSLIK {
 		// The case no longer waits (rejected, failed, ...): the result is kept
 		// but changes nothing (agreed; SoT silent).
@@ -221,6 +222,7 @@ func (s *Service) receiveSLIK(ctx context.Context, rpaUser, kode string, zipData
 			res.LogStatus = apiRejected
 		case pending:
 			res.Message = "SLIK result for " + kode + " received; waiting for the other result" // agreed for TBD-044
+			stillWaiting = true
 		case runState == runWaitingSLIK:
 			// Every result is in: the waiting run goes on (Pefindo, ...).
 			if _, err := tx.Exec(ctx, `
@@ -229,6 +231,13 @@ func (s *Service) receiveSLIK(ctx context.Context, rpaUser, kode string, zipData
 				return res, 0, err
 			}
 			resumeID = runID
+		}
+	}
+	// Every result in, a reject or a case that no longer waits ends the
+	// Branch Officer's waiting assignment (FR-PSAPI-013 Assignment 2).
+	if !stillWaiting {
+		if err := completeWaitingSLIK(ctx, tx, caseID, now); err != nil {
+			return res, 0, err
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {

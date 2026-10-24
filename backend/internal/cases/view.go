@@ -224,6 +224,8 @@ type AssignmentPage struct {
 	Underlying *UnderlyingPage
 	// Review is set for the Team Lead's Pre-Screening Review assignment.
 	Review *ReviewPage
+	// WaitingSLIK is set for the Branch Officer's waiting assignment (UI-023).
+	WaitingSLIK *WaitingSLIKPage
 }
 
 // PreScreeningPage is the data UI-010 shows today: Nama Branch and the Tipe
@@ -310,6 +312,13 @@ func (s *Service) OpenAssignment(ctx context.Context, sess auth.Session, caseID 
 			return AssignmentPage{}, err
 		}
 		p.Underlying = &page
+	}
+	if p.Name == AssignmentWaitingSLIK {
+		page, err := s.waitingSLIKPage(ctx, caseID, owner && p.Status != AssignmentCompleted)
+		if err != nil {
+			return AssignmentPage{}, err
+		}
+		p.WaitingSLIK = &page
 	}
 	if p.Name == AssignmentPreScreeningReview {
 		page, err := s.reviewPage(ctx, sess, caseID)

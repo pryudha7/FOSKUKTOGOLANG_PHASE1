@@ -109,3 +109,35 @@ func (s *server) submitReview(ep endpoint) http.HandlerFunc {
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
+
+// checkSLIKStatus handles POST .../assignments/{id}/slik-status: Check SLIK
+// Status on the waiting assignment (FR-PSAPI-013, UI-023). It takes no body
+// and answers each subject's message, Customer first.
+func (s *server) checkSLIKStatus(ep endpoint) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sess, ok := s.session(w, r, ep)
+		if !ok {
+			return
+		}
+		caseID, id, ok := pathAssignment(r)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		statuses, err := s.cases.CheckSLIKStatus(r.Context(), sess, caseID, id)
+		if writeAssignmentError(w, "check SLIK status", err) {
+			return
+		}
+		type statusJSON struct {
+			Subject string `json:"subject"`
+			Message string `json:"message"`
+		}
+		out := []statusJSON{}
+		for _, st := range statuses {
+			out = append(out, statusJSON(st))
+		}
+		writeJSON(w, http.StatusOK, struct {
+			Statuses []statusJSON `json:"statuses"`
+		}{out})
+	}
+}

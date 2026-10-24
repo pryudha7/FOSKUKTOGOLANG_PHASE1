@@ -151,11 +151,31 @@ export type Section = "form" | "customer" | "spouse" | "upload" | "slik" | "docu
 // field key, field the label shown in the banner.
 export type FieldError = { section: Section; key: string; field: string; code: string; message: string };
 
+// A file item of UI-024: name is the link text, caption the line under it,
+// fileName the download's name.
+export type DocumentItem = { fileId: string; fileName: string; name: string; caption: string };
+
+// UI-024 Pipeline Data Entry (FR-APP-004): the case's values (codes; Nama
+// Bank as typed) and the dropdown options.
+export type PipelinePage = {
+  branchCode: string; // empty when the Branch is not Active
+  branchName: string;
+  customerType: string;
+  submissionType: string;
+  productCode: string;
+  bankName: string;
+  submissionTypeOptions: Option[];
+  productOptions: Option[]; // description is the product name
+  identity: { label: string; file: DocumentItem | null }; // KTP, or NPWP Badan Usaha
+  bankLetter: DocumentItem | null;
+  editable: boolean;
+};
+
 export type Assignment = {
   assignmentId: number;
   name: string;
   status: string;
   // PreScreeningPage on Pre-Screening Submission, UnderlyingPage on
   // Document Underlying Upload.
-  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | null;
+  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | null;
 };

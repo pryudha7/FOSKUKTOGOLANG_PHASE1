@@ -183,12 +183,7 @@ func (s *Service) Create(ctx context.Context, creator auth.Session, caseType str
 		caseID, StageFinancingSubmission, now); err != nil {
 		return Created{}, err
 	}
-	// A process counts as started when its first assignment is created (TBD-034a, agreed).
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO fos.case_process_progress (case_id, process_id, first_started_at)
-		SELECT $1, process_id, $4 FROM fos.lifecycle_process
-		WHERE stage_name = $2 AND process_name = $3 ORDER BY sort_order LIMIT 1`,
-		caseID, StageFinancingSubmission, ProcessPreScreeningSubmission, now); err != nil {
+	if err := startProcess(ctx, tx, caseID, ProcessPreScreeningSubmission, now); err != nil {
 		return Created{}, err
 	}
 	// FR-ASSIGN-001 rule 1: a worklist assignment for the creator, already opened.

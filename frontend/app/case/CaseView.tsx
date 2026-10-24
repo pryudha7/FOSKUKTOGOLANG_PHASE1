@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import type { Assignment, CaseFrame, PreScreeningPage, ReviewPage, UnderlyingPage, WaitingSLIKPage } from "./types";
+import type { Assignment, CaseFrame, PipelinePage, PreScreeningPage, ReviewPage, UnderlyingPage, WaitingSLIKPage } from "./types";
 import CaseInfoPanel, { CaseHeader } from "./CaseInfoPanel";
 import StageBar from "./StageBar";
 import AttachmentsPanel from "./AttachmentsPanel";
@@ -10,6 +10,7 @@ import PreScreeningSubmission from "./PreScreeningSubmission";
 import UnderlyingDocumentUpload from "./UnderlyingDocumentUpload";
 import PreScreeningReview from "./PreScreeningReview";
 import WaitingSLIK from "./WaitingSLIK";
+import PipelineDataEntry from "./PipelineDataEntry";
 import HistoryDetails from "./HistoryDetails";
 import { assignmentNames } from "./names";
 import styles from "./case.module.css";
@@ -79,6 +80,8 @@ export default function CaseView({
             <PreScreeningReview page={assignment.page as ReviewPage} assignment={ref} />
           ) : assignment.page && assignment.name === assignmentNames.waitingSLIK ? (
             <WaitingSLIK page={assignment.page as WaitingSLIKPage} assignment={ref} />
+          ) : assignment.page && assignment.name === assignmentNames.pipelineDataEntry ? (
+            <PipelineDataEntry page={assignment.page as PipelinePage} assignment={ref} onFilesChanged={load} />
           ) : (
             <section className={styles.card}>
               <h2 className={styles.cardTitle}>{assignment.name}</h2>

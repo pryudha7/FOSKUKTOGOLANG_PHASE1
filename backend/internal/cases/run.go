@@ -422,9 +422,12 @@ func nextStep(step string) string {
 func (e *Executor) advance(ctx context.Context, r runRef, a attempt) bool {
 	next := nextStep(r.step)
 	if next == "" {
-		// Every check passed: Pipeline Data Entry (FR-APP-004) is ticket 15.
+		// Every check passed: the case enters Pipeline Data Entry (FR-APP-004).
 		e.finish(ctx, r, a.log, func(ctx context.Context, tx pgx.Tx, _ runRef) (string, error) {
-			return runCompleted, applyOf(a)(ctx, tx)
+			if err := applyOf(a)(ctx, tx); err != nil {
+				return "", err
+			}
+			return runCompleted, e.openPipeline(ctx, tx, r.caseID)
 		})
 		return false
 	}

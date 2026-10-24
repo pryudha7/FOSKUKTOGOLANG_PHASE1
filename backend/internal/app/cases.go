@@ -222,6 +222,8 @@ func (s *server) openAssignment(ep endpoint) http.HandlerFunc {
 			body = toReviewJSON(*p.Review)
 		case p.WaitingSLIK != nil:
 			body = toWaitingSLIKJSON(*p.WaitingSLIK)
+		case p.Pipeline != nil:
+			body = toPipelineJSON(*p.Pipeline)
 		}
 		writeJSON(w, http.StatusOK, struct {
 			AssignmentID int64  `json:"assignmentId"`

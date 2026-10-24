@@ -226,6 +226,8 @@ type AssignmentPage struct {
 	Review *ReviewPage
 	// WaitingSLIK is set for the Branch Officer's waiting assignment (UI-023).
 	WaitingSLIK *WaitingSLIKPage
+	// Pipeline is set for Pipeline Data Entry (UI-024).
+	Pipeline *PipelinePage
 }
 
 // PreScreeningPage is the data UI-010 shows today: Nama Branch and the Tipe
@@ -318,6 +320,13 @@ func (s *Service) OpenAssignment(ctx context.Context, sess auth.Session, caseID 
 			return AssignmentPage{}, err
 		}
 		p.WaitingSLIK = &page
+	}
+	if p.Name == AssignmentPipelineDataEntry {
+		page, err := s.pipelinePage(ctx, caseID, owner && p.Status != AssignmentCompleted)
+		if err != nil {
+			return AssignmentPage{}, err
+		}
+		p.Pipeline = &page
 	}
 	if p.Name == AssignmentPreScreeningReview {
 		page, err := s.reviewPage(ctx, sess, caseID)

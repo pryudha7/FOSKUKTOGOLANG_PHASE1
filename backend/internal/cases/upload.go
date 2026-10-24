@@ -84,6 +84,12 @@ func (s *Service) UploadDocument(ctx context.Context, sess auth.Session, caseID 
 	if err := s.checkUploadTarget(ctx, sess, caseID, assignmentID, u); err != nil {
 		return StoredFile{}, err
 	}
+	return s.storeUpload(ctx, sess, caseID, assignmentID, u)
+}
+
+// storeUpload validates the file and stores it in its slot (category and
+// type) of the operator's open assignment (FR-FILE-001, FR-FILE-002).
+func (s *Service) storeUpload(ctx context.Context, sess auth.Session, caseID string, assignmentID int64, u UploadRequest) (StoredFile, error) {
 	name := strings.TrimSpace(u.Name)
 	ext := strings.ToLower(path.Ext(u.OriginalFileName))
 	var errs []FieldError

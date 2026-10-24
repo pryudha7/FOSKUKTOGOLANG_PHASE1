@@ -1525,3 +1525,139 @@
   color: #6b6b6b;
 }
 
+/* UI-024 Pipeline Data Entry (Gambar 45-47): two columns on wide screens
+   (BR-UI-008), one below 768 px (PROPOSED). */
+.pipelinePanel {
+  gap: 24px;
+}
+
+.pipelineGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px 24px;
+}
+
+.pipelineGrid input,
+.pipelineGrid select {
+  min-width: 0;
+}
+
+.pipelineColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+@media (max-width: 767px) {
+  .pipelineGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.bankLetter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.bankLetterLabel,
+.identityLabel {
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.attachmentButton {
+  height: 26px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 13px;
+  background: #31f000;
+  color: #146000;
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.clipIcon {
+  color: #9a9a9a;
+}
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 24px;
+}
+
+.identity .fileItem {
+  align-self: center;
+}
+
+.fileItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #3d3d3d;
+  font-size: 12px;
+}
+
+.fileItemIcon {
+  flex: none;
+  color: #9a9a9a;
+}
+
+.fileItemText {
+  display: flex;
+  flex-direction: column;
+}
+
+.fileItemLink {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #1a73e8;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.autocomplete {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.autocompleteList {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  max-height: 220px;
+  margin: 2px 0 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  list-style: none;
+  background: #ffffff;
+  border: 1px solid #d5dbe2;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.autocompleteOption,
+.autocompleteActive,
+.autocompleteFailed {
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.autocompleteActive {
+  background: #e9eef8;
+}
+
+.autocompleteFailed {
+  color: #8a8c99;
+  cursor: default;
+}
+

@@ -33,11 +33,13 @@ const (
 	colJSON
 )
 
-var castOf = map[colKind]string{colText: "varchar", colInt: "integer", colBigint: "bigint", colAmount: "numeric",
+// sqlCastOf is the parameter cast of each kind in an insert.
+var sqlCastOf = map[colKind]string{colText: "varchar", colInt: "integer", colBigint: "bigint", colAmount: "numeric",
 	colDate: "date", colTimestamp: "timestamp", colJSON: "jsonb"}
 
 // reportColumn is a column of a detail table and the report field it comes
-// from ("" when §9 names none yet).
+// from: "" when §9 names none yet, stored NULL until a Get Report sample
+// shows it (ticket 35 Comment 1, open domain question).
 type reportColumn struct {
 	name, source string
 	kind         colKind
@@ -75,16 +77,15 @@ func (c reportColumn) value(m map[string]any) any {
 	case colBigint:
 		return wholeNumber(t, math.MinInt64, math.MaxInt64)
 	case colAmount:
-		r, ok := new(big.Rat).SetString(t)
+		// The range is checked on the rounded value, which is what is stored.
+		r, text, ok := decimal2(t)
 		if !ok || new(big.Rat).Abs(r).Cmp(maxAmount) >= 0 {
 			return nil
 		}
-		return r.FloatString(2)
+		return text
 	case colDate:
-		if len(t) < 10 {
-			return nil
-		}
-		d, err := time.Parse("2006-01-02", t[:10])
+		// Exactly yyyy-MM-dd (DB-RULE-113).
+		d, err := time.Parse("2006-01-02", t)
 		if err != nil {
 			return nil
 		}
@@ -97,17 +98,28 @@ func (c reportColumn) value(m map[string]any) any {
 	return nil
 }
 
-// scalarText is a string or number as text; ok is false for anything else.
+// scalarText is a string or number as text; ok is false for anything else
+// (agreed for ticket 35: VARCHAR columns take numbers as text).
 func scalarText(v any) (string, bool) {
 	switch x := v.(type) {
 	case string:
 		return strings.TrimSpace(x), true
 	case json.Number:
 		return x.String(), true
-	case bool:
-		return strconv.FormatBool(x), true
 	}
 	return "", false
+}
+
+// decimal2 is a decimal rounded to two places, as a number and as text;
+// ok is false when s is not a number.
+func decimal2(s string) (rounded *big.Rat, text string, ok bool) {
+	r, ok := new(big.Rat).SetString(strings.TrimSpace(s))
+	if !ok {
+		return nil, "", false
+	}
+	text = r.FloatString(2)
+	rounded, _ = new(big.Rat).SetString(text)
+	return rounded, text, true
 }
 
 // wholeNumber reads an integer within [lo, hi], also written with a zero
@@ -158,7 +170,8 @@ func deleteReportDetails(ctx context.Context, tx pgx.Tx, caseID, subject string)
 
 // storeReportDetails writes the report's detail rows in tx. A null or empty
 // debitur makes no debtor row; every array element makes a row, an element
-// that is not an object one with its sequence number only (agreed).
+// that is not an object one with its sequence number only (ticket 35
+// Comment 1).
 func storeReportDetails(ctx context.Context, tx pgx.Tx, reportID int64, raw json.RawMessage) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber() // keeps long identifiers exact
@@ -196,7 +209,7 @@ func insertDetail(ctx context.Context, tx pgx.Tx, d reportDetail, reportID int64
 	for _, c := range d.columns {
 		args = append(args, c.value(m))
 		names = append(names, c.name)
-		params = append(params, fmt.Sprintf("$%d::%s", len(args), castOf[c.kind]))
+		params = append(params, fmt.Sprintf("$%d::%s", len(args), sqlCastOf[c.kind]))
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO fos.`+d.table+` (`+strings.Join(names, ", ")+`) VALUES (`+strings.Join(params, ", ")+`)`, args...)
 	return err

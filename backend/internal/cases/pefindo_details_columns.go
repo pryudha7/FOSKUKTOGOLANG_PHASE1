@@ -4,8 +4,8 @@
 package cases
 
 // The columns of the Pefindo report detail tables and the report fields
-// they come from (§9.35-9.39); "" is a column §9 names no source for yet
-// (stored NULL, agreed for ticket 35).
+// they come from (§9.35-9.39); "" is a column §9 names no source for yet,
+// stored NULL until a Get Report sample shows it (ticket 35 Comment 1).
 
 // pefindoDebtorColumns are the columns of pefindo_debtor (§9.35).
 var pefindoDebtorColumns = []reportColumn{

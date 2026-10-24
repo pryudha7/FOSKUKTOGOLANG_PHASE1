@@ -31,3 +31,11 @@ Implementation notes (2026-10-24):
 - Mutation checks (each fails a test): details not stored; not deleted before a new report; no NUMERIC(18,2) range check; float decoding of identifiers; no INTEGER range; sequence from 0; a row for an empty debitur; inquiry_date unread.
 - No UI: the report is not shown on any screen yet (DEC-097).
 
+Review fixes (2026-10-24, agreed with the user):
+
+- NUMERIC(18,2): the range is checked on the rounded value (9999999999999999.996 is stored NULL instead of failing Get Report). One decimal2 helper rounds for the columns and for the SLIK PDF amounts.
+- Dates are read only when exactly yyyy-MM-dd (DB-RULE-113); booleans are stored NULL (VARCHAR takes strings and numbers only).
+- DB-RULE-077 is tested: the report's personal data does not appear in the application log during the Pefindo run.
+- Generator: readable kind names, the key column alone tells a sequenced table; sqlCastOf; comments on the NULL columns point to Comment 1 and the open domain question. The generated migration is unchanged.
+- Kept as is: no SMALLINT bound on sequence_number (over 32767 elements is not realistic; SLIK is the same); a non-object array element still gets its row (Comment 1); ticket Status lines stay as on other done tickets, done work is tracked in .scratch/SESSION.md.
+

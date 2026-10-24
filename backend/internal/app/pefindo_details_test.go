@@ -26,6 +26,8 @@ func detailedReport() map[string]any {
 			"nama_gadis_ibu_kandung": "SITI", "jml_agunan": "2", "kolektabilitas_terburuk": 3.0, "arrears_days": 99999999999,
 			"jml_plafon": "1234567.891", "jml_tunggakan": "123456789012345678", "tanggal_lahir": "1990-01-31", "tgl_tunggakan_terakhir": "31/01/2020",
 			"id_debitur_golden_record": json.Number("9007199254740993"),
+			"pawn_jml_plafon":          "9999999999999999.996", "jml_saldo_terutang": "99.999", "tgl_buka_fasilitas_terakhir": "2020-01-31T00:00:00",
+			"email": true, "debtor_address": "Jl. Rahasia Pribadi 9",
 		},
 		"fasilitas": []any{
 			map[string]any{"plafon": 485000000, "baki_debet": "5000000.5", "id_valuta": "IDR", "id_pelapor": json.Number("4294967297"),
@@ -39,23 +41,33 @@ func detailedReport() map[string]any {
 	}
 }
 
-// AC-FR-PSAPI-017-06, DB-RULE-112, DB-RULE-113 (agreed for ticket 35): a
-// report's debtor, facilities, inquiries, inquiry summary and identity
-// history are stored with it, values converted per column and NULL when
-// unreadable or out of range; a new Get Report replaces them.
+// AC-FR-PSAPI-017-06, DB-RULE-112, DB-RULE-113, DB-RULE-077 (agreed for
+// ticket 35): a report's debtor, facilities, inquiries, inquiry summary and
+// identity history are stored with it, values converted per column and NULL
+// when unreadable, out of range (after rounding), a boolean or a date that
+// is not exactly yyyy-MM-dd; none of it is logged; a new Get Report
+// replaces them.
 func TestPefindoReportDetailsAreStored(t *testing.T) {
 	scripts := pefindoPassScripts()
 	scripts[apptest.PefindoReport] = []apptest.FakeReply{reportWith("01", detailedReport(), scoring("2025-07-15", "C2"))}
+	logs := apptest.CaptureLogs(t)
 	h, _, caseID := pefindoBusiness(t, scripts)
 	if got := run(t, h, caseID); got.State != "COMPLETED" {
 		t.Fatalf("run = %+v", got)
+	}
+	// DB-RULE-077: the report's personal data never reaches the application log.
+	for _, private := range []string{"Jl. Rahasia Pribadi 9", "SITI", "Menteng"} {
+		if strings.Contains(logs.String(), private) {
+			t.Fatalf("application log holds %q", private)
+		}
 	}
 	for sql, want := range map[string]int{
 		`SELECT count(*) FROM fos.pefindo_debtor d JOIN fos.pefindo_report r USING (pefindo_report_id) WHERE r.case_id = $1
 			AND d.npwp = '012345678901000' AND d.location_id = '3171' AND d.subdistrict = 'Menteng' AND d.identity_number = '3171011234567890'
 			AND d.mother_maiden_name = 'SITI' AND d.collateral_count = 2 AND d.worst_collectability = 3 AND d.arrears_days IS NULL
 			AND d.total_credit_limit = 1234567.89 AND d.total_arrears IS NULL AND d.birth_date = '1990-01-31' AND d.last_arrears_date IS NULL
-			AND d.golden_record_debtor_id = 9007199254740993 AND d.email IS NULL`: 1,
+			AND d.golden_record_debtor_id = 9007199254740993 AND d.email IS NULL AND d.pawn_total_credit_limit IS NULL
+			AND d.total_outstanding_balance = 100.00 AND d.last_facility_open_date IS NULL AND d.debtor_address = 'Jl. Rahasia Pribadi 9'`: 1,
 		`SELECT count(*) FROM fos.pefindo_facility f JOIN fos.pefindo_report r USING (pefindo_report_id) WHERE r.case_id = $1 AND f.sequence_number = 1
 			AND f.plafon = 485000000 AND f.outstanding_principal = 5000000.50 AND f.currency_id = 'IDR' AND f.reporter_id = 4294967297
 			AND f.worst_collectability = 1 AND f.worst_collectability_source_variant = 2 AND f.start_contract_date = '2023-05-09'

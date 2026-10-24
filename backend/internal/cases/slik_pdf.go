@@ -3,7 +3,6 @@ package cases
 import (
 	"bytes"
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
@@ -141,11 +140,10 @@ func englishMonth(s string) string {
 // pdfAmount is a decimal with thousands commas and two decimals
 // (1,103,713,259.00); "" when it is not a number.
 func pdfAmount(s string) string {
-	r, ok := new(big.Rat).SetString(strings.TrimSpace(s))
+	_, fixed, ok := decimal2(s)
 	if !ok {
 		return ""
 	}
-	fixed := r.FloatString(2)
 	sign := ""
 	if strings.HasPrefix(fixed, "-") {
 		sign, fixed = "-", fixed[1:]

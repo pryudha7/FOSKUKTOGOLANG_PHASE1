@@ -3,7 +3,6 @@ package cases
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"sort"
 	"strconv"
@@ -30,27 +29,35 @@ const dhnMessage = "Pengecekan DHN tidak dilakukan, mohon pastikan cabang member
 
 // HistoryDetails is the History Details card of a case.
 type HistoryDetails struct {
-	Logs []APILogEntry
-	// TruncateChars and TruncateLines cut Request and Response on display
-	// (ui/apilog/truncate_*, UI-020).
-	TruncateChars, TruncateLines int
-	Processes                    []APIDataProcess
+	Logs      []APILogEntry
+	Cut       LogCut
+	Processes []APIDataProcess
 }
+
+// LogCut is how API Log History cuts long Request and Response on display
+// (ui/apilog/truncate_chars and truncate_lines, UI-020).
+type LogCut struct{ Chars, Lines int }
+
+// Document kinds of a process: the file View SLIK or Download PDF fetches.
+const (
+	DocumentSLIKReport    = "slik"
+	DocumentPefindoReport = "pefindo"
+)
 
 // APIDataProcess is one sub-accordion of Pre-Screening API Data. Rejected
 // shows the ERR-034 banner on REQUEST; RejectedOnly is the Rejected List
 // variant (banner only, no tabs). Document is the file of View SLIK or
 // Download PDF, when there is one.
 type APIDataProcess struct {
-	Name           string
-	Rejected       bool
-	RejectedOnly   bool
-	Request        []APIDataField
-	Response       []APIDataField
-	Errors         []string         // SLIK: one line each
-	Results        [][]APIDataField // Pefindo: the data blocks, highest Similarity Score first
-	Document       *CaseFile
-	DocumentAction string // "View SLIK" or "Download PDF"
+	Name         string
+	Rejected     bool
+	RejectedOnly bool
+	Request      []APIDataField
+	Response     []APIDataField
+	Errors       []string         // SLIK: one line each
+	Results      [][]APIDataField // Pefindo: the data blocks, highest Similarity Score first
+	Document     *CaseFile
+	DocumentKind string // DocumentSLIKReport or DocumentPefindoReport
 }
 
 // CaseFile is a case document to download: its id and file_name.
@@ -75,14 +82,12 @@ func (s *Service) History(ctx context.Context, sess auth.Session, caseID string,
 	if err != nil {
 		return HistoryDetails{}, err
 	}
-	owner := AssignmentType(kind) == Worklist && value(assignee) == sess.UserID
-	authors := sess.AccessGroup != nil && sess.AccessGroup.Name == "Authors"
-	if !owner && !authors {
+	if _, may := mayOpen(sess, AssignmentType(kind), value(assignee)); !may {
 		return HistoryDetails{}, ErrForbidden
 	}
 
 	var h HistoryDetails
-	if h.TruncateChars, h.TruncateLines, err = s.logCut(ctx); err != nil {
+	if h.Cut, err = s.logCut(ctx); err != nil {
 		return h, err
 	}
 	loc, err := operatorLocationOf(ctx, s.db, sess.UserID)
@@ -104,15 +109,22 @@ func (s *Service) History(ctx context.Context, sess auth.Session, caseID string,
 	return h, err
 }
 
-// logCut reads how API Log History cuts long values on display
-// (ui/apilog/truncate_chars and truncate_lines, UI-020).
-func (s *Service) logCut(ctx context.Context) (chars, lines int, err error) {
-	c, err := s.settings.Int(ctx, "ui/apilog/truncate_chars")
+// logCut reads how API Log History cuts long values on display.
+func (s *Service) logCut(ctx context.Context) (LogCut, error) {
+	chars, err := s.settings.Int(ctx, "ui/apilog/truncate_chars")
 	if err != nil {
-		return 0, 0, err
+		return LogCut{}, err
 	}
-	l, err := s.settings.Int(ctx, "ui/apilog/truncate_lines")
-	return int(c), int(l), err
+	lines, err := s.settings.Int(ctx, "ui/apilog/truncate_lines")
+	return LogCut{int(chars), int(lines)}, err
+}
+
+// mayOpen is who may open an assignment and see its History Details: the
+// worklist holder (owner), or any member of Authors (FR-CASE-009).
+func mayOpen(sess auth.Session, kind AssignmentType, assignee string) (owner, may bool) {
+	owner = kind == Worklist && assignee == sess.UserID
+	authors := sess.AccessGroup != nil && sess.AccessGroup.Name == "Authors"
+	return owner, owner || authors
 }
 
 // logEntryIn scans a log row with Waktu Connect in the viewer's timezone,
@@ -180,12 +192,12 @@ func (s *Service) apiData(ctx context.Context, caseID string) ([]APIDataProcess,
 	for _, code := range []string{subjectCustomer, subjectSpouse} {
 		subject := slikSubjects[code]
 		if l, ok := latest[subject.api.logName]; ok {
-			p, err := s.slikData(ctx, subject.api.logName, l)
+			p, err := s.slikData(ctx, caseID, subject, l)
 			if err != nil {
 				return nil, err
 			}
 			if f, ok := docs[subject.pdfDoc]; ok {
-				p.Document, p.DocumentAction = &f, "View SLIK"
+				p.Document, p.DocumentKind = &f, DocumentSLIKReport
 			}
 			out = append(out, p)
 		}
@@ -205,7 +217,7 @@ func (s *Service) apiData(ctx context.Context, caseID string) ([]APIDataProcess,
 			}
 		}
 		if f, ok := docs[subject.pdfDoc]; ok {
-			p.Document, p.DocumentAction = &f, "Download PDF"
+			p.Document, p.DocumentKind = &f, DocumentPefindoReport
 		}
 		out = append(out, p)
 	}
@@ -298,8 +310,11 @@ func dhnData(l latestLog) APIDataProcess {
 }
 
 // slikData: FR-PSAPI-005 rule 10; dropdown codes show their BMV
-// description, read without a status filter (agreed for ticket 14).
-func (s *Service) slikData(ctx context.Context, name string, l latestLog) (APIDataProcess, error) {
+// description, read without a status filter (agreed for ticket 14). A SLIK
+// reject is logged on the result's SLIKPBSResponse row, not on the request
+// (FR-PSAPI-010 rule 4), so the banner comes from there (rule 9).
+func (s *Service) slikData(ctx context.Context, caseID string, subject slikSubject, l latestLog) (APIDataProcess, error) {
+	name := subject.api.logName
 	req, resp := jsonObject(l.request), jsonObject(l.response)
 	described := func(bmvType, key string) (string, error) {
 		code := shown(req, key)
@@ -314,7 +329,11 @@ func (s *Service) slikData(ctx context.Context, name string, l latestLog) (APIDa
 		}
 		return value(description), err
 	}
-	p := APIDataProcess{Name: name, Rejected: l.status == apiRejected}
+	rejected, err := s.slikRejected(ctx, caseID, subject)
+	if err != nil {
+		return APIDataProcess{}, err
+	}
+	p := APIDataProcess{Name: name, Rejected: rejected}
 	for _, f := range []struct{ label, key, bmvType string }{
 		{"Kode Reff", "kode_reff_pengguna", ""},
 		{"Tujuan Permintaan", "tujuan_permintaan", bmvRequestPurpose},
@@ -337,10 +356,42 @@ func (s *Service) slikData(ctx context.Context, name string, l latestLog) (APIDa
 	p.Response = fields(resp, "Code", "code", "Message", "message")
 	if list, ok := resp["errors"].([]any); ok {
 		for _, e := range list {
-			p.Errors = append(p.Errors, fmt.Sprint(e))
+			if text, ok := e.(string); ok {
+				p.Errors = append(p.Errors, text)
+				continue
+			}
+			b, _ := json.Marshal(e) // an object or number shows as JSON
+			p.Errors = append(p.Errors, string(b))
 		}
 	}
 	return p, nil
+}
+
+// slikRejected reports whether the subject's SLIK result was rejected: a
+// Rejected SLIKPBSResponse row for its reference code.
+func (s *Service) slikRejected(ctx context.Context, caseID string, subject slikSubject) (bool, error) {
+	var code *string
+	err := s.db.QueryRow(ctx, `SELECT reference_code FROM fos.slik_report WHERE case_id = $1 AND subject_type = $2`, caseID, subject.code).Scan(&code)
+	if isNotFound(err) || code == nil {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	requests, err := collect(ctx, s, func(r pgx.Rows) (string, error) {
+		var req string
+		return req, r.Scan(&req)
+	}, `SELECT COALESCE(request, '') FROM fos.connect_api_log WHERE case_id = $1 AND api_name = $2 AND api_status = $3`,
+		caseID, apiPBSResponse, apiRejected)
+	if err != nil {
+		return false, err
+	}
+	for _, req := range requests {
+		if shown(jsonObject(req), "Kode") == *code {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // pefindoData: FR-PSAPI-005 rule 11, from the Search row. Report Date always

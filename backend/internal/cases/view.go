@@ -275,9 +275,8 @@ func (s *Service) OpenAssignment(ctx context.Context, sess auth.Session, caseID 
 		return AssignmentPage{}, err
 	}
 	p.Status = AssignmentStatus(status)
-	owner := AssignmentType(kind) == Worklist && value(assignee) == sess.UserID
-	authors := sess.AccessGroup != nil && sess.AccessGroup.Name == "Authors"
-	if !owner && !authors {
+	owner, may := mayOpen(sess, AssignmentType(kind), value(assignee))
+	if !may {
 		return AssignmentPage{}, ErrForbidden
 	}
 

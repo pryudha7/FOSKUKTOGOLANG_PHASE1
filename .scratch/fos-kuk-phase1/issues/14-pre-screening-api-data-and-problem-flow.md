@@ -37,3 +37,12 @@ Implementation notes (2026-10-24):
 - UI check tools/uicheck/history.js (screens shots/history-*.png): AC-UI-020-01 (sort, filter on Dukcapil, Clear filter), -02 (cut and "Lihat semua" with indented JSON), the Dukcapil Reject banner on REQUEST, SLIK codes as descriptions, Pefindo results highest Similarity Score first.
 - Mutation checks (each fails a test): Pefindo banner only from Search; Rejected List always shown; results not sorted; SLIK codes not described; oldest first; DHN message from the response; no access check; Dukcapil reject not shown; DHN shown without a row.
 
+Review fixes (2026-10-24, agreed with the user):
+
+- The SLIK and SLIKPasangan Reject banner comes from a Rejected SLIKPBSResponse row for the subject's reference code (FR-PSAPI-010 rule 4 logs the reject there, not on the request); tested, and the test fails without it.
+- "No pre-screening list found" when no process ran yet (UI-013 History Details keadaan kosong 3).
+- Frontend: History is read once per assignment, not on every render; Apply with nothing ticked acts as Clear filter; one menu or popup open at a time, closed by Escape or a click outside, with aria-haspopup / aria-expanded; Waktu Connect sorts by the time itself; the filter popup computes its distinct values once; SLIK error items that are not text show as JSON.
+- Clean-up: one mayOpen access helper for OpenAssignment and History (Authors by name as before); one LogCut type; named JSON struct fields; the View SLIK / Download PDF labels live in the frontend (the backend sends documentKind); the stale time-format comment removed.
+- Kept as is: all log rows without pages (Comment 3); one BMV read per SLIK dropdown (few); a missing ui/apilog setting answers 500 and is logged (DB-RULE-084); the one-key `either` calls keep the Pefindo fields uniform.
+- UI check history.js also checks Apply with nothing ticked and Escape.
+

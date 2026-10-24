@@ -11,23 +11,28 @@ import styles from "./case.module.css";
 // ERR-034, the Reject banner of a sub-accordion (FR-PSAPI-005 rule 9).
 const rejectedMessage = "Pengajuan ditolak karena tidak sesuai dengan ketentuan Pembiayaan.";
 
+// The RESPONSE button of a process with a file (UI-021 Varian SLIK, Pefindo).
+const documentButton = { slik: "View SLIK", pefindo: "Download PDF" } as const;
+
 // History Details (UI-013) under the assignment card: the API Log History
 // (UI-020, Gambar 36) and Pre-Screening API Data (UI-021, Gambar 38-40)
 // accordions, closed at first. The other accordions come with their
 // tickets (TBD-033/035).
 export default function HistoryDetails({ assignment }: { assignment: AssignmentRef }) {
   const [card, setCard] = useState<HistoryCard | null>(null);
+  const { endpointPath, caseId, assignmentId } = assignment;
 
+  // Read once per assignment, not on every render of the page.
   useEffect(() => {
     let live = true;
-    apiFetch(assignmentURL(assignment, "history"))
+    apiFetch(assignmentURL({ endpointPath, caseId, assignmentId }, "history"))
       .then((res) => (res.ok ? (res.json() as Promise<HistoryCard>) : null))
       .then((body) => live && setCard(body))
       .catch(() => live && setCard(null));
     return () => {
       live = false;
     };
-  }, [assignment]);
+  }, [endpointPath, caseId, assignmentId]);
 
   if (!card) {
     return null;
@@ -42,9 +47,12 @@ export default function HistoryDetails({ assignment }: { assignment: AssignmentR
       </Accordion>
       <Accordion title="Pre-Screening API Data">
         <div className={styles.apiDataPanel}>
-          {card.processes.map((p) => (
-            <ProcessAccordion key={p.name} process={p} assignment={assignment} />
-          ))}
+          {card.processes.length === 0 ? (
+            // UI-013 History Details (keadaan kosong) 3.
+            <p className={styles.emptyText}>No pre-screening list found</p>
+          ) : (
+            card.processes.map((p) => <ProcessAccordion key={p.name} process={p} assignment={assignment} />)
+          )}
         </div>
       </Accordion>
     </section>
@@ -115,10 +123,10 @@ function ProcessAccordion({ process: p, assignment }: { process: APIDataProcess;
                 </>
               ) : (
                 <>
-                  {p.documentId && (
+                  {p.documentId && p.documentKind && (
                     <div className={styles.checkRow}>
                       <button type="button" className={styles.viewDocument} onClick={download}>
-                        {p.documentAction}
+                        {documentButton[p.documentKind]}
                       </button>
                     </div>
                   )}

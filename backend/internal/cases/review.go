@@ -51,9 +51,9 @@ type ReviewPage struct {
 	// SLIKTimeout is set after Manual SLIK Entry (UI-017 Varian Timeout
 	// SLIK): the SLIK rows of the run, above the history and the decision.
 	SLIKTimeout *APILogView
-	// TruncateChars and TruncateLines cut the log values on display (UI-020),
-	// set with Retry or SLIKTimeout.
-	TruncateChars, TruncateLines int
+	// Cut cuts the log values on display (UI-020), set with Retry or
+	// SLIKTimeout.
+	Cut LogCut
 }
 
 // APILogView is an API Log History panel: UI-020 rows (Gambar 35). On the
@@ -136,7 +136,7 @@ func (s *Service) reviewPage(ctx context.Context, sess auth.Session, caseID stri
 	logEntry := logEntryIn(loc)
 	cut := func() error {
 		var err error
-		page.TruncateChars, page.TruncateLines, err = s.logCut(ctx)
+		page.Cut, err = s.logCut(ctx)
 		return err
 	}
 	if !retrying {

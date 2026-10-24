@@ -50,7 +50,7 @@ func toReviewJSON(p cases.ReviewPage) reviewJSON {
 		out.History = append(out.History, recommendationJSON(r))
 	}
 	out.Retry, out.SLIKTimeout = toRetryJSON(p.Retry), toRetryJSON(p.SLIKTimeout)
-	out.TruncateChars, out.TruncateLines = p.TruncateChars, p.TruncateLines
+	out.TruncateChars, out.TruncateLines = p.Cut.Chars, p.Cut.Lines
 	return out
 }
 
@@ -64,7 +64,7 @@ func toRetryJSON(v *cases.APILogView) *retryJSON {
 func toLogsJSON(logs []cases.APILogEntry) []apiLogJSON {
 	out := []apiLogJSON{}
 	for _, l := range logs {
-		out = append(out, apiLogJSON{l.Name, l.At, l.SubmittedAt, l.Status, l.Request, l.Response})
+		out = append(out, apiLogJSON{Name: l.Name, At: l.At, SubmittedAt: l.SubmittedAt, Status: l.Status, Request: l.Request, Response: l.Response})
 	}
 	return out
 }
@@ -167,16 +167,16 @@ type apiDataFieldJSON struct {
 }
 
 type apiDataProcessJSON struct {
-	Name           string               `json:"name"`
-	Rejected       bool                 `json:"rejected"`
-	RejectedOnly   bool                 `json:"rejectedOnly"`
-	Request        []apiDataFieldJSON   `json:"request"`
-	Response       []apiDataFieldJSON   `json:"response"`
-	Errors         []string             `json:"errors"`
-	Results        [][]apiDataFieldJSON `json:"results"`
-	DocumentID     string               `json:"documentId,omitempty"`
-	DocumentName   string               `json:"documentName,omitempty"`
-	DocumentAction string               `json:"documentAction,omitempty"`
+	Name         string               `json:"name"`
+	Rejected     bool                 `json:"rejected"`
+	RejectedOnly bool                 `json:"rejectedOnly"`
+	Request      []apiDataFieldJSON   `json:"request"`
+	Response     []apiDataFieldJSON   `json:"response"`
+	Errors       []string             `json:"errors"`
+	Results      [][]apiDataFieldJSON `json:"results"`
+	DocumentID   string               `json:"documentId,omitempty"`
+	DocumentName string               `json:"documentName,omitempty"`
+	DocumentKind string               `json:"documentKind,omitempty"` // "slik" or "pefindo"
 }
 
 func toFieldsJSON(fs []cases.APIDataField) []apiDataFieldJSON {
@@ -207,26 +207,22 @@ func (s *server) history(ep endpoint) http.HandlerFunc {
 		}
 		processes := []apiDataProcessJSON{}
 		for _, p := range h.Processes {
-			results := [][]apiDataFieldJSON{}
-			for _, r := range p.Results {
-				results = append(results, toFieldsJSON(r))
+			out := apiDataProcessJSON{Name: p.Name, Rejected: p.Rejected, RejectedOnly: p.RejectedOnly,
+				Request: toFieldsJSON(p.Request), Response: toFieldsJSON(p.Response), Errors: []string{}, Results: [][]apiDataFieldJSON{}}
+			out.Errors = append(out.Errors, p.Errors...)
+			for _, result := range p.Results {
+				out.Results = append(out.Results, toFieldsJSON(result))
 			}
-			errs := p.Errors
-			if errs == nil {
-				errs = []string{}
-			}
-			var docID, docName string
 			if p.Document != nil {
-				docID, docName = p.Document.ID, p.Document.Name
+				out.DocumentID, out.DocumentName, out.DocumentKind = p.Document.ID, p.Document.Name, p.DocumentKind
 			}
-			processes = append(processes, apiDataProcessJSON{p.Name, p.Rejected, p.RejectedOnly, toFieldsJSON(p.Request),
-				toFieldsJSON(p.Response), errs, results, docID, docName, p.DocumentAction})
+			processes = append(processes, out)
 		}
 		writeJSON(w, http.StatusOK, struct {
 			Logs          []apiLogJSON         `json:"logs"`
 			TruncateChars int                  `json:"truncateChars"`
 			TruncateLines int                  `json:"truncateLines"`
 			Processes     []apiDataProcessJSON `json:"processes"`
-		}{toLogsJSON(h.Logs), h.TruncateChars, h.TruncateLines, processes})
+		}{toLogsJSON(h.Logs), h.Cut.Chars, h.Cut.Lines, processes})
 	}
 }

@@ -99,6 +99,15 @@ const longRequest = JSON.stringify({ kode_reff_pengguna: "SKL253/LOS002/10/2026/
   await tl.getByRole("menuitem", { name: /Apply filter/ }).click();
   await tl.getByRole("button", { name: "Clear filter" }).click();
   r.cleared = await names();
+  // Apply with nothing ticked keeps every row; Escape closes the popup.
+  await tl.getByRole("button", { name: "Status menu" }).click();
+  await tl.getByRole("menuitem", { name: /Apply filter/ }).click();
+  await tl.getByRole("button", { name: "Apply" }).click();
+  r.applyNothing = await names();
+  await tl.getByRole("button", { name: "Status menu" }).click();
+  await tl.getByRole("menuitem", { name: /Apply filter/ }).click();
+  await tl.keyboard.press("Escape");
+  r.popupAfterEscape = await tl.getByRole("dialog", { name: "Apply filter" }).count();
   r.cut = await tl.locator("text=Lihat semua").count();
   await tl.locator("text=Lihat semua").first().click();
   r.expanded = await tl.locator("pre").first().innerText();

@@ -1520,3 +1520,8 @@
   cursor: pointer;
 }
 
+.emptyText {
+  margin: 0;
+  color: #6b6b6b;
+}
+

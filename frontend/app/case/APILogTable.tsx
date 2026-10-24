@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { APILogEntry } from "./types";
 import styles from "./case.module.css";
 
@@ -41,6 +41,9 @@ const noValue = "[No Value]";
 
 type Sort = { key: Column["key"]; descending: boolean } | null;
 
+// What is open over the table: one column's menu or its filter popup.
+type Open = { kind: "menu" | "filter"; key: Column["key"] } | null;
+
 // UI-020 API Log History table (Gambar 36, 37): a menu per column to sort
 // all rows or filter them by the column's values (several columns combine
 // with AND); long Request and Response are cut with "..." and opened inline.
@@ -49,8 +52,34 @@ type Sort = { key: Column["key"]; descending: boolean } | null;
 export default function APILogTable({ logs, limit }: { logs: APILogEntry[]; limit: LogCut }) {
   const [sort, setSort] = useState<Sort>(null);
   const [filters, setFilters] = useState<Partial<Record<Column["key"], string[]>>>({});
-  const [menu, setMenu] = useState<Column["key"] | null>(null);
-  const [filtering, setFiltering] = useState<Column["key"] | null>(null);
+  const [open, setOpen] = useState<Open>(null);
+  const head = useRef<HTMLTableSectionElement>(null);
+
+  // Escape or a click outside the open menu or popup closes it.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(null);
+    const onClick = (e: MouseEvent) => {
+      if (!head.current?.contains(e.target as Node)) {
+        setOpen(null);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onClick);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onClick);
+    };
+  }, [open]);
+
+  const clearFilter = (key: Column["key"]) => {
+    const next = { ...filters };
+    delete next[key];
+    setFilters(next);
+    setOpen(null);
+  };
 
   const rows = useMemo(() => {
     const kept = logs.filter((l) =>
@@ -59,7 +88,8 @@ export default function APILogTable({ logs, limit }: { logs: APILogEntry[]; limi
     if (!sort) {
       return kept;
     }
-    const value = (l: APILogEntry) => (sort.key === "submittedAt" ? l.at : l[sort.key]);
+    // Waktu Connect sorts by the time itself, the others by their text.
+    const value = (l: APILogEntry): number | string => (sort.key === "submittedAt" ? Date.parse(l.at) : l[sort.key]);
     return [...kept].sort((a, b) => {
       const order = value(a) < value(b) ? -1 : value(a) > value(b) ? 1 : 0;
       return sort.descending ? -order : order;
@@ -68,7 +98,7 @@ export default function APILogTable({ logs, limit }: { logs: APILogEntry[]; limi
 
   return (
     <table className={styles.logTable}>
-      <thead>
+      <thead ref={head}>
         <tr>
           {columns.map((c) => (
             <th key={c.key} className={styles.logHead}>
@@ -77,42 +107,41 @@ export default function APILogTable({ logs, limit }: { logs: APILogEntry[]; limi
                 type="button"
                 className={styles.logMenuButton}
                 aria-label={`${c.label} menu`}
-                onClick={() => setMenu(menu === c.key ? null : c.key)}
+                aria-haspopup="menu"
+                aria-expanded={open?.kind === "menu" && open.key === c.key}
+                onClick={() => setOpen(open?.kind === "menu" && open.key === c.key ? null : { kind: "menu", key: c.key })}
               >
                 ⋮
               </button>
-              {menu === c.key && (
+              {open?.kind === "menu" && open.key === c.key && (
                 <ul className={styles.logMenu} role="menu">
                   <li>
-                    <button type="button" role="menuitem" onClick={() => (setSort({ key: c.key, descending: false }), setMenu(null))}>
+                    <button type="button" role="menuitem" onClick={() => (setSort({ key: c.key, descending: false }), setOpen(null))}>
                       <span aria-hidden="true">↑</span> Sort ascending
                     </button>
                   </li>
                   <li>
-                    <button type="button" role="menuitem" onClick={() => (setSort({ key: c.key, descending: true }), setMenu(null))}>
+                    <button type="button" role="menuitem" onClick={() => (setSort({ key: c.key, descending: true }), setOpen(null))}>
                       <span aria-hidden="true">↓</span> Sort descending
                     </button>
                   </li>
                   <li>
-                    <button type="button" role="menuitem" onClick={() => (setFiltering(c.key), setMenu(null))}>
+                    <button type="button" role="menuitem" onClick={() => setOpen({ kind: "filter", key: c.key })}>
                       <span aria-hidden="true">≡</span> Apply filter
                     </button>
                   </li>
                 </ul>
               )}
-              {filtering === c.key && (
+              {open?.kind === "filter" && open.key === c.key && (
                 <FilterPopup
-                  values={logs.map((l) => l[c.key])}
+                  logs={logs}
+                  column={c.key}
                   checked={filters[c.key]}
                   limit={limit}
-                  onApply={(values) => (setFilters({ ...filters, [c.key]: values }), setFiltering(null))}
-                  onClear={() => {
-                    const next = { ...filters };
-                    delete next[c.key];
-                    setFilters(next);
-                    setFiltering(null);
-                  }}
-                  onCancel={() => setFiltering(null)}
+                  // Nothing ticked filters nothing: as Clear filter (agreed).
+                  onApply={(values) => (values.length === 0 ? clearFilter(c.key) : (setFilters({ ...filters, [c.key]: values }), setOpen(null)))}
+                  onClear={() => clearFilter(c.key)}
+                  onCancel={() => setOpen(null)}
                 />
               )}
             </th>
@@ -142,14 +171,16 @@ export default function APILogTable({ logs, limit }: { logs: APILogEntry[]; limi
 // values ("[No Value]" first for an empty one), Search text narrowing the
 // list, Apply and Cancel. Long values are cut as in the cells.
 function FilterPopup({
-  values,
+  logs,
+  column,
   checked,
   limit,
   onApply,
   onClear,
   onCancel,
 }: {
-  values: string[];
+  logs: APILogEntry[];
+  column: Column["key"];
   checked?: string[];
   limit: LogCut;
   onApply: (values: string[]) => void;
@@ -157,9 +188,9 @@ function FilterPopup({
   onCancel: () => void;
 }) {
   const distinct = useMemo(() => {
-    const seen = Array.from(new Set(values.map((v) => v || noValue)));
+    const seen = Array.from(new Set(logs.map((l) => l[column] || noValue)));
     return seen.sort((a, b) => (a === noValue ? -1 : b === noValue ? 1 : 0));
-  }, [values]);
+  }, [logs, column]);
   const [picked, setPicked] = useState<string[]>(checked ?? []);
   const [search, setSearch] = useState("");
   const shown = distinct.filter((v) => v.toLowerCase().includes(search.toLowerCase()));
@@ -176,7 +207,7 @@ function FilterPopup({
               checked={picked.includes(v)}
               onChange={(e) => setPicked(e.target.checked ? [...picked, v] : picked.filter((p) => p !== v))}
             />
-            <span>{(cut(v, limit) ?? v) + (cut(v, limit) === null ? "" : "...")}</span>
+            <span>{shortened(v, limit)}</span>
           </label>
         ))}
       </div>
@@ -194,6 +225,12 @@ function FilterPopup({
       </div>
     </div>
   );
+}
+
+// shortened is a value cut with "..." when it is too long.
+function shortened(text: string, limit: LogCut): string {
+  const short = cut(text, limit);
+  return short === null ? text : `${short}...`;
 }
 
 // A cell cut with "...", opened inline by "Lihat semua" and cut again by

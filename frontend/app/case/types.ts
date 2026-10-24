@@ -58,8 +58,8 @@ export type PreScreeningPage = {
 // the operator's timezone, decidedBy a full name.
 export type Recommendation = { decidedBy: string; submittedAt: string; decision: string; notes: string };
 
-// One Connect API Log row (UI-020); submittedAt is dd/MM/yy H:mm.
-// One Connect API Log row as UI-020 shows it; at sorts Waktu Connect.
+// One Connect API Log row as UI-020 shows it: submittedAt is Waktu Connect,
+// dd/MM/yy HH:mm in the operator's timezone; at (RFC 3339) sorts it.
 export type APILogEntry = { name: string; at: string; submittedAt: string; status: string; request: string; response: string };
 
 // UI-021 read-only field; indent puts it under Params.
@@ -76,7 +76,7 @@ export type APIDataProcess = {
   results: APIDataField[][];
   documentId?: string;
   documentName?: string;
-  documentAction?: string; // "View SLIK" or "Download PDF"
+  documentKind?: "slik" | "pefindo"; // View SLIK or Download PDF
 };
 
 // The History Details card (UI-013): API Log History and Pre-Screening API Data.

@@ -15,15 +15,15 @@ type historyField struct {
 }
 
 type historyProcess struct {
-	Name           string
-	Rejected       bool
-	RejectedOnly   bool
-	Request        []historyField
-	Response       []historyField
-	Errors         []string
-	Results        [][]historyField
-	DocumentID     string
-	DocumentAction string
+	Name         string
+	Rejected     bool
+	RejectedOnly bool
+	Request      []historyField
+	Response     []historyField
+	Errors       []string
+	Results      [][]historyField
+	DocumentID   string
+	DocumentKind string
 }
 
 type historyCard struct {
@@ -162,7 +162,7 @@ func TestHistoryDetailsSLIK(t *testing.T) {
 	callPBS(t, h, kode, slikZip(t, kode, "3171011234567890", facility("1")))
 	card, _ = history(t, tl, caseID, id)
 	pdf, _ := storedDocument(t, h, caseID, "PreScreeningResponse", "SLIK_PDF_CUSTOMER")
-	if s := process(t, card, "SLIK"); s.DocumentID != pdf.FileID || s.DocumentAction != "View SLIK" || strings.Contains(processNames(card), "PBS") {
+	if s := process(t, card, "SLIK"); s.DocumentID != pdf.FileID || s.DocumentKind != "slik" || strings.Contains(processNames(card), "PBS") {
 		t.Fatalf("after the result: %+v / %s", s, processNames(card))
 	}
 }
@@ -207,7 +207,7 @@ func TestHistoryDetailsPefindo(t *testing.T) {
 		t.Fatalf("results = %+v", p.Results)
 	}
 	pdf, _ := storedDocument(t, h, caseID, "PreScreeningResponse", "PEFINDO_PDF_CUSTOMER")
-	if p.DocumentID != pdf.FileID || p.DocumentAction != "Download PDF" || p.Rejected {
+	if p.DocumentID != pdf.FileID || p.DocumentKind != "pefindo" || p.Rejected {
 		t.Fatalf("pefindo = %+v", p)
 	}
 	if sp := process(t, card, "PefindoPasangan"); !sp.Rejected {
@@ -228,5 +228,19 @@ func TestHistoryDetailsRejectedList(t *testing.T) {
 	card, _ := history(t, tl, caseID, id)
 	if p := process(t, card, "Rejected List"); !p.Rejected || !p.RejectedOnly || len(p.Request)+len(p.Response) != 0 || processNames(card) != "Dukcapil,DHN,Rejected List" {
 		t.Fatalf("rejected list = %+v / %s", p, processNames(card))
+	}
+}
+
+// Review fix (agreed), FR-PSAPI-005 rule 9: a SLIK reject is logged on the
+// result's SLIKPBSResponse row; the SLIK sub-accordion shows the banner,
+// SLIKPasangan (not rejected) does not.
+func TestHistoryDetailsSLIKReject(t *testing.T) {
+	h, _, caseID := slikCase(t, true)
+	kc := referenceCode(t, h, caseID, "CUSTOMER")
+	callPBS(t, h, kc, slikZip(t, kc, "3171011234567890", facility("2", repeat(7, month{"2", "10"})...)))
+	tl, id := reviewAssignment(t, h, caseID)
+	card, _ := history(t, tl, caseID, id)
+	if !process(t, card, "SLIK").Rejected || process(t, card, "SLIKPasangan").Rejected {
+		t.Fatalf("processes = %+v", card.Processes)
 	}
 }

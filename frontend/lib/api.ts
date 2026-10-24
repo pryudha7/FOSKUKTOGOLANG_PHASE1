@@ -31,6 +31,12 @@ export function assignmentPath(endpointPath: string, caseId: string, assignmentI
 // An assignment of a case on an endpoint.
 export type AssignmentRef = { endpointPath: string; caseId: string; assignmentId: number };
 
+// assignmentURL is the assignment's API path, with an action when given.
+export function assignmentURL(ref: AssignmentRef, action?: string): string {
+  const base = `${ref.endpointPath}/api/cases/${encodeURIComponent(ref.caseId)}/assignments/${ref.assignmentId}`;
+  return action ? `${base}/${action}` : base;
+}
+
 export type MoveResult<E> =
   | { kind: "moved" } // the browser is opening the next assignment
   | { kind: "invalid"; errors: E[] }
@@ -39,7 +45,7 @@ export type MoveResult<E> =
 // moveAssignment posts a tabbed-flow move (submit or back) and, when it
 // passes, opens the next assignment directly (FR-APP-003 rule 6).
 export async function moveAssignment<E>(ref: AssignmentRef, action: "submit" | "back", body?: unknown): Promise<MoveResult<E>> {
-  const url = `${ref.endpointPath}/api/cases/${encodeURIComponent(ref.caseId)}/assignments/${ref.assignmentId}/${action}`;
+  const url = assignmentURL(ref, action);
   const res = await apiFetch(url, {
     method: "POST",
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },

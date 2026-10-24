@@ -24,7 +24,7 @@ import (
 // for TBD-048a).
 const AssignmentWaitingSLIK = "SLIKWQFlowAct"
 
-var slikInquiryAPI = outboundAPI{logName: "SLIKInquiry", settings: "slikinquiry", base: "slik", secret: "slik", keyHeader: "x-api-key"}
+var slikInquiryAPI = outboundAPI{logName: "SLIKInquiry", settings: "slikinquiry", baseFrom: "slik", secretFrom: "slik", keyHeader: "x-api-key"}
 
 // slikInquiryCode is the reference code in api/slikinquiry/path.
 const slikInquiryCode = "{KodeReff}"
@@ -102,29 +102,41 @@ func (s *Service) CheckSLIKStatus(ctx context.Context, sess auth.Session, caseID
 	if err != nil {
 		return nil, err
 	}
+	// Read once, so a broken setting fails the press before any call and
+	// one subject's request can never stop the other's (rule 1).
+	cfg, err := s.runs.slikInquiryConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := []SLIKStatus{}
 	for _, rp := range reports {
-		message, err := s.runs.slikInquiry(ctx, caseID, rp.code)
+		message, err := s.runs.slikInquiry(ctx, cfg, caseID, rp.code)
 		if err != nil {
-			return nil, err
+			return nil, err // the request ended (client gone): nothing to show
 		}
 		out = append(out, SLIKStatus{rp.subject, message})
 	}
 	return out, nil
 }
 
+// slikInquiryConfig reads SLIKInquiry's settings; a missing or broken one
+// is a system failure.
+func (e *Executor) slikInquiryConfig(ctx context.Context) (apiConfig, error) {
+	cfg, err := e.apiConfig(ctx, slikInquiryAPI)
+	if err != nil {
+		return cfg, err
+	}
+	if !cfg.simulate && !strings.Contains(cfg.path, slikInquiryCode) {
+		return cfg, fmt.Errorf("api/slikinquiry/path has no %s", slikInquiryCode)
+	}
+	return cfg, nil
+}
+
 // slikInquiry asks the status of one reference code, without retry
 // (FR-PSAPI-013 rule 3), logs it (Success only on code 1100) and returns the
 // message to show: the answer's message, else the logged Response. An error
-// is a system failure (a missing setting).
-func (e *Executor) slikInquiry(ctx context.Context, caseID, code string) (string, error) {
-	cfg, err := e.apiConfig(ctx, slikInquiryAPI)
-	if err != nil {
-		return "", err
-	}
-	if !cfg.simulate && !strings.Contains(cfg.path, slikInquiryCode) {
-		return "", fmt.Errorf("api/slikinquiry/path has no %s", slikInquiryCode)
-	}
+// means the request ended (the client went away).
+func (e *Executor) slikInquiry(ctx context.Context, cfg apiConfig, caseID, code string) (string, error) {
 	log := &apiLog{name: slikInquiryAPI.logName, submittedAt: e.s.now(), method: http.MethodGet, attempt: 1, request: code}
 	path := strings.Replace(cfg.path, slikInquiryCode, url.PathEscape(code), 1)
 	if _, err := e.send(ctx, cfg, log, path, nil, map[string]string{"Accept": "application/json"}, evaluateSLIKInquiry); err != nil {
@@ -135,7 +147,7 @@ func (e *Executor) slikInquiry(ctx context.Context, caseID, code string) (string
 	}
 	if err := e.insertLog(ctx, caseID, log); err != nil {
 		// The answer still shows; the missing row is reported (as for PBSResponse).
-		slog.Error("API_LOG_WRITE_FAILED", "api_name", log.name, "case_id", caseID, "reference_code", code, "error", err)
+		slog.Error("API_LOG_WRITE_FAILED", "api_name", log.name, "case_id", caseID, "status", log.status, "error", err)
 	}
 	var resp struct {
 		Message *string `json:"message"`

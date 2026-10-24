@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch, moveAssignment, type AssignmentRef } from "@/lib/api";
+import { apiFetch, assignmentURL, moveAssignment, type AssignmentRef } from "@/lib/api";
 import AssignmentHeader from "./AssignmentHeader";
 import Breadcrumb, { preScreeningSteps } from "./Breadcrumb";
 import ErrorBanner from "./ErrorBanner";
@@ -49,7 +49,7 @@ export default function UnderlyingDocumentUpload({
     }
     setCreating(true);
     setFailed(false);
-    const url = `${assignment.endpointPath}/api/cases/${encodeURIComponent(assignment.caseId)}/assignments/${assignment.assignmentId}/create`;
+    const url = assignmentURL(assignment, "create");
     const res = await apiFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -110,6 +110,15 @@ func (s *server) submitReview(ep endpoint) http.HandlerFunc {
 	}
 }
 
+type waitingSLIKJSON struct {
+	Editable   bool `json:"editable"`
+	DueMinutes int  `json:"dueMinutes"`
+}
+
+func toWaitingSLIKJSON(p cases.WaitingSLIKPage) waitingSLIKJSON {
+	return waitingSLIKJSON{p.Editable, p.DueMinutes}
+}
+
 // checkSLIKStatus handles POST .../assignments/{id}/slik-status: Check SLIK
 // Status on the waiting assignment (FR-PSAPI-013, UI-023). It takes no body
 // and answers each subject's message, Customer first.

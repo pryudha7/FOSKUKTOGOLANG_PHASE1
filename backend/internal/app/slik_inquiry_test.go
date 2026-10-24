@@ -185,3 +185,17 @@ func TestSLIKInquirySimulation(t *testing.T) {
 		t.Fatalf("simulated check = %s", r.Raw)
 	}
 }
+
+// Review fix (agreed): a broken SLIKInquiry setting fails the press before
+// any call or log row.
+func TestCheckSLIKStatusWithABrokenSettingCallsNothing(t *testing.T) {
+	h, fs, caseID := slikCase(t, true)
+	exec(t, h, `UPDATE fos.dynamic_system_settings SET value = '/v1/slik/status' WHERE purpose = 'api/slikinquiry/path'`)
+	a := waitingAssignment(t, h, caseID)
+	ao := relogin(t, h, "AO001")
+	ao.OpenAssignment(t, caseID, a.ID)
+	before := len(fs.Calls())
+	if r := checkSLIK(t, ao, caseID, a.ID); r.Status != http.StatusInternalServerError || len(fs.Calls()) != before || len(inquiryLogs(t, h, caseID)) != 0 {
+		t.Fatalf("check = %d, calls %d, logs %v", r.Status, len(fs.Calls())-before, inquiryLogs(t, h, caseID))
+	}
+}

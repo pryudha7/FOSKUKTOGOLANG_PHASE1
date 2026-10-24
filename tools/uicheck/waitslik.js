@@ -94,6 +94,12 @@ async function uploadDoc(page, doc) {
   await ao.waitForFunction(() => document.querySelectorAll("[class*=messageLabel]").length === 2);
   r.spousePanels = await ao.locator("[class*=messageLabel]").allInnerTexts();
   await ao.screenshot({ path: `${out}/waitslik-spouse.png` });
+  // Completed by the system (e.g. the results came in): the next press is
+  // refused and the button goes away.
+  psql(`UPDATE fos.assignments SET assignment_status = 'sudah selesai dikerjakan', completed_at = now() WHERE assignment_id = ${id};`);
+  await ao.getByRole("button", { name: "Check SLIK Status" }).click();
+  await ao.waitForSelector("[role=alert][class*=errorBanner]");
+  r.afterCompletion = { button: await ao.locator("text=Check SLIK Status").count(), panels: await ao.locator("[class*=messageLabel]").count() };
   r.logs = psql(`SELECT api_name || ' ' || api_status || ' ' || request FROM fos.connect_api_log WHERE case_id = '${r.caseId}' ORDER BY submitted_at;`);
   console.log(JSON.stringify(r, null, 2));
   await browser.close();

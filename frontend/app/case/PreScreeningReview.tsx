@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { apiFetch, type AssignmentRef } from "@/lib/api";
+import { apiFetch, assignmentURL, type AssignmentRef } from "@/lib/api";
 import APILogTable from "./APILogTable";
 import AssignmentHeader from "./AssignmentHeader";
 import ErrorBanner from "./ErrorBanner";
@@ -34,10 +34,9 @@ export default function PreScreeningReview({ page, assignment }: { page: ReviewP
     }
     setSubmitting(true);
     setFailed(false);
-    const base = `${assignment.endpointPath}/api/cases/${encodeURIComponent(assignment.caseId)}/assignments/${assignment.assignmentId}`;
     const res = await (page.retry
-      ? apiFetch(`${base}/retry`, { method: "POST" })
-      : apiFetch(`${base}/review`, {
+      ? apiFetch(assignmentURL(assignment, "retry"), { method: "POST" })
+      : apiFetch(assignmentURL(assignment, "review"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ decisionCode, notes }),

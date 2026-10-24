@@ -221,10 +221,7 @@ func (s *server) openAssignment(ep endpoint) http.HandlerFunc {
 		case p.Review != nil:
 			body = toReviewJSON(*p.Review)
 		case p.WaitingSLIK != nil:
-			body = struct {
-				Editable   bool `json:"editable"`
-				DueMinutes int  `json:"dueMinutes"`
-			}{p.WaitingSLIK.Editable, p.WaitingSLIK.DueMinutes}
+			body = toWaitingSLIKJSON(*p.WaitingSLIK)
 		}
 		writeJSON(w, http.StatusOK, struct {
 			AssignmentID int64  `json:"assignmentId"`

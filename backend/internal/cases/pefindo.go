@@ -63,7 +63,7 @@ type pefindoSubject struct {
 
 func newPefindoSubject(code, name, pdfDoc, pdfSuffix string) pefindoSubject {
 	api := func(suffix, settings, keyHeader string) outboundAPI {
-		return outboundAPI{logName: name + suffix, settings: settings, base: "pefindo", keyHeader: keyHeader}
+		return outboundAPI{logName: name + suffix, settings: settings, baseFrom: "pefindo", keyHeader: keyHeader}
 	}
 	return pefindoSubject{
 		code:     code,

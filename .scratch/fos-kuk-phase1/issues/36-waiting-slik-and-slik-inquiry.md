@@ -33,3 +33,10 @@ Implementation notes (2026-10-24):
 - UI check tools/uicheck/waitslik.js against Gambar 44: header, Due, centred Check SLIK Status, the Message panel hidden until the first check, two titled panels with a Spouse, Close, no Submit; screenshots shots/waitslik-*.png.
 - Mutation checks (each fails a test): no assignment on WAITING_SLIK; not completed by the last result, by a reject or by the timeout; completed while a result is still awaited; a simulated answer not judged; the logged Response shown instead of the message; Check SLIK Status on another assignment.
 
+Review fixes (2026-10-24, agreed with the user):
+
+- SLIKInquiry's settings are read once before any call: a broken setting fails the press with nothing called or logged, and one subject's request can no longer stop the other's (rule 1); tested.
+- UI-023: a failed check clears the old Message panels; a 409 (the system completed the assignment) removes the button (decision 3); the panels are titled when a Spouse answer is present (AC-FR-PSAPI-013-03). waitslik.js checks the 409 case too.
+- Clean-up: one assignmentURL helper in lib/api; toWaitingSLIKJSON; outboundAPI baseFrom / secretFrom; API_LOG_WRITE_FAILED logs api_name, case_id and status as PBSResponse does.
+- Kept as is: a simulated call logs no http_method (as every API since ticket 09: nothing was sent); api/slikinquiry/retry_max is seeded per §9.25 but not read (no retry); a completed assignment reopened shows "Due 0 minutes" read-only (the view after completion is TBD-048d); branch_officer is always set at case creation; the per-name page dispatch is left until a fourth page.
+

@@ -22,7 +22,7 @@ import (
 
 const providerPefindo = "PEFINDO"
 
-var pefindoTokenAPI = outboundAPI{logName: "PefindoToken", settings: "pefindotoken", base: "pefindo"}
+var pefindoTokenAPI = outboundAPI{logName: "PefindoToken", settings: "pefindotoken", baseFrom: "pefindo"}
 
 // bearer is a token in use; nonce tells it from a newer one (DB-RULE-080).
 type bearer struct {
@@ -170,7 +170,7 @@ func (e *Executor) tokenConfig(ctx context.Context) (apiConfig, string, error) {
 	}
 	c.maskedHeaders = append(c.maskedHeaders, "Authorization")
 	a := pefindoTokenAPI
-	if c.base, err = st.String(ctx, "api/"+a.base+"/baseurl"); err != nil {
+	if c.base, err = st.String(ctx, "api/"+a.baseFrom+"/baseurl"); err != nil {
 		return c, "", err
 	}
 	if c.path, err = st.String(ctx, "api/"+a.settings+"/path"); err != nil {

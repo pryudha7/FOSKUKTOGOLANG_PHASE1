@@ -3,6 +3,7 @@ package cases
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -118,6 +119,10 @@ func (s *Service) receiveSLIK(ctx context.Context, rpaUser, kode string, zipData
 	if err := s.db.QueryRow(ctx, `SELECT customer_code FROM fos.work WHERE case_id = $1`, caseID).Scan(&customerCode); err != nil {
 		return res, 0, err
 	}
+	if value(customerCode) == "" {
+		// The PDF's name needs it (agreed for the ticket 34 review): Code 1.
+		return res, 0, errors.New("the case has no customer code to name the SLIK report")
+	}
 
 	// The ZIP and the PDF go to GCS before the transaction, outside the locks
 	// (DB-RULE-025); they are removed again unless the transaction commits.
@@ -161,6 +166,11 @@ func (s *Service) receiveSLIK(ctx context.Context, rpaUser, kode string, zipData
 		return refused(r)
 	}
 
+	// The report lets go of its earlier documents so their slots can be
+	// replaced (DB-RULE-064); the new ones are set below.
+	if _, err := tx.Exec(ctx, `UPDATE fos.slik_report SET zip_document_id = NULL, pdf_document_id = NULL WHERE slik_report_id = $1`, reportID); err != nil {
+		return res, 0, err
+	}
 	if err := s.slotGenerated(ctx, tx, caseID, doc, &sd); err != nil {
 		return res, 0, err
 	}

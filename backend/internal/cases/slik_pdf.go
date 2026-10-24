@@ -16,26 +16,42 @@ import (
 // detail_json). Helvetica stands for Tahoma; a table row or a grid row is
 // never split across pages (agreed for TBD-045).
 
-// Page and colours (FR-PSAPI-012 Halaman dan Gaya); millimetres.
+// Page and text sizes (FR-PSAPI-012 Halaman dan Gaya); millimetres.
 const (
 	pdfMarginX, pdfMarginY = 15.0, 10.0
 	pdfLine                = 4.2 // one line of 8 pt text
+	// pdfMaxLines bounds one value so a row always fits a page; a longer
+	// value ends in "..." (agreed for the ticket 34 review).
+	pdfMaxLines = 40
 )
 
-type rgb struct{ r, g, b int }
+type pdfRGB struct{ r, g, b int }
 
 var (
-	colRed       = rgb{255, 0, 0}
-	colNavy      = rgb{0, 38, 87}
-	colGrey      = rgb{217, 217, 217}
-	colLightGrey = rgb{240, 240, 240}
-	colBanner    = rgb{213, 215, 225}
-	colWhite     = rgb{255, 255, 255}
-	colBlack     = rgb{0, 0, 0}
+	colRed       = pdfRGB{255, 0, 0}
+	colNavy      = pdfRGB{0, 38, 87}
+	colGrey      = pdfRGB{217, 217, 217}
+	colLightGrey = pdfRGB{240, 240, 240}
+	colBanner    = pdfRGB{213, 215, 225}
+	colWhite     = pdfRGB{255, 255, 255}
+	colBlack     = pdfRGB{0, 0, 0}
 )
 
-// Month names for the date formats (FR-PSAPI-012 Format Nilai).
-var monthsID = []string{"Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"}
+// pdfStyle is a font style, size and text colour.
+type pdfStyle struct {
+	font  string // "", "B", "I", "IU", ...
+	size  float64
+	color pdfRGB
+}
+
+var (
+	styleLabel = pdfStyle{"B", 8, colNavy}
+	styleValue = pdfStyle{"", 8, colBlack}
+)
+
+// monthsIndonesian are the month names of the report's dates (FR-PSAPI-012
+// Format Nilai).
+var monthsIndonesian = []string{"Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"}
 
 // slikPDF draws one report.
 type slikPDF struct {
@@ -44,8 +60,8 @@ type slikPDF struct {
 	width float64 // printable width
 }
 
-// cell is one label and its value in a row of label cells.
-type cell struct{ label, value string }
+// pdfCell is one label and its value.
+type pdfCell struct{ label, value string }
 
 // renderSLIKPDF draws the report of one SLIK file.
 func renderSLIKPDF(doc map[string]any) ([]byte, error) {
@@ -75,16 +91,16 @@ func renderSLIKPDF(doc map[string]any) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// text is a file value as shown: its text, or "".
-func text(m map[string]any, key string) string {
+// pdfValue is a file value as shown: its text, or "".
+func pdfValue(m map[string]any, key string) string {
 	if v := field(m, key); v != nil {
 		return *v
 	}
 	return ""
 }
 
-// dateID is yyyyMMdd[HHmmss] as "9 Mei 2023"; "" when it is not a date.
-func dateID(s string) string {
+// indonesianDate is yyyyMMdd[HHmmss] as "9 Mei 2023"; "" when it is not a date.
+func indonesianDate(s string) string {
 	if len(s) < 8 {
 		return ""
 	}
@@ -92,11 +108,11 @@ func dateID(s string) string {
 	if err != nil {
 		return ""
 	}
-	return fmt.Sprintf("%d %s %d", t.Day(), monthsID[t.Month()-1], t.Year())
+	return fmt.Sprintf("%d %s %d", t.Day(), monthsIndonesian[t.Month()-1], t.Year())
 }
 
-// monthOf reads yyyyMM.
-func monthOf(s string) (time.Time, bool) {
+// dataMonth reads yyyyMM.
+func dataMonth(s string) (time.Time, bool) {
 	if len(s) < 6 {
 		return time.Time{}, false
 	}
@@ -104,27 +120,27 @@ func monthOf(s string) (time.Time, bool) {
 	return t, err == nil
 }
 
-// monthID is yyyyMM as "September 2024"; monthEN as "February 2023"
-// (legacy English, FR-PSAPI-012).
-func monthID(s string) string {
-	t, ok := monthOf(s)
+// indonesianMonth is yyyyMM as "September 2024"; englishMonth as
+// "February 2023" (legacy English, FR-PSAPI-012).
+func indonesianMonth(s string) string {
+	t, ok := dataMonth(s)
 	if !ok {
 		return ""
 	}
-	return fmt.Sprintf("%s %d", monthsID[t.Month()-1], t.Year())
+	return fmt.Sprintf("%s %d", monthsIndonesian[t.Month()-1], t.Year())
 }
 
-func monthEN(s string) string {
-	t, ok := monthOf(s)
+func englishMonth(s string) string {
+	t, ok := dataMonth(s)
 	if !ok {
 		return ""
 	}
 	return t.Format("January 2006")
 }
 
-// amount is a decimal with thousands commas and two decimals
+// pdfAmount is a decimal with thousands commas and two decimals
 // (1,103,713,259.00); "" when it is not a number.
-func amount(s string) string {
+func pdfAmount(s string) string {
 	r, ok := new(big.Rat).SetString(strings.TrimSpace(s))
 	if !ok {
 		return ""
@@ -145,24 +161,36 @@ func amount(s string) string {
 	return sign + b.String() + "." + frac
 }
 
-// rupiah is an amount of a facility block: "Rp 485,000,000.00".
-func rupiah(s string) string {
-	if a := amount(s); a != "" {
+// pdfRupiah is an amount of a facility block: "Rp 485,000,000.00".
+func pdfRupiah(s string) string {
+	if a := pdfAmount(s); a != "" {
 		return "Rp " + a
 	}
 	return ""
 }
 
-// orDash shows "-" for an empty Keterangan (FR-PSAPI-012).
-func orDash(s string) string {
+func pdfPercent(s string) string {
+	if s == "" {
+		return ""
+	}
+	return s + "%"
+}
+
+// pdfOrDash shows "-" for an empty Keterangan (FR-PSAPI-012).
+func pdfOrDash(s string) string {
 	if strings.TrimSpace(s) == "" {
 		return "-"
 	}
 	return s
 }
 
-func (p *slikPDF) color(c rgb) { p.pdf.SetTextColor(c.r, c.g, c.b) }
-func (p *slikPDF) fill(c rgb)  { p.pdf.SetFillColor(c.r, c.g, c.b) }
+// use sets a style for what is drawn next.
+func (p *slikPDF) use(s pdfStyle) {
+	p.pdf.SetFont("Helvetica", s.font, s.size)
+	p.pdf.SetTextColor(s.color.r, s.color.g, s.color.b)
+}
+
+func (p *slikPDF) fill(c pdfRGB) { p.pdf.SetFillColor(c.r, c.g, c.b) }
 
 // ensure starts a new page when h millimetres do not fit.
 func (p *slikPDF) ensure(h float64) {
@@ -172,82 +200,90 @@ func (p *slikPDF) ensure(h float64) {
 	}
 }
 
-// lines splits a value into the lines it takes in width w.
-func (p *slikPDF) lines(s string, w float64) []string {
-	if s == "" {
+// lines splits a value into the lines it takes in width w in style s, at
+// most pdfMaxLines.
+func (p *slikPDF) lines(v string, w float64, s pdfStyle) []string {
+	if v == "" {
 		return []string{""}
 	}
-	return p.pdf.SplitText(p.tr(s), w-2)
+	p.use(s)
+	out := p.pdf.SplitText(p.tr(v), w-2)
+	if len(out) > pdfMaxLines {
+		out = append(out[:pdfMaxLines-1], strings.TrimRight(out[pdfMaxLines-1], " ")+"...")
+	}
+	return out
 }
 
-// title is a section title: 14 pt, underlined.
-func (p *slikPDF) title(s string, c rgb) {
+// draw writes lines from (x, y), one per pdfLine.
+func (p *slikPDF) draw(x, y, w float64, lines []string, s pdfStyle, align string) {
+	p.use(s)
+	for i, l := range lines {
+		p.pdf.SetXY(x, y+pdfLine*float64(i))
+		p.pdf.CellFormat(w, pdfLine, l, "", 0, align, false, 0, "")
+	}
+}
+
+// title is a section title: 14 pt, underlined in lineColor.
+func (p *slikPDF) title(s string, textColor, lineColor pdfRGB) {
 	p.ensure(12)
 	p.pdf.Ln(3)
-	p.pdf.SetFont("Helvetica", "BU", 14)
-	p.color(c)
-	p.pdf.CellFormat(p.width, 7, p.tr(s), "", 1, "L", false, 0, "")
+	p.use(pdfStyle{"B", 14, textColor})
+	text := p.tr(s)
+	x, y := p.pdf.GetX(), p.pdf.GetY()
+	p.pdf.CellFormat(p.width, 7, text, "", 1, "L", false, 0, "")
+	p.pdf.SetDrawColor(lineColor.r, lineColor.g, lineColor.b)
+	p.pdf.SetLineWidth(0.4)
+	p.pdf.Line(x, y+6.5, x+p.pdf.GetStringWidth(text), y+6.5)
+	p.pdf.SetDrawColor(0, 0, 0)
+	p.pdf.SetLineWidth(0.2)
 	p.pdf.Ln(1)
 }
 
-// labelRow draws cells side by side: a label line (filled when fill is
-// set) above the value lines; widths are equal unless given.
-func (p *slikPDF) labelRow(cells []cell, labelColor rgb, fill *rgb, widths ...float64) {
-	if len(widths) == 0 {
-		for range cells {
-			widths = append(widths, p.width/float64(len(cells)))
-		}
-	}
-	p.pdf.SetFont("Helvetica", "", 8)
+// labelRow draws cells side by side from x across width: a label line
+// (filled when fill is set) above the value lines.
+func (p *slikPDF) labelRow(cells []pdfCell, fill *pdfRGB, x, width float64) {
+	w := width / float64(len(cells))
 	n := 1
-	for i, c := range cells {
-		n = max(n, len(p.lines(c.value, widths[i])))
+	for _, c := range cells {
+		n = max(n, len(p.lines(c.value, w, styleValue)))
 	}
 	p.ensure(pdfLine * float64(n+1))
-	x, y := p.pdf.GetX(), p.pdf.GetY()
+	y := p.pdf.GetY()
 	for i, c := range cells {
-		p.pdf.SetXY(x, y)
-		p.pdf.SetFont("Helvetica", "B", 8)
-		p.color(labelColor)
+		cx := x + w*float64(i)
+		p.use(styleLabel)
 		if fill != nil {
 			p.fill(*fill)
 		}
-		p.pdf.CellFormat(widths[i], pdfLine, p.tr(c.label), "", 0, "L", fill != nil, 0, "")
-		p.pdf.SetFont("Helvetica", "", 8)
-		p.color(colBlack)
-		for j, l := range p.lines(c.value, widths[i]) {
-			p.pdf.SetXY(x, y+pdfLine*float64(j+1))
-			p.pdf.CellFormat(widths[i], pdfLine, l, "", 0, "L", false, 0, "")
-		}
-		x += widths[i]
+		p.pdf.SetXY(cx, y)
+		p.pdf.CellFormat(w, pdfLine, p.tr(c.label), "", 0, "L", fill != nil, 0, "")
+		p.draw(cx, y+pdfLine, w, p.lines(c.value, w, styleValue), styleValue, "L")
 	}
 	p.pdf.SetXY(pdfMarginX, y+pdfLine*float64(n+1)+1)
 }
 
-// pairs draws label/value pairs, two per line, labels filled (the detail
-// tables of a facility and of a collateral).
-func (p *slikPDF) pairs(items []cell) {
+// row draws a full-width labelRow.
+func (p *slikPDF) row(cells []pdfCell, fill *pdfRGB) { p.labelRow(cells, fill, pdfMarginX, p.width) }
+
+// pairs draws label/value pairs, two per line in bordered cells, labels
+// filled (the detail tables of a facility and of a collateral).
+func (p *slikPDF) pairs(items []pdfCell) {
 	lw, vw := p.width*0.2, p.width*0.3
 	for i := 0; i < len(items); i += 2 {
 		row := items[i:min(i+2, len(items))]
-		p.pdf.SetFont("Helvetica", "", 8)
 		n := 1
 		for _, c := range row {
-			n = max(n, len(p.lines(c.value, vw)), len(p.lines(c.label, lw)))
+			n = max(n, len(p.lines(c.label, lw, styleLabel)), len(p.lines(c.value, vw, styleValue)))
 		}
 		h := pdfLine * float64(n)
 		p.ensure(h)
 		x, y := pdfMarginX, p.pdf.GetY()
 		for _, c := range row {
 			p.fill(colLightGrey)
-			p.pdf.SetXY(x, y)
-			p.pdf.SetFont("Helvetica", "B", 8)
-			p.color(colNavy)
-			p.pdf.MultiCell(lw, h/float64(len(p.lines(c.label, lw))), p.tr(c.label), "1", "L", true)
-			p.pdf.SetXY(x+lw, y)
-			p.pdf.SetFont("Helvetica", "", 8)
-			p.color(colBlack)
-			p.pdf.MultiCell(vw, h/float64(len(p.lines(c.value, vw))), p.tr(c.value), "1", "L", false)
+			p.pdf.Rect(x, y, lw, h, "FD")
+			p.pdf.Rect(x+lw, y, vw, h, "D")
+			p.draw(x, y, lw, p.lines(c.label, lw, styleLabel), styleLabel, "L")
+			p.draw(x+lw, y, vw, p.lines(c.value, vw, styleValue), styleValue, "L")
 			x += lw + vw
 		}
 		p.pdf.SetXY(pdfMarginX, y+h)
@@ -256,24 +292,20 @@ func (p *slikPDF) pairs(items []cell) {
 
 func (p *slikPDF) head() {
 	pdf := p.pdf
-	pdf.SetFont("Helvetica", "B", 17.5)
-	p.color(colRed)
+	p.use(pdfStyle{"B", 17.5, colRed})
 	pdf.CellFormat(p.width, 8, p.tr("Informasi Debitur"), "", 1, "L", false, 0, "")
-	pdf.SetFont("Helvetica", "", 8)
-	p.color(colNavy)
+	p.use(pdfStyle{"", 8, colNavy})
 	pdf.CellFormat(p.width, pdfLine, p.tr("Sistem Layanan Informasi Keuangan"), "", 1, "L", false, 0, "")
 	pdf.Ln(2)
 	boxW := 30.0
 	y := pdf.GetY()
 	p.fill(colBanner)
-	pdf.SetFont("Helvetica", "I", 8)
-	p.color(colBlack)
+	p.use(pdfStyle{"I", 8, colBlack})
 	pdf.MultiCell(p.width-boxW, pdfLine, p.tr("Informasi ini bersifat RAHASIA dan hanya digunakan untuk kepentingan pemohon informasi. Akibat yang timbul dari penggunaan informasi ini bukan merupakan tanggung jawab Otoritas Jasa Keuangan"), "", "L", true)
 	h := pdf.GetY() - y
 	pdf.SetXY(pdfMarginX+p.width-boxW, y)
 	p.fill(colRed)
-	p.color(colWhite)
-	pdf.SetFont("Helvetica", "B", 10)
+	p.use(pdfStyle{"B", 10, colWhite})
 	pdf.CellFormat(boxW, h, "RAHASIA", "", 1, "C", true, 0, "")
 	pdf.Ln(3)
 }
@@ -281,130 +313,144 @@ func (p *slikPDF) head() {
 func (p *slikPDF) keywords(header, individual map[string]any) {
 	pdf := p.pdf
 	search := obj(individual, "parameterPencarian")
-	pdf.SetFont("Helvetica", "I", 8)
-	p.color(colBlack)
+	italic := pdfStyle{"I", 8, colBlack}
+	p.use(italic)
 	pdf.Write(pdfLine, p.tr("Informasi diberikan berdasarkan laporan yang dikirimkan oleh pelapor ke dalam Sistem Layanan Informasi Keuangan dengan "))
-	pdf.SetFont("Helvetica", "IU", 8)
-	p.color(colRed)
+	p.use(pdfStyle{"IU", 8, colRed})
 	pdf.Write(pdfLine, p.tr("kata kunci pencarian"))
-	pdf.SetFont("Helvetica", "I", 8)
-	p.color(colBlack)
+	p.use(italic)
 	pdf.Write(pdfLine, p.tr(" sebagai berikut:"))
 	pdf.Ln(pdfLine + 2)
 
 	// Left two thirds: the search parameters; right third: the request.
 	left, right := p.width*2/3, p.width/3
 	y := pdf.GetY()
-	saved := p.width
-	p.width = left
-	p.labelRow([]cell{{"Nama", text(search, "namaDebitur")}, {"Jenis Kelamin", text(search, "jenisKelaminKet")}}, colNavy, nil)
-	p.labelRow([]cell{{"No. Identitas", text(search, "noIdentitas")}, {"NPWP", text(search, "npwp")},
-		{"Tempat Lahir", text(search, "tempatLahir")}, {"Tanggal Lahir", dateID(text(search, "tanggalLahir"))}}, colNavy, nil)
+	p.labelRow([]pdfCell{{"Nama", pdfValue(search, "namaDebitur")}, {"Jenis Kelamin", pdfValue(search, "jenisKelaminKet")}}, nil, pdfMarginX, left)
+	p.labelRow([]pdfCell{{"No. Identitas", pdfValue(search, "noIdentitas")}, {"NPWP", pdfValue(search, "npwp")},
+		{"Tempat Lahir", pdfValue(search, "tempatLahir")}, {"Tanggal Lahir", indonesianDate(pdfValue(search, "tanggalLahir"))}}, nil, pdfMarginX, left)
 	bottom := pdf.GetY()
-	p.width = right
-	pdf.SetXY(pdfMarginX+left, y)
-	for _, c := range []cell{
-		{"Kode Ref. Pengguna", text(header, "kodeReferensiPengguna")},
-		{"Nomor Laporan", text(individual, "nomorLaporan")},
-		{"Posisi Data Terakhir", monthID(text(individual, "posisiDataTerakhir"))},
-		{"Tanggal Permintaan", dateID(text(individual, "tanggalPermintaan"))},
+	pdf.SetY(y)
+	for _, c := range []pdfCell{
+		{"Kode Ref. Pengguna", pdfValue(header, "kodeReferensiPengguna")},
+		{"Nomor Laporan", pdfValue(individual, "nomorLaporan")},
+		{"Posisi Data Terakhir", indonesianMonth(pdfValue(individual, "posisiDataTerakhir"))},
+		{"Tanggal Permintaan", indonesianDate(pdfValue(individual, "tanggalPermintaan"))},
 	} {
 		pdf.SetX(pdfMarginX + left)
-		pdf.SetFont("Helvetica", "B", 8)
-		p.color(colNavy)
+		p.use(styleLabel)
 		pdf.CellFormat(right*0.45, pdfLine, p.tr(c.label), "", 0, "L", false, 0, "")
-		pdf.SetFont("Helvetica", "", 8)
-		p.color(colBlack)
+		p.use(styleValue)
 		pdf.CellFormat(right*0.55, pdfLine, p.tr(c.value), "", 1, "L", false, 0, "")
 	}
-	p.width = saved
 	pdf.SetXY(pdfMarginX, max(bottom, pdf.GetY()))
 }
 
 func (p *slikPDF) debtors(items []map[string]any) {
-	p.title("Data Pokok Debitur", colNavy)
-	p.pdf.SetFont("Helvetica", "", 8)
-	p.color(colBlack)
+	p.title("Data Pokok Debitur", colNavy, colNavy)
+	p.use(styleValue)
 	p.pdf.MultiCell(p.width, pdfLine, p.tr("Penyajian informasi debitur pada Sistem Layanan Informasi Keuangan dikelompokkan berdasarkan nomor identitas debitur. Pengguna informasi diharapkan dapat meneliti kembali kemungkinan adanya debitur berbeda yang dilaporkan menggunakan nomor identitas yang sama"), "", "L", false)
 	p.pdf.Ln(2)
 	if len(items) == 0 {
-		p.pdf.SetFont("Helvetica", "B", 20)
-		p.color(colNavy)
+		p.use(pdfStyle{"B", 20, colNavy})
 		p.pdf.CellFormat(p.width, 12, p.tr("Data Tidak Ditemukan"), "", 1, "C", false, 0, "")
 		return
 	}
 	grey := colGrey
 	for _, d := range items {
-		p.labelRow([]cell{
-			{"Nama Sesuai Identitas", text(d, "namaDebitur")},
-			{"Identitas", "NIK / " + text(d, "noIdentitas")},
-			{"Jenis Kelamin/NPWP", text(d, "jenisKelaminKet") + " / " + text(d, "npwp")},
-			{"Tempat / Tgl Lahir", text(d, "tempatLahir") + " / " + dateID(text(d, "tanggalLahir"))},
-			{"Pelapor / Tanggal Update", text(d, "pelaporKet") + " / " + dateID(text(d, "tanggalUpdate"))},
-		}, colNavy, nil)
-		p.labelRow([]cell{
-			{"Alamat", text(d, "alamat")}, {"Kelurahan", text(d, "kelurahan")}, {"Kecamatan", text(d, "kecamatan")},
-			{"Kabupaten / Kota", text(d, "kabKotaKet")}, {"Kode Pos", text(d, "kodePos")}, {"Negara", text(d, "negaraKet")},
-		}, colNavy, &grey)
-		p.labelRow([]cell{
-			{"Pekerjaan", text(d, "pekerjaanKet")}, {"Tempat Bekerja", text(d, "tempatBekerja")}, {"", ""},
-			{"Bidang Usaha", text(d, "bidangUsahaKet")}, {"", ""}, {"Status Gelar Debitur", text(d, "statusGelarDebitur")},
-		}, colNavy, &grey)
+		p.row([]pdfCell{
+			{"Nama Sesuai Identitas", pdfValue(d, "namaDebitur")},
+			{"Identitas", "NIK / " + pdfValue(d, "noIdentitas")},
+			{"Jenis Kelamin/NPWP", pdfValue(d, "jenisKelaminKet") + " / " + pdfValue(d, "npwp")},
+			{"Tempat / Tgl Lahir", pdfValue(d, "tempatLahir") + " / " + indonesianDate(pdfValue(d, "tanggalLahir"))},
+			{"Pelapor / Tanggal Update", pdfValue(d, "pelaporKet") + " / " + indonesianDate(pdfValue(d, "tanggalUpdate"))},
+		}, nil)
+		p.row([]pdfCell{
+			{"Alamat", pdfValue(d, "alamat")}, {"Kelurahan", pdfValue(d, "kelurahan")}, {"Kecamatan", pdfValue(d, "kecamatan")},
+			{"Kabupaten / Kota", pdfValue(d, "kabKotaKet")}, {"Kode Pos", pdfValue(d, "kodePos")}, {"Negara", pdfValue(d, "negaraKet")},
+		}, &grey)
+		p.row([]pdfCell{
+			{"Pekerjaan", pdfValue(d, "pekerjaanKet")}, {"Tempat Bekerja", pdfValue(d, "tempatBekerja")}, {"", ""},
+			{"Bidang Usaha", pdfValue(d, "bidangUsahaKet")}, {"", ""}, {"Status Gelar Debitur", pdfValue(d, "statusGelarDebitur")},
+		}, &grey)
 		p.pdf.Ln(2)
 	}
 }
 
 func (p *slikPDF) summary(s map[string]any) {
 	pdf := p.pdf
-	p.title("Ringkasan Fasilitas", colNavy)
+	p.title("Ringkasan Fasilitas", colNavy, colNavy)
 	heads := []string{"Fasilitas", "Kredit (dalam IDR)", "Irrevocable L/C (dalam IDR)", "Garansi (dalam IDR)",
 		"Fasilitas Lainnya (dalam IDR)", "Total (dalam IDR)", "Kolektabilitas Terburuk / Bulan Data"}
 	w := p.width / float64(len(heads))
-	worst := text(s, "kualitasTerburuk")
-	if m := monthEN(text(s, "kualitasBulanDataTerburuk")); m != "" {
+	worst := pdfValue(s, "kualitasTerburuk")
+	if m := englishMonth(pdfValue(s, "kualitasBulanDataTerburuk")); m != "" {
 		worst += " / " + m
 	}
 	// Fasilitas Lainnya is Sec, as legacy; Lain is not shown (TBD-045c, agreed).
 	rows := [][]string{
 		heads,
-		{"Plafon Efektif", amount(text(s, "plafonEfektifKreditPembiayaan")), amount(text(s, "plafonEfektifLc")), amount(text(s, "plafonEfektifGyd")),
-			amount(text(s, "plafonEfektifSec")), amount(text(s, "plafonEfektifTotal")), worst},
-		{"Baki Debet", amount(text(s, "bakiDebetKreditPembiayaan")), amount(text(s, "bakiDebetLc")), amount(text(s, "bakiDebetGyd")),
-			amount(text(s, "bakiDebetSec")), amount(text(s, "bakiDebetTotal")), ""},
+		{"Plafon Efektif", pdfAmount(pdfValue(s, "plafonEfektifKreditPembiayaan")), pdfAmount(pdfValue(s, "plafonEfektifLc")),
+			pdfAmount(pdfValue(s, "plafonEfektifGyd")), pdfAmount(pdfValue(s, "plafonEfektifSec")), pdfAmount(pdfValue(s, "plafonEfektifTotal")), worst},
+		{"Baki Debet", pdfAmount(pdfValue(s, "bakiDebetKreditPembiayaan")), pdfAmount(pdfValue(s, "bakiDebetLc")),
+			pdfAmount(pdfValue(s, "bakiDebetGyd")), pdfAmount(pdfValue(s, "bakiDebetSec")), pdfAmount(pdfValue(s, "bakiDebetTotal")), ""},
 	}
 	for i, row := range rows {
-		h := pdfLine * 2
+		styleOf := func(j int) pdfStyle {
+			if i == 0 || j == 0 {
+				return styleLabel
+			}
+			return styleValue
+		}
+		// The row is as tall as its tallest cell, two lines at least.
+		n := 2
+		for j, v := range row {
+			n = max(n, len(p.lines(v, w, styleOf(j))))
+		}
+		h := pdfLine * float64(n)
 		p.ensure(h)
 		y := pdf.GetY()
 		for j, v := range row {
-			pdf.SetXY(pdfMarginX+w*float64(j), y)
-			style, fill := "", false
+			x := pdfMarginX + w*float64(j)
 			if i == 0 || j == 0 {
-				style, fill = "B", true
 				p.fill(colGrey)
-				p.color(colNavy)
+				pdf.Rect(x, y, w, h, "FD")
 			} else {
-				p.color(colBlack)
+				pdf.Rect(x, y, w, h, "D")
 			}
-			pdf.SetFont("Helvetica", style, 8)
 			align := "R"
 			if j == 0 || i == 0 || j == len(row)-1 {
 				align = "L"
 			}
-			n := len(p.lines(v, w))
-			pdf.MultiCell(w, h/float64(max(n, 1)), p.tr(v), "1", align, fill)
+			p.draw(x, y, w, p.lines(v, w, styleOf(j)), styleOf(j), align)
 		}
 		pdf.SetXY(pdfMarginX, y+h)
 	}
 	pdf.Ln(2)
-	pdf.SetFont("Helvetica", "B", 8)
-	p.color(colNavy)
+	p.use(styleLabel)
 	pdf.CellFormat(p.width, pdfLine, p.tr("Jumlah Kreditur"), "", 1, "L", false, 0, "")
-	grey := colGrey
-	p.labelRow([]cell{
-		{"Bank Umum", text(s, "krediturBankUmum")}, {"BPR/BPRS", text(s, "krediturBPR/S")},
-		{"Lembaga Pembiayaan", text(s, "krediturLp")}, {"Lainnya", text(s, "krediturLainnya")},
-	}, colNavy, &grey)
+	p.boxes([]pdfCell{
+		{"Bank Umum", pdfValue(s, "krediturBankUmum")}, {"BPR/BPRS", pdfValue(s, "krediturBPR/S")},
+		{"Lembaga Pembiayaan", pdfValue(s, "krediturLp")}, {"Lainnya", pdfValue(s, "krediturLainnya")},
+	})
+}
+
+// boxes draws cells as bordered boxes side by side, a grey label line above
+// the value (Jumlah Kreditur, FR-PSAPI-012 Susunan Bagian 4).
+func (p *slikPDF) boxes(cells []pdfCell) {
+	const gap = 3.0
+	w := (p.width - gap*float64(len(cells)-1)) / float64(len(cells))
+	h := pdfLine * 2
+	p.ensure(h)
+	y := p.pdf.GetY()
+	for i, c := range cells {
+		x := pdfMarginX + (w+gap)*float64(i)
+		p.fill(colGrey)
+		p.pdf.Rect(x, y, w, pdfLine, "FD")
+		p.pdf.Rect(x, y+pdfLine, w, pdfLine, "D")
+		p.draw(x, y, w, []string{p.tr(c.label)}, styleLabel, "L")
+		p.draw(x, y+pdfLine, w, []string{p.tr(c.value)}, styleValue, "C")
+	}
+	p.pdf.SetXY(pdfMarginX, y+h+1)
 }
 
 // facility is one Kredit/Pembiayaan block (FR-PSAPI-012 Susunan Bagian 5).
@@ -413,46 +459,39 @@ func (p *slikPDF) facility(f map[string]any) {
 	p.ensure(20)
 	pdf.Ln(3)
 	p.fill(colNavy)
-	p.color(colWhite)
-	pdf.SetFont("Helvetica", "B", 9)
+	p.use(pdfStyle{"B", 9, colWhite})
 	pdf.CellFormat(p.width, 6, p.tr("Kredit/Pembiayaan"), "", 1, "L", true, 0, "")
 	pdf.Ln(1)
-	p.labelRow([]cell{
-		{"Pelapor", text(f, "ljk") + "-" + text(f, "ljkKet")}, {"Cabang", text(f, "cabangKet")},
-		{"Baki Debet", rupiah(text(f, "bakiDebet"))}, {"Tanggal Update", dateID(text(f, "tanggalUpdate"))},
-	}, colNavy, nil)
+	v := func(key string) string { return pdfValue(f, key) }
+	p.row([]pdfCell{
+		{"Pelapor", v("ljk") + "-" + v("ljkKet")}, {"Cabang", v("cabangKet")},
+		{"Baki Debet", pdfRupiah(v("bakiDebet"))}, {"Tanggal Update", indonesianDate(v("tanggalUpdate"))},
+	}, nil)
 	p.months(f)
-	p.pairs([]cell{
-		{"No Rekening", text(f, "noRekening")}, {"Kualitas", text(f, "kualitas")}, // TBD-045b, agreed
-		{"Sifat Kredit/Pembiayaan", text(f, "sifatKreditPembiayaanKet")}, {"Jumlah Hari Tunggakan", text(f, "jumlahHariTunggakan")},
-		{"Jenis Kredit/Pembiayaan", text(f, "jenisKreditPembiayaanKet")}, {"Nilai Proyek", rupiah(text(f, "nilaiProyek"))},
-		{"Akad Kredit/Pembiayaan", text(f, "akadKreditPembiayaanKet")}, {"Plafon Awal", rupiah(text(f, "plafonAwal"))},
-		{"Frekuensi Perpanjangan Kredit/Pembiayaan", text(f, "frekPerpjganKreditPembiayaan")}, {"Plafon", rupiah(text(f, "plafon"))},
-		{"No Akad Awal", text(f, "noAkadAwal")}, {"Realisasi/Pencairan Bulan Berjalan", rupiah(text(f, "realisasiBulanBerjalan"))},
-		{"Tanggal Akad Awal", dateID(text(f, "tanggalAkadAwal"))}, {"Nilai Dalam Mata Uang Asal", rupiah(text(f, "nilaiDalamMataUangAsal"))},
-		{"No Akad Akhir", text(f, "noAkadAkhir")}, {"Sebab Macet", text(f, "sebabMacetKet")},
-		{"Tanggal Akad Akhir", dateID(text(f, "tanggalAkadAkhir"))}, {"Tanggal Macet", dateID(text(f, "tanggalMacet"))},
-		{"Tanggal Awal Kredit", dateID(text(f, "tanggalAwalKredit"))}, {"Tunggakan Pokok", rupiah(text(f, "tunggakanPokok"))},
-		{"Tanggal Mulai", dateID(text(f, "tanggalMulai"))}, {"Tunggakan Bunga", rupiah(text(f, "tunggakanBunga"))},
-		{"Tanggal Jatuh Tempo", dateID(text(f, "tanggalJatuhTempo"))}, {"Frekuensi Tunggakan", text(f, "frekuensiTunggakan")},
-		{"Kategori Debitur", text(f, "kategoriDebiturKet")}, {"Denda", rupiah(text(f, "denda"))},
-		{"Jenis Penggunaan", text(f, "jenisPenggunaanKet")}, {"Frekuensi Restrukturisasi", text(f, "frekuensiRestrukturisasi")},
-		{"Sektor Ekonomi", text(f, "sektorEkonomiKet")}, {"Tanggal Restrukturisasi Akhir", dateID(text(f, "tanggalRestrukturisasiAkhir"))},
-		{"Kredit Program Pemerintah", text(f, "kreditProgramPemerintahKet")}, {"Cara Restrukturisasi", text(f, "restrukturisasiKet")},
-		{"Kab/Kota Lokasi Proyek", text(f, "lokasiProyekKet")}, {"Kondisi", text(f, "kondisiKet")},
-		{"Valuta", text(f, "valutaKode")}, {"Tanggal Kondisi", dateID(text(f, "tanggalKondisi"))},
-		{"Suku Bunga/Imbalan", percent(text(f, "sukuBungaImbalan"))}, {"Jenis Suku Bunga Imbalan", text(f, "jenisSukuBungaImbalanKet")},
-		{"Keterangan", orDash(text(f, "keterangan"))}, {"", ""},
+	p.pairs([]pdfCell{
+		{"No Rekening", v("noRekening")}, {"Kualitas", v("kualitas")}, // TBD-045b, agreed
+		{"Sifat Kredit/Pembiayaan", v("sifatKreditPembiayaanKet")}, {"Jumlah Hari Tunggakan", v("jumlahHariTunggakan")},
+		{"Jenis Kredit/Pembiayaan", v("jenisKreditPembiayaanKet")}, {"Nilai Proyek", pdfRupiah(v("nilaiProyek"))},
+		{"Akad Kredit/Pembiayaan", v("akadKreditPembiayaanKet")}, {"Plafon Awal", pdfRupiah(v("plafonAwal"))},
+		{"Frekuensi Perpanjangan Kredit/Pembiayaan", v("frekPerpjganKreditPembiayaan")}, {"Plafon", pdfRupiah(v("plafon"))},
+		{"No Akad Awal", v("noAkadAwal")}, {"Realisasi/Pencairan Bulan Berjalan", pdfRupiah(v("realisasiBulanBerjalan"))},
+		{"Tanggal Akad Awal", indonesianDate(v("tanggalAkadAwal"))}, {"Nilai Dalam Mata Uang Asal", pdfRupiah(v("nilaiDalamMataUangAsal"))},
+		{"No Akad Akhir", v("noAkadAkhir")}, {"Sebab Macet", v("sebabMacetKet")},
+		{"Tanggal Akad Akhir", indonesianDate(v("tanggalAkadAkhir"))}, {"Tanggal Macet", indonesianDate(v("tanggalMacet"))},
+		{"Tanggal Awal Kredit", indonesianDate(v("tanggalAwalKredit"))}, {"Tunggakan Pokok", pdfRupiah(v("tunggakanPokok"))},
+		{"Tanggal Mulai", indonesianDate(v("tanggalMulai"))}, {"Tunggakan Bunga", pdfRupiah(v("tunggakanBunga"))},
+		{"Tanggal Jatuh Tempo", indonesianDate(v("tanggalJatuhTempo"))}, {"Frekuensi Tunggakan", v("frekuensiTunggakan")},
+		{"Kategori Debitur", v("kategoriDebiturKet")}, {"Denda", pdfRupiah(v("denda"))},
+		{"Jenis Penggunaan", v("jenisPenggunaanKet")}, {"Frekuensi Restrukturisasi", v("frekuensiRestrukturisasi")},
+		{"Sektor Ekonomi", v("sektorEkonomiKet")}, {"Tanggal Restrukturisasi Akhir", indonesianDate(v("tanggalRestrukturisasiAkhir"))},
+		{"Kredit Program Pemerintah", v("kreditProgramPemerintahKet")}, {"Cara Restrukturisasi", v("restrukturisasiKet")},
+		{"Kab/Kota Lokasi Proyek", v("lokasiProyekKet")}, {"Kondisi", v("kondisiKet")},
+		{"Valuta", v("valutaKode")}, {"Tanggal Kondisi", indonesianDate(v("tanggalKondisi"))},
+		{"Suku Bunga/Imbalan", pdfPercent(v("sukuBungaImbalan"))}, {"Jenis Suku Bunga Imbalan", v("jenisSukuBungaImbalanKet")},
+		{"Keterangan", pdfOrDash(v("keterangan"))}, {"", ""},
 	})
 	p.collaterals(arr(f, "agunan"))
 	p.guarantors(arr(f, "penjamin"))
-}
-
-func percent(s string) string {
-	if s == "" {
-		return ""
-	}
-	return s + "%"
 }
 
 // months is the 24-month grid: months 01-12, then 13-24, each a bold
@@ -466,8 +505,7 @@ func (p *slikPDF) months(f map[string]any) {
 	rowH := pdfLine * 2
 	p.ensure(2*rowH + 2)
 	top := pdf.GetY()
-	pdf.SetFont("Helvetica", "B", 8)
-	p.color(colNavy)
+	p.use(styleLabel)
 	pdf.SetXY(pdfMarginX, top)
 	pdf.MultiCell(labelW, pdfLine, p.tr("Kolektabilitas/Jumlah Hari Tunggakan"), "", "L", false)
 	for row := 0; row < 2; row++ {
@@ -476,45 +514,43 @@ func (p *slikPDF) months(f map[string]any) {
 			n := row*12 + i + 1
 			x := pdfMarginX + labelW + w*float64(i)
 			label := ""
-			if t, ok := monthOf(text(f, fmt.Sprintf("tahunBulan%02d", n))); ok {
+			if t, ok := dataMonth(pdfValue(f, fmt.Sprintf("tahunBulan%02d", n))); ok {
 				label = t.Format("Jan 06")
 			}
-			kol, ht := text(f, fmt.Sprintf("tahunBulan%02dKol", n)), text(f, fmt.Sprintf("tahunBulan%02dHt", n))
-			pdf.SetXY(x, y)
-			pdf.SetFont("Helvetica", "B", 8)
-			p.color(colBlack)
-			pdf.CellFormat(w, pdfLine, label, "", 0, "C", false, 0, "")
-			value := colBlack
-			if kol == "0" && ht == "0" {
-				value = colWhite
+			collectibility := pdfValue(f, fmt.Sprintf("tahunBulan%02dKol", n))
+			daysPastDue := pdfValue(f, fmt.Sprintf("tahunBulan%02dHt", n))
+			p.draw(x, y, w, []string{label}, pdfStyle{"B", 8, colBlack}, "C")
+			value := styleValue
+			if collectibility == "0" && daysPastDue == "0" {
+				value.color = colWhite
 			}
-			pdf.SetFont("Helvetica", "", 8)
-			p.color(value)
+			p.use(value)
 			pdf.SetXY(x, y+pdfLine)
-			pdf.CellFormat(box, pdfLine, kol, "1", 0, "C", false, 0, "")
-			pdf.CellFormat(box, pdfLine, ht, "1", 0, "C", false, 0, "")
+			pdf.CellFormat(box, pdfLine, collectibility, "1", 0, "C", false, 0, "")
+			pdf.CellFormat(box, pdfLine, daysPastDue, "1", 0, "C", false, 0, "")
 		}
 	}
 	pdf.SetXY(pdfMarginX, top+2*rowH+2)
 }
 
 func (p *slikPDF) collaterals(items []map[string]any) {
-	p.title("Agunan", colBlack)
+	p.title("Agunan", colBlack, colNavy)
 	for _, a := range items {
+		v := func(key string) string { return pdfValue(a, key) }
 		// Collateral values and dates as the file has them (legacy).
-		p.labelRow([]cell{
-			{"Jenis Agunan", text(a, "jenisAgunanKet")}, {"Nilai Agunan", text(a, "nilaiAgunanMenurutLJK")},
-			{"Paripasu", text(a, "prosentaseParipasu")}, {"Tanggal Update", text(a, "tanggalUpdate")},
-		}, colNavy, nil)
-		p.pairs([]cell{
-			{"Nomor Agunan", text(a, "nomorAgunan")}, {"Peringkat Agunan", text(a, "peringkatAgunan")},
-			{"Jenis Pengikatan", text(a, "jenisPengikatanKet")}, {"Lembaga Pemeringkat", text(a, "lembagaPemeringkat")},
-			{"Tanggal Pengikatan", text(a, "tanggalPengikatan")}, {"Bukti Kepemilikan", text(a, "buktiKepemilikan")},
-			{"Nama Pemilik Agunan", text(a, "namaPemilikAgunan")}, {"Nilai Agunan (NJOP)/Nilai Wajar", text(a, "nilaiAgunanNjop")},
-			{"Alamat Agunan", text(a, "alamatAgunan")}, {"Nilai Agunan Penilai Independen", text(a, "nilaiAgunanIndep")},
-			{"Dati II Lokasi Agunan", text(a, "kabKotaLokasiAgunanKet")}, {"Nama Penilai Independen", text(a, "namaPenilaiIndep")},
-			{"Tanggal Penilaian LJK", text(a, "tglPenilaianPelapor")}, {"Asuransi", text(a, "asuransi")},
-			{"Keterangan", orDash(text(a, "keterangan"))}, {"Tgl Penilaian Penilai Independen", text(a, "tanggalPenilaianPenilaiIndependen")},
+		p.row([]pdfCell{
+			{"Jenis Agunan", v("jenisAgunanKet")}, {"Nilai Agunan", v("nilaiAgunanMenurutLJK")},
+			{"Paripasu", v("prosentaseParipasu")}, {"Tanggal Update", v("tanggalUpdate")},
+		}, nil)
+		p.pairs([]pdfCell{
+			{"Nomor Agunan", v("nomorAgunan")}, {"Peringkat Agunan", v("peringkatAgunan")},
+			{"Jenis Pengikatan", v("jenisPengikatanKet")}, {"Lembaga Pemeringkat", v("lembagaPemeringkat")},
+			{"Tanggal Pengikatan", v("tanggalPengikatan")}, {"Bukti Kepemilikan", v("buktiKepemilikan")},
+			{"Nama Pemilik Agunan", v("namaPemilikAgunan")}, {"Nilai Agunan (NJOP)/Nilai Wajar", v("nilaiAgunanNjop")},
+			{"Alamat Agunan", v("alamatAgunan")}, {"Nilai Agunan Penilai Independen", v("nilaiAgunanIndep")},
+			{"Dati II Lokasi Agunan", v("kabKotaLokasiAgunanKet")}, {"Nama Penilai Independen", v("namaPenilaiIndep")},
+			{"Tanggal Penilaian LJK", v("tglPenilaianPelapor")}, {"Asuransi", v("asuransi")},
+			{"Keterangan", pdfOrDash(v("keterangan"))}, {"Tgl Penilaian Penilai Independen", v("tanggalPenilaianPenilaiIndependen")},
 		})
 		p.pdf.Ln(2)
 	}
@@ -522,17 +558,18 @@ func (p *slikPDF) collaterals(items []map[string]any) {
 
 // guarantors: field names as the legacy script (TBD-045f, agreed).
 func (p *slikPDF) guarantors(items []map[string]any) {
-	p.title("Penjamin", colBlack)
+	p.title("Penjamin", colBlack, colNavy)
+	grey := colLightGrey
 	for _, g := range items {
-		p.labelRow([]cell{
-			{"Nama Penjamin", text(g, "namaPenjamin")}, {"Nomor Identitas Penjamin", text(g, "nomorIdentitas")},
-			{"Tanggal Update", dateID(text(g, "tanggalUpdate"))},
-		}, colNavy, nil)
-		grey := colLightGrey
-		p.labelRow([]cell{
-			{"Golongan", text(g, "keteranganJenisPenjamin")}, {"Alamat", text(g, "alamatPenjamin")},
-			{"Keterangan", orDash(text(g, "keterangan"))},
-		}, colNavy, &grey)
+		v := func(key string) string { return pdfValue(g, key) }
+		p.row([]pdfCell{
+			{"Nama Penjamin", v("namaPenjamin")}, {"Nomor Identitas Penjamin", v("nomorIdentitas")},
+			{"Tanggal Update", indonesianDate(v("tanggalUpdate"))},
+		}, nil)
+		p.row([]pdfCell{
+			{"Golongan", v("keteranganJenisPenjamin")}, {"Alamat", v("alamatPenjamin")},
+			{"Keterangan", pdfOrDash(v("keterangan"))},
+		}, &grey)
 	}
 }
 
@@ -540,19 +577,18 @@ func (p *slikPDF) closing(header, individual map[string]any) {
 	pdf := p.pdf
 	p.ensure(30)
 	pdf.Ln(4)
-	pdf.SetFont("Helvetica", "I", 8)
-	p.color(colBlack)
+	p.use(pdfStyle{"I", 8, colBlack})
 	for _, l := range []string{
-		"Nomor Laporan " + text(individual, "nomorLaporan") + " / Operator " + text(header, "dibuatOleh") +
-			" / Tanggal Permintaan " + dateID(text(individual, "tanggalPermintaan")) + " / Kode Ref. Pengguna " + text(header, "kodeReferensiPengguna"),
+		"Nomor Laporan " + pdfValue(individual, "nomorLaporan") + " / Operator " + pdfValue(header, "dibuatOleh") +
+			" / Tanggal Permintaan " + indonesianDate(pdfValue(individual, "tanggalPermintaan")) + " / Kode Ref. Pengguna " + pdfValue(header, "kodeReferensiPengguna"),
 		// Tanggal Dibentuk is header.tanggalHasil (TBD-045d, agreed).
-		"Posisi Data Terakhir " + monthID(text(individual, "posisiDataTerakhir")) + " / LJK " + text(header, "kodeLJKPermintaan") + "-" +
-			text(header, "kodeCabangPermintaan") + " / Peruntukan " + text(header, "kodeTujuanPermintaan") + " / Tanggal Dibentuk " + dateID(text(header, "tanggalHasil")),
+		"Posisi Data Terakhir " + indonesianMonth(pdfValue(individual, "posisiDataTerakhir")) + " / LJK " + pdfValue(header, "kodeLJKPermintaan") + "-" +
+			pdfValue(header, "kodeCabangPermintaan") + " / Peruntukan " + pdfValue(header, "kodeTujuanPermintaan") +
+			" / Tanggal Dibentuk " + indonesianDate(pdfValue(header, "tanggalHasil")),
 	} {
 		pdf.MultiCell(p.width, pdfLine, p.tr(l), "", "L", false)
 	}
 	pdf.Ln(4)
-	pdf.SetFont("Helvetica", "B", 15)
-	p.color(colRed)
+	p.use(pdfStyle{"B", 15, colRed})
 	pdf.CellFormat(p.width, 8, p.tr("Disclaimer: PDF BERIKUT MERUPAKAN DUPLIKASI DARI SLIK OJK"), "", 1, "C", false, 0, "")
 }

@@ -14,9 +14,11 @@ import (
 // replaces the old with DB-RULE-031's order — upload, swap the row in one
 // transaction, then delete the old object.
 
-// generatedDoc is a file to store in a slot.
+// generatedDoc is a file to store in a slot. originalName, when set, is
+// its original_file_name (a copy keeps its source's); else fileName.
 type generatedDoc struct {
 	category, docType, fileName, contentType string
+	originalName                             string
 	data                                     []byte
 	createdBy                                string
 }
@@ -55,14 +57,34 @@ func (s *Service) slotGenerated(ctx context.Context, tx pgx.Tx, caseID string, d
 	case !isNotFound(err):
 		return err
 	}
+	_, err = s.insertDocument(ctx, tx, caseID, d, *sd, false)
+	return err
+}
+
+// insertDocument adds the stored file's Case Document row; with onlyIfEmpty
+// it is added only while the slot has no row, and inserted tells whether it
+// was.
+func (s *Service) insertDocument(ctx context.Context, q rowQuerier, caseID string, d generatedDoc, sd storedDoc, onlyIfEmpty bool) (inserted bool, err error) {
 	// The stored name keeps "/" out of the file name (FR-PSAPI-009 step 3).
 	name := strings.ReplaceAll(d.fileName, "/", "-")
-	_, err = tx.Exec(ctx, `
+	original := d.originalName
+	if original == "" {
+		original = name
+	}
+	var id uuid.UUID
+	err = q.QueryRow(ctx, `
 		INSERT INTO fos.case_document (file_id, case_id, document_category, document_type, original_file_name, file_name,
 			bucket_name, object_name, content_type, file_size_bytes, created_at, created_by)
-		VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, $10, $11)`,
-		sd.fileID, caseID, d.category, d.docType, name, sd.object.bucket, sd.object.object, d.contentType, len(d.data), s.now(), d.createdBy)
-	return err
+		SELECT $1, $2::varchar, $3::varchar, $4::varchar, $5, $6, $7, $8, $9, $10, $11, $12
+		WHERE NOT $13 OR NOT EXISTS (SELECT 1 FROM fos.case_document
+		                             WHERE case_id = $2::varchar AND document_category = $3::varchar AND document_type = $4::varchar)
+		RETURNING file_id`,
+		sd.fileID, caseID, d.category, d.docType, original, name, sd.object.bucket, sd.object.object, d.contentType, len(d.data),
+		s.now(), d.createdBy, onlyIfEmpty).Scan(&id)
+	if isNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // settleGenerated deletes, after the transaction, the replaced object when

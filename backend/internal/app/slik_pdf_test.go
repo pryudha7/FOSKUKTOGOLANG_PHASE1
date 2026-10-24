@@ -20,6 +20,18 @@ var (
 	pdfShow   = regexp.MustCompile(`\(((?:\\.|[^\\)])*)\) ?Tj`)
 )
 
+// pdfContent is a PDF's decompressed content streams.
+func pdfContent(data []byte) string {
+	var out strings.Builder
+	for _, m := range pdfStream.FindAllSubmatch(data, -1) {
+		if r, err := zlib.NewReader(bytes.NewReader(m[1])); err == nil {
+			content, _ := io.ReadAll(r)
+			out.Write(content)
+		}
+	}
+	return out.String()
+}
+
 // pdfText is the text a PDF shows, one shown string per line, read from its
 // compressed content streams.
 func pdfText(t *testing.T, data []byte) string {
@@ -117,6 +129,10 @@ func TestSLIKReportPDF(t *testing.T) {
 		}
 		last = i
 	}
+	// AC-FR-PSAPI-012-02: month 04 (Kol 0, Ht 0) writes its zeros white.
+	if !regexp.MustCompile(`1\.000 g BT [^\n]*\(0\) ?Tj`).MatchString(pdfContent(pdf.Data)) {
+		t.Fatal("no white 0 in the grid")
+	}
 	if strings.Contains(text, "Nov 24") || !strings.Contains(text, "\n10,000,000.00\n") || strings.Contains(text, "Rp 10,000,000.00") {
 		t.Fatalf("grid or summary amounts wrong:\n%s", text)
 	}
@@ -180,5 +196,75 @@ func TestSLIKReportCopiedIntoDokumenPreScreening(t *testing.T) {
 	still, _ := storedDocument(t, h, caseID, "PreScreeningResponse", "SLIK_PDF_CUSTOMER")
 	if up.Original != "slik-manual.pdf" || still.FileID != auto.FileID || !bytes.Equal(still.Data, auto.Data) {
 		t.Fatalf("after upload: %+v / %+v", up, still)
+	}
+}
+
+// AC-FR-PSAPI-010-07: a new result for the same slot (e.g. after a reopen)
+// replaces the PDF: one SLIK_PDF_CUSTOMER item on the attachments panel,
+// referenced by the report; the old object is deleted.
+func TestSLIKReportPDFSlotIsReplaced(t *testing.T) {
+	h, _, caseID := slikCase(t, true)
+	kc := referenceCode(t, h, caseID, "CUSTOMER")
+	callPBS(t, h, kc, slikZip(t, kc, "3171011234567890", facility("1")))
+	old, _ := storedDocument(t, h, caseID, "PreScreeningResponse", "SLIK_PDF_CUSTOMER")
+	// As a reopen would (TBD-042): the report waits again without its parsed rows.
+	for _, sql := range []string{
+		`DELETE FROM fos.slik_facility_history WHERE facility_id IN (SELECT facility_id FROM fos.slik_facility f JOIN fos.slik_report r USING (slik_report_id) WHERE r.reference_code = $1)`,
+		`DELETE FROM fos.slik_collateral WHERE facility_id IN (SELECT facility_id FROM fos.slik_facility f JOIN fos.slik_report r USING (slik_report_id) WHERE r.reference_code = $1)`,
+		`DELETE FROM fos.slik_guarantor WHERE facility_id IN (SELECT facility_id FROM fos.slik_facility f JOIN fos.slik_report r USING (slik_report_id) WHERE r.reference_code = $1)`,
+		`DELETE FROM fos.slik_facility WHERE slik_report_id IN (SELECT slik_report_id FROM fos.slik_report WHERE reference_code = $1)`,
+		`DELETE FROM fos.slik_debtor WHERE slik_report_id IN (SELECT slik_report_id FROM fos.slik_report WHERE reference_code = $1)`,
+		`UPDATE fos.slik_report SET status = 'REQUESTED' WHERE reference_code = $1`,
+	} {
+		exec(t, h, sql, kc)
+	}
+	if r := callPBS(t, h, kc, slikZip(t, kc, "3171011234567890", facility("2"))); r.Body["Code"] != "0" {
+		t.Fatalf("answer = %s", r.Raw)
+	}
+	now, _ := storedDocument(t, h, caseID, "PreScreeningResponse", "SLIK_PDF_CUSTOMER")
+	if now.FileID == old.FileID || count(t, h, `SELECT count(*) FROM fos.slik_report WHERE reference_code = $1 AND pdf_document_id::text = $2`, kc, now.FileID) != 1 {
+		t.Fatalf("pdf %+v after %+v", now, old)
+	}
+	for key := range fakeGCSOf[h].Objects() {
+		if strings.HasSuffix(key, old.Object) {
+			t.Fatal("old PDF object kept")
+		}
+	}
+	r := relogin(t, h, "AO001").Case(t, caseID)
+	pdfs := 0
+	for _, a := range r.Body["attachments"].([]any) {
+		if a.(map[string]any)["fileName"] == now.Name {
+			pdfs++
+		}
+	}
+	if pdfs != 1 {
+		t.Fatalf("attachments = %v", r.Body["attachments"])
+	}
+}
+
+// Agreed decision 5 and the review: a PDF that cannot be stored, or named
+// for want of a customer code, leaves the result unprocessed with Code 1;
+// the RPA may send it again.
+func TestSLIKResultWithoutItsPDFIsNotProcessed(t *testing.T) {
+	h, _, caseID := slikCase(t, false)
+	kc := referenceCode(t, h, caseID, "CUSTOMER")
+	data := slikZip(t, kc, "3171011234567890", facility("1"))
+
+	fakeGCSOf[h].SetDown(true)
+	if r := callPBS(t, h, kc, data); r.Body["Code"] != "1" {
+		t.Fatalf("GCS down = %s", r.Raw)
+	}
+	fakeGCSOf[h].SetDown(false)
+	exec(t, h, `UPDATE fos.work SET customer_code = NULL WHERE case_id = $1`, caseID)
+	if r := callPBS(t, h, kc, data); r.Body["Code"] != "1" {
+		t.Fatalf("no customer code = %s", r.Raw)
+	}
+	if n := count(t, h, `SELECT count(*) FROM fos.slik_report WHERE reference_code = $1 AND status = 'REQUESTED'`, kc); n != 1 ||
+		count(t, h, `SELECT count(*) FROM fos.case_document WHERE case_id = $1 AND document_category = 'PreScreeningResponse'`, caseID) != 0 {
+		t.Fatal("result processed without its PDF")
+	}
+	exec(t, h, `UPDATE fos.work SET customer_code = 'SMSME2600000001' WHERE case_id = $1`, caseID)
+	if r := callPBS(t, h, kc, data); r.Body["Code"] != "0" {
+		t.Fatalf("resend = %s", r.Raw)
 	}
 }

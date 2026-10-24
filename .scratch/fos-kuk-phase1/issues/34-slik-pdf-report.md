@@ -36,3 +36,13 @@ Implementation notes (2026-10-24):
 - Mutation checks (each fails a test): no pdf_document_id; PDF not slotted; English month in dates; no thousands separator; "Jan 2006" grid labels; no "Data Tidak Ditemukan"; no copy on opening.
 - No UI check: the PDF is a document, not a screen; the View SLIK button is ticket 14.
 
+Review fixes (2026-10-24, agreed with the user):
+
+- Layout: labels are measured in the font they are drawn in; Ringkasan Fasilitas rows are as tall as their tallest cell; a value is cut to 40 lines ending in "..." so a row always fits a page.
+- A case without customer_code is refused with Code 1 (the PDF could not be named), like a PDF that cannot be stored.
+- The Agunan and Penjamin titles are underlined in navy; Jumlah Kreditur is four bordered boxes.
+- Bug found by the new slot test (from ticket 11): slik_report's zip_document_id/pdf_document_id referenced the old documents, so a slot could never be replaced (foreign key, no ON DELETE). The report now lets go of them, in the transaction, before its slots are replaced.
+- Tests added: white 0/0 in the grid; a new result replaces the PDF slot (one item on the attachments panel, old object deleted; the reopen is simulated); GCS down or no customer code gives Code 1 and stores nothing.
+- Clean-up: glossary names collectibility / daysPastDue; package-level PDF helpers renamed (pdfValue, pdfCell, indonesianDate, monthsIndonesian, ...); one pdfStyle/use for font and colour; widths passed explicitly; one insertDocument helper for slot rows and the copy.
+- Kept as is: "Data Tidak Ditemukan" inside Data Pokok and the closing-line fields under header (same as the ticket 11 parsing) until REF-SLIK-02 can confirm; non-numeric amounts show empty; the copy is retried on each opening (DB-RULE-097 "setiap kali ... dibuka").
+

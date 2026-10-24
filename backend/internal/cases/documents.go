@@ -268,17 +268,13 @@ func (s *Service) copySLIKReport(ctx context.Context, caseID, userID string) err
 	if err != nil {
 		return err
 	}
-	d := generatedDoc{category: categoryPreScreening, docType: docSLIK, fileName: name, contentType: contentType, data: data, createdBy: userID}
+	d := generatedDoc{category: categoryPreScreening, docType: docSLIK, fileName: name, originalName: original,
+		contentType: contentType, data: data, createdBy: userID}
 	sd, err := s.putGenerated(ctx, caseID, d)
 	if err != nil {
 		return err
 	}
-	tag, err := s.db.Exec(ctx, `
-		INSERT INTO fos.case_document (file_id, case_id, document_category, document_type, original_file_name, file_name,
-			bucket_name, object_name, content_type, file_size_bytes, created_at, created_by)
-		SELECT $1, $2::varchar, $3::varchar, $4::varchar, $5, $6, $7, $8, $9, $10, $11, $12
-		WHERE NOT EXISTS (SELECT 1 FROM fos.case_document WHERE case_id = $2::varchar AND document_category = $3::varchar AND document_type = $4::varchar)`,
-		sd.fileID, caseID, categoryPreScreening, docSLIK, original, name, sd.object.bucket, sd.object.object, contentType, len(data), s.now(), userID)
-	s.settleGenerated(context.WithoutCancel(ctx), sd, err == nil && tag.RowsAffected() == 1)
+	inserted, err := s.insertDocument(ctx, s.db, caseID, d, sd, true)
+	s.settleGenerated(context.WithoutCancel(ctx), sd, inserted)
 	return err
 }

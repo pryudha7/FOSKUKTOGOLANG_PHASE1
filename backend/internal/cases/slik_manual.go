@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,6 +33,10 @@ const (
 	docSLIK         = "SLIK"
 	msgSLIKDocument = "Upload Dokumen SLIK" // ERR-036
 )
+
+// manualSLIKStates are the run states that hand the case back for Manual
+// SLIK Entry: the SLA timeout and the bypass.
+var manualSLIKStates = []string{runStoppedSLIKTimeout, runStoppedSLIKBypass}
 
 // manualSLIK hands the case back for Manual SLIK Entry in tx: the System's
 // Input Manual Recommendation, then a new Pre-Screening Submission for the
@@ -111,8 +116,11 @@ func (e *Executor) timeOutSLIK(ctx context.Context, runID int64) error {
 	if err := e.manualSLIK(ctx, tx, caseID); err != nil {
 		return err
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
 	slog.Info("SLIK wait timed out; the case returns for Manual SLIK Entry", "run_id", runID, "case_id", caseID)
-	return tx.Commit(ctx)
+	return nil
 }
 
 // slikBypass reads process/slik/bypass_enabled (FR-PSAPI-019 Configuration).
@@ -142,7 +150,7 @@ func inManualSLIKEntry(ctx context.Context, q rowQuerier, caseID string) (bool, 
 	if isNotFound(err) {
 		return false, started, nil
 	}
-	return state == runStoppedSLIKTimeout || state == runStoppedSLIKBypass, started, err
+	return slices.Contains(manualSLIKStates, state), started, err
 }
 
 // resumeAfterManualSLIK puts the case's run stopped for Manual SLIK Entry
@@ -153,7 +161,7 @@ func (e *Executor) resumeAfterManualSLIK(ctx context.Context, tx pgx.Tx, caseID 
 	err := tx.QueryRow(ctx, `
 		UPDATE fos.prescreening_runs SET state = $2, current_step = $3, current_api = NULL, attempt = 1, owner_id = $4,
 			heartbeat_at = $5, wait_deadline_at = NULL, updated_at = $5
-		WHERE run_id = `+latestRun+` AND state IN ($6, $7)
-		RETURNING run_id`, caseID, runRunning, nextStep(stepSLIKSpouse), e.owner, e.s.now(), runStoppedSLIKTimeout, runStoppedSLIKBypass).Scan(&id)
+		WHERE run_id = `+latestRun+` AND state = ANY($6)
+		RETURNING run_id`, caseID, runRunning, nextStep(stepSLIKSpouse), e.owner, e.s.now(), manualSLIKStates).Scan(&id)
 	return id, err
 }

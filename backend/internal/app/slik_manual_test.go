@@ -212,3 +212,48 @@ func TestSLIKBypassManualEntryAlsoNeedsTheSLIKDocument(t *testing.T) {
 		t.Fatalf("create without SLIK = %d %s", r.Status, r.Raw)
 	}
 }
+
+// Review fix (agreed): after a bypass, the Customer's requested result is
+// still refused with Code 1 once the Team Lead's Sesuai has the run go on
+// at Pefindo; it is neither stored nor judged.
+func TestResultAfterABypassStaysRefusedOnceTheRunGoesOn(t *testing.T) {
+	fs := apptest.StartFakeAPI(t, apptest.SLIKAccepted, apptest.SLIKInvalid)
+	h, _, _, caseID := checksWith(t, dukcapilOK, dhnOK, func(h *apptest.Harness, caseID string) {
+		h.UseSLIK(t, fs)
+		h.SeedOperator(t, apptest.Operator{UserID: rpaUser, Password: rpaPassword, RoleCode: "RPA"})
+		exec(t, h, `INSERT INTO fos.customer (case_id, customer_type, id_number, full_name, birth_date) VALUES ($1, 'Pasangan', $2, 'Siti Aminah', '1990-01-01')`, caseID, spouseNIK)
+		exec(t, h, `UPDATE fos.dynamic_system_settings SET value = 'true' WHERE purpose = 'process/slik/bypass_enabled'`)
+	})
+	eventually(t, "the bypass", func() bool { return run(t, h, caseID).State == "STOPPED_SLIK_BYPASS" })
+	ao := relogin(t, h, "AO001")
+	as := assignments(t, h, caseID)
+	pss := as[len(as)-1].ID
+	ao.OpenAssignment(t, caseID, pss)
+	duu := toUnderlying(t, h, ao, caseID, pss)
+	ao.OpenAssignment(t, caseID, duu)
+	if r := upload(t, ao, caseID, duu, "SLIK", "SLIK", "slik.pdf", []byte("pdf")); r.Status != http.StatusCreated {
+		t.Fatalf("upload SLIK = %d %s", r.Status, r.Raw)
+	}
+	r := createUnderlying(t, ao, caseID, duu, validSLIK())
+	if r.Status != http.StatusOK {
+		t.Fatalf("create = %d %s", r.Status, r.Raw)
+	}
+	tl := relogin(t, h, "TL01")
+	tl.OpenAssignment(t, caseID, r.Body["assignmentId"])
+	if r := review(t, tl, caseID, r.Body["assignmentId"], "SESUAI", "SLIK manual sesuai."); r.Status != http.StatusNoContent {
+		t.Fatalf("sesuai = %d %s", r.Status, r.Raw)
+	}
+	waitRunEnd(t, h, caseID)
+	if got := run(t, h, caseID); got.Step != "Pefindo" {
+		t.Fatalf("run = %+v", got)
+	}
+
+	kc := referenceCode(t, h, caseID, "CUSTOMER")
+	res := callPBS(t, h, kc, slikZip(t, kc, "3171011234567890", facility("2", repeat(7, month{"2", "10"})...)))
+	if res.Body["Code"] != "1" || !strings.Contains(res.Raw, "waiting time") {
+		t.Fatalf("result after the run went on = %s", res.Raw)
+	}
+	if n := count(t, h, `SELECT count(*) FROM fos.slik_report WHERE case_id = $1 AND status = 'RECEIVED'`, caseID); n != 0 || caseStatus(t, h, caseID) == "ResolvedRejected-Prescreening" {
+		t.Fatalf("stored %d, status %s", n, caseStatus(t, h, caseID))
+	}
+}

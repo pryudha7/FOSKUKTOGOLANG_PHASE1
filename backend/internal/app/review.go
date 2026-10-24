@@ -49,7 +49,7 @@ func toReviewJSON(p cases.ReviewPage) reviewJSON {
 	return out
 }
 
-func toRetryJSON(v *cases.RetryView) *retryJSON {
+func toRetryJSON(v *cases.APILogView) *retryJSON {
 	if v == nil {
 		return nil
 	}

@@ -213,13 +213,15 @@ func (s *Service) receiveSLIK(ctx context.Context, rpaUser, kode string, zipData
 // Code 1, if it is: the case's SLIK wait ran out (FR-PSAPI-011 rule 3) or
 // its SLIK was bypassed (as after the timeout, agreed for ticket 12), the
 // result is in already (FR-PSAPI-009 step 7), or it was never requested.
-// Texts are interim (TBD-044, agreed).
+// The timeout and the bypass are read from their log rows, which stay when
+// the run goes on at Pefindo. Texts are interim (TBD-044, agreed).
 func (s *Service) refuseSLIK(ctx context.Context, q rowQuerier, caseID, kode, status string) (string, bool) {
 	var timedOut bool
 	if err := q.QueryRow(ctx, `
 		SELECT EXISTS (SELECT 1 FROM fos.connect_api_log WHERE case_id = $1 AND api_name = $2 AND response = $3)
-		    OR EXISTS (SELECT 1 FROM fos.prescreening_runs WHERE case_id = $1 AND state IN ($4, $5))`,
-		caseID, apiPBSResponse, timeoutResponse, runStoppedSLIKTimeout, runStoppedSLIKBypass).Scan(&timedOut); err != nil {
+		    OR EXISTS (SELECT 1 FROM fos.connect_api_log WHERE case_id = $1 AND api_name IN ($4, $5) AND api_status = $6)`,
+		caseID, apiPBSResponse, timeoutResponse, slikSubjects[subjectCustomer].api.logName, slikSubjects[subjectSpouse].api.logName,
+		apiBypass).Scan(&timedOut); err != nil {
 		return "the SLIK result could not be processed", true
 	}
 	switch {

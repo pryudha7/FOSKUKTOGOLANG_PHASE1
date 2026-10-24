@@ -172,8 +172,12 @@ The outcome of a Pre-Screening Check that could not complete, returning the Fina
 _Avoid_: Reject, Rejection
 
 **Manual SLIK Entry** (_Input Manual_):
-The Branch Officer's upload of a SLIK report by hand when the SLIK result does not arrive in time.
-_Avoid_: SLIK Bypass
+The Branch Officer's upload of a SLIK report by hand when the SLIK result does not arrive in time, or after a SLIK Bypass.
+_Avoid_: SLIK Bypass (the trigger, not the upload)
+
+**SLIK Bypass** (_Bypass SLIK_):
+Replacing the automatic retry of a failed SLIK request with a Bypass log row, without calling SLIK, so the case goes to Manual SLIK Entry; switched on by a Dynamic System Setting.
+_Avoid_: Manual SLIK Entry
 
 ## External checks
 

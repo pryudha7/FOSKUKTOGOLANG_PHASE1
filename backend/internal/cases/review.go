@@ -47,15 +47,17 @@ type ReviewPage struct {
 	Editable        bool
 	// Retry is set when the case returned after a Check Failure (UI-017
 	// Varian Retry); the page then has no decision fields.
-	Retry *RetryView
+	Retry *APILogView
 	// SLIKTimeout is set after Manual SLIK Entry (UI-017 Varian Timeout
 	// SLIK): the SLIK rows of the run, above the history and the decision.
-	SLIKTimeout *RetryView
+	SLIKTimeout *APILogView
 }
 
-// RetryView lists the failed check's attempts of its last cycle (UI-020
-// rows on Gambar 35; agreed for TBD-042).
-type RetryView struct {
+// APILogView is an API Log History panel: UI-020 rows (Gambar 35). On the
+// Retry view, the failed API's attempts of its last cycle (agreed for
+// TBD-042); on the Timeout SLIK view, the run's SLIK rows (agreed for
+// TBD-048g).
+type APILogView struct {
 	Logs []APILogEntry
 }
 
@@ -151,10 +153,7 @@ func (s *Service) reviewPage(ctx context.Context, sess auth.Session, caseID stri
 		if err != nil {
 			return ReviewPage{}, err
 		}
-		if logs == nil {
-			logs = []APILogEntry{}
-		}
-		page.SLIKTimeout = &RetryView{Logs: logs}
+		page.SLIKTimeout = &APILogView{Logs: logs}
 		return page, nil
 	}
 	// The failed API's attempts of the newest run, its last cycle only: the
@@ -180,10 +179,7 @@ func (s *Service) reviewPage(ctx context.Context, sess auth.Session, caseID stri
 	if err != nil {
 		return ReviewPage{}, err
 	}
-	if logs == nil {
-		logs = []APILogEntry{}
-	}
-	page.Retry = &RetryView{Logs: logs}
+	page.Retry = &APILogView{Logs: logs}
 	return page, nil
 }
 

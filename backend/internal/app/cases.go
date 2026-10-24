@@ -224,12 +224,12 @@ func (s *server) openAssignment(ep endpoint) http.HandlerFunc {
 			body = toWaitingSLIKJSON(*p.WaitingSLIK)
 		case p.Pipeline != nil:
 			body = toPipelineJSON(*p.Pipeline)
-		case p.Personal != nil:
-			body = toPersonalPageJSON(*p.Personal)
+		case p.IndividualData != nil:
+			body = toIndividualDataPageJSON(*p.IndividualData)
 		case p.Spouse != nil:
 			body = toSpousePageJSON(*p.Spouse)
-		case p.Family != nil:
-			body = toFamilyPageJSON(*p.Family)
+		case p.CloseRelative != nil:
+			body = toCloseRelativePageJSON(*p.CloseRelative)
 		}
 		writeJSON(w, http.StatusOK, struct {
 			AssignmentID int64  `json:"assignmentId"`

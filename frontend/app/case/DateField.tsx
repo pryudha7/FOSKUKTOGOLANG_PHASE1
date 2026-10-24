@@ -14,6 +14,7 @@ import {
   weekdays,
   type YMD,
 } from "./dates";
+import { inputClass } from "./fields";
 import styles from "./case.module.css";
 
 // A date field (BR-UI-011): typed as dd/MM/yyyy while focused, shown in
@@ -56,7 +57,7 @@ export default function DateField({
   return (
     <div className={styles.dateField}>
       <input
-        className={`${disabled ? styles.inputDisabled : invalid ? styles.inputInvalid : styles.input} ${showLong ? styles.dateHidden : ""}`}
+        className={`${inputClass(disabled, !!invalid)} ${showLong ? styles.dateHidden : ""}`}
         aria-label={ariaLabel}
         value={typed}
         disabled={disabled}

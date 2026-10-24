@@ -5,9 +5,9 @@ export const assignmentNames = {
   preScreeningReview: "Pre Screening", // the Team Lead's Pre-Screening Review
   waitingSLIK: "SLIKWQFlowAct", // UI-023
   pipelineDataEntry: "Pipeline Data Entry", // UI-024
-  personalData: "Data Pribadi", // UI-026
+  individualData: "Data Pribadi", // UI-026
   spouseData: "Data Pasangan", // UI-027
-  familyData: "Data Keluarga Dekat", // UI-028
+  closeRelativeData: "Data Keluarga Dekat", // UI-028
 } as const;
 
 // The Tipe Nasabah description whose form exists today (Badan Usaha:

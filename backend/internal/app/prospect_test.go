@@ -81,7 +81,7 @@ type addressForm struct {
 	SubdistrictCode    string `json:"subdistrictCode"`
 }
 
-type personalForm struct {
+type individualDataForm struct {
 	IDLifetime                bool        `json:"idLifetime"`
 	Nationality               string      `json:"nationality"`
 	Email                     string      `json:"email"`
@@ -111,8 +111,8 @@ func validEKTP() addressForm {
 	return addressForm{"Jl. Tebet Raya 1", "0812-3456-7890", "+62-21", "007", "012", "5", "11", "HO1", "31", "3171", "317101", "3171011"}
 }
 
-func validPersonalForm(marital string) personalForm {
-	return personalForm{
+func validIndividualDataForm(marital string) individualDataForm {
+	return individualDataForm{
 		IDLifetime: true, Nationality: "Indonesia", NPWP: "123456789012345", JobCode: "J1", Workplace: "PT Maju",
 		GenderCode: "G1", WorkplaceAddress: "Jl. Kerja 2", GrossIncome: "15000000", IncomeSourceCode: "SI1",
 		RelationshipWithBankCode: "RB1", CustomerCategoryCode: "CC1", WorkplaceSectorCode: "1100", BirthPlace: "Jakarta",
@@ -125,9 +125,9 @@ func prospectPath(caseID string, id int64, form, to string) string {
 	return submitPath(caseID, id, form+"?to="+url.QueryEscape(to))
 }
 
-func submitPersonal(t *testing.T, c *apptest.Client, caseID string, id int64, to string, f any) apptest.Response {
+func submitIndividualData(t *testing.T, c *apptest.Client, caseID string, id int64, to string, f any) apptest.Response {
 	t.Helper()
-	return c.Do(t, http.MethodPost, prospectPath(caseID, id, "personal", to), f)
+	return c.Do(t, http.MethodPost, prospectPath(caseID, id, "individual-data", to), f)
 }
 
 // movedTo checks a move answered with the new opened assignment of name.
@@ -223,41 +223,41 @@ func TestDataPribadiValidation(t *testing.T) {
 	h, c, caseID, id := prospect(t, false)
 	for _, tc := range []struct {
 		name   string
-		change func(f *personalForm)
+		change func(f *individualDataForm)
 		want   fieldError
 	}{
-		{"lifetime", func(f *personalForm) { f.IDLifetime = false }, fieldError{"form", "Berlaku Sampai", "ERR-010", "Berlaku Sampai wajib diisi"}},
-		{"nationality", func(f *personalForm) { f.Nationality = strings.Repeat("a", 51) }, fieldError{"form", "Kewarganegaraan", "ERR-040", "Kewarganegaraan maksimal 50 karakter"}},
-		{"email", func(f *personalForm) { f.Email = "budi@mail" }, fieldError{"form", "Alamat Email", "ERR-037", "Harap masukkan Alamat Email yang valid."}},
-		{"npwp letters", func(f *personalForm) { f.NPWP = "12345678901234a" }, fieldError{"form", "Nomor NPWP", "ERR-011", "Harap masukkan angka saja"}},
-		{"npwp short", func(f *personalForm) { f.NPWP = "12345678901234" }, fieldError{"form", "Nomor NPWP", "ERR-012", "NPWP minimal 15 digit maksimal 22 digit"}},
-		{"job", func(f *personalForm) { f.JobCode = "X" }, fieldError{"form", "Pekerjaan", "ERR-037", "Harap masukkan Pekerjaan yang valid."}},
-		{"gender", func(f *personalForm) { f.GenderCode = "" }, fieldError{"form", "Jenis Kelamin", "ERR-010", "Jenis Kelamin wajib diisi"}},
-		{"income", func(f *personalForm) { f.GrossIncome = "1000000000000000" }, fieldError{"form", "Penghasilan Kotor Pertahun", "ERR-037", "Harap masukkan Penghasilan Kotor Pertahun yang valid."}},
-		{"sector", func(f *personalForm) { f.WorkplaceSectorCode = "kon" }, fieldError{"form", "Bidang Usaha Tempat Bekerja", "ERR-037", "Harap masukkan Bidang Usaha Tempat Bekerja yang valid."}},
-		{"inactive sector", func(f *personalForm) { f.WorkplaceSectorCode = "9900" }, fieldError{"form", "Bidang Usaha Tempat Bekerja", "ERR-037", "Harap masukkan Bidang Usaha Tempat Bekerja yang valid."}},
-		{"birth place", func(f *personalForm) { f.BirthPlace = "Jakarta1" }, fieldError{"form", "Tempat Lahir", "ERR-037", "Harap masukkan Tempat Lahir yang valid."}},
-		{"rw", func(f *personalForm) { f.EKTP.RW = "0012" }, fieldError{"ektp", "RW", "ERR-040", "RW maksimal 3 karakter"}},
-		{"rt letters", func(f *personalForm) { f.EKTP.RT = "0a" }, fieldError{"ektp", "RT", "ERR-037", "Harap masukkan RT yang valid."}},
-		{"mobile", func(f *personalForm) { f.EKTP.MobilePhone = "0812a" }, fieldError{"ektp", "Nomor Handphone", "ERR-037", "Harap masukkan Nomor Handphone yang valid."}},
-		{"phone digits", func(f *personalForm) { f.EKTP.Phone = "0812345678901234" }, fieldError{"ektp", "Nomor Telepon", "ERR-037", "Harap masukkan Nomor Telepon yang valid."}},
-		{"years", func(f *personalForm) { f.EKTP.YearsOfStay = "100" }, fieldError{"ektp", "Lama Tinggal (Tahun)", "ERR-037", "Harap masukkan Lama Tinggal (Tahun) yang valid."}},
-		{"months", func(f *personalForm) { f.EKTP.MonthsOfStay = "12" }, fieldError{"ektp", "Lama Tinggal (Bulan)", "ERR-037", "Harap masukkan Lama Tinggal (Bulan) yang valid."}},
-		{"city of another province", func(f *personalForm) { f.EKTP.CityCode = "3273" }, fieldError{"ektp", "Kota", "ERR-037", "Harap masukkan Kota yang valid."}},
-		{"no subdistrict", func(f *personalForm) { f.EKTP.SubdistrictCode = "" }, fieldError{"ektp", "Kelurahan", "ERR-010", "Kelurahan wajib diisi"}},
-		{"domicile shown", func(f *personalForm) {
+		{"lifetime", func(f *individualDataForm) { f.IDLifetime = false }, fieldError{"form", "Berlaku Sampai", "ERR-010", "Berlaku Sampai wajib diisi"}},
+		{"nationality", func(f *individualDataForm) { f.Nationality = strings.Repeat("a", 51) }, fieldError{"form", "Kewarganegaraan", "ERR-040", "Kewarganegaraan maksimal 50 karakter"}},
+		{"email", func(f *individualDataForm) { f.Email = "budi@mail" }, fieldError{"form", "Alamat Email", "ERR-037", "Harap masukkan Alamat Email yang valid."}},
+		{"npwp letters", func(f *individualDataForm) { f.NPWP = "12345678901234a" }, fieldError{"form", "Nomor NPWP", "ERR-011", "Harap masukkan angka saja"}},
+		{"npwp short", func(f *individualDataForm) { f.NPWP = "12345678901234" }, fieldError{"form", "Nomor NPWP", "ERR-012", "NPWP minimal 15 digit maksimal 22 digit"}},
+		{"job", func(f *individualDataForm) { f.JobCode = "X" }, fieldError{"form", "Pekerjaan", "ERR-037", "Harap masukkan Pekerjaan yang valid."}},
+		{"gender", func(f *individualDataForm) { f.GenderCode = "" }, fieldError{"form", "Jenis Kelamin", "ERR-010", "Jenis Kelamin wajib diisi"}},
+		{"income", func(f *individualDataForm) { f.GrossIncome = "1000000000000000" }, fieldError{"form", "Penghasilan Kotor Pertahun", "ERR-037", "Harap masukkan Penghasilan Kotor Pertahun yang valid."}},
+		{"sector", func(f *individualDataForm) { f.WorkplaceSectorCode = "kon" }, fieldError{"form", "Bidang Usaha Tempat Bekerja", "ERR-037", "Harap masukkan Bidang Usaha Tempat Bekerja yang valid."}},
+		{"inactive sector", func(f *individualDataForm) { f.WorkplaceSectorCode = "9900" }, fieldError{"form", "Bidang Usaha Tempat Bekerja", "ERR-037", "Harap masukkan Bidang Usaha Tempat Bekerja yang valid."}},
+		{"birth place", func(f *individualDataForm) { f.BirthPlace = "Jakarta1" }, fieldError{"form", "Tempat Lahir", "ERR-037", "Harap masukkan Tempat Lahir yang valid."}},
+		{"rw", func(f *individualDataForm) { f.EKTP.RW = "0012" }, fieldError{"ektp", "RW", "ERR-040", "RW maksimal 3 karakter"}},
+		{"rt letters", func(f *individualDataForm) { f.EKTP.RT = "0a" }, fieldError{"ektp", "RT", "ERR-037", "Harap masukkan RT yang valid."}},
+		{"mobile", func(f *individualDataForm) { f.EKTP.MobilePhone = "0812a" }, fieldError{"ektp", "Nomor Handphone", "ERR-037", "Harap masukkan Nomor Handphone yang valid."}},
+		{"phone digits", func(f *individualDataForm) { f.EKTP.Phone = "0812345678901234" }, fieldError{"ektp", "Nomor Telepon", "ERR-037", "Harap masukkan Nomor Telepon yang valid."}},
+		{"years", func(f *individualDataForm) { f.EKTP.YearsOfStay = "100" }, fieldError{"ektp", "Lama Tinggal (Tahun)", "ERR-037", "Harap masukkan Lama Tinggal (Tahun) yang valid."}},
+		{"months", func(f *individualDataForm) { f.EKTP.MonthsOfStay = "12" }, fieldError{"ektp", "Lama Tinggal (Bulan)", "ERR-037", "Harap masukkan Lama Tinggal (Bulan) yang valid."}},
+		{"city of another province", func(f *individualDataForm) { f.EKTP.CityCode = "3273" }, fieldError{"ektp", "Kota", "ERR-037", "Harap masukkan Kota yang valid."}},
+		{"no subdistrict", func(f *individualDataForm) { f.EKTP.SubdistrictCode = "" }, fieldError{"ektp", "Kelurahan", "ERR-010", "Kelurahan wajib diisi"}},
+		{"domicile shown", func(f *individualDataForm) {
 			f.SameAsEKTP = false
 			f.Domicile = validEKTP()
 			f.Domicile.Address = ""
 			f.MailingAddressCode = "MA-1"
 		}, fieldError{"domicile", "Alamat Rumah Tinggal Sekarang (Jika berbeda dengan e-KTP)", "ERR-010", "Alamat Rumah Tinggal Sekarang (Jika berbeda dengan e-KTP) wajib diisi"}},
-		{"mailing shown", func(f *personalForm) { f.SameAsEKTP = false; f.Domicile = validEKTP() }, fieldError{"domicile", "Alamat Surat Menyurat", "ERR-010", "Alamat Surat Menyurat wajib diisi"}},
-		{"mother", func(f *personalForm) { f.MotherMaidenName = strings.Repeat("a", 31) }, fieldError{"form", "Nama Gadis Ibu Kandung", "ERR-013", "Nama maksimal 30 karakter"}},
-		{"marital", func(f *personalForm) { f.MaritalStatusCode = "MS-9" }, fieldError{"form", "Status Perkawinan", "ERR-037", "Harap masukkan Status Perkawinan yang valid."}},
+		{"mailing shown", func(f *individualDataForm) { f.SameAsEKTP = false; f.Domicile = validEKTP() }, fieldError{"domicile", "Alamat Surat Menyurat", "ERR-010", "Alamat Surat Menyurat wajib diisi"}},
+		{"mother", func(f *individualDataForm) { f.MotherMaidenName = strings.Repeat("a", 31) }, fieldError{"form", "Nama Gadis Ibu Kandung", "ERR-013", "Nama maksimal 30 karakter"}},
+		{"marital", func(f *individualDataForm) { f.MaritalStatusCode = "MS-9" }, fieldError{"form", "Status Perkawinan", "ERR-037", "Harap masukkan Status Perkawinan yang valid."}},
 	} {
-		f := validPersonalForm("MS-1")
+		f := validIndividualDataForm("MS-1")
 		tc.change(&f)
-		if got := fieldErrors(t, submitPersonal(t, c, caseID, id, "Data Pasangan", f)); !reflect.DeepEqual(got, []fieldError{tc.want}) {
+		if got := fieldErrors(t, submitIndividualData(t, c, caseID, id, "Data Pasangan", f)); !reflect.DeepEqual(got, []fieldError{tc.want}) {
 			t.Errorf("%s: errors %v, want %v", tc.name, got, tc.want)
 		}
 	}
@@ -266,7 +266,7 @@ func TestDataPribadiValidation(t *testing.T) {
 	}
 	// An empty form names every required field, top to bottom; the hidden
 	// domicile block is not checked.
-	got := fieldErrors(t, submitPersonal(t, c, caseID, id, "Data Pasangan", personalForm{SameAsEKTP: true}))
+	got := fieldErrors(t, submitIndividualData(t, c, caseID, id, "Data Pasangan", individualDataForm{SameAsEKTP: true}))
 	var fields []string
 	for _, e := range got {
 		fields = append(fields, e.Section+"/"+e.Field)
@@ -290,9 +290,9 @@ func TestDataPribadiValidation(t *testing.T) {
 // Pasangan opens at once for the same operator.
 func TestDataPribadiNextStoresAndOpensDataPasangan(t *testing.T) {
 	h, c, caseID, id := prospect(t, false)
-	f := validPersonalForm("MS-1")
+	f := validIndividualDataForm("MS-1")
 	f.Domicile = addressForm{Address: "ignored", RT: "999"}
-	r := submitPersonal(t, c, caseID, id, "Data Pasangan", f)
+	r := submitIndividualData(t, c, caseID, id, "Data Pasangan", f)
 	movedTo(t, h, caseID, r, "Data Pasangan")
 	if got := assignmentsNamed(t, h, caseID, "Data Pribadi"); got[0].Status != "sudah selesai dikerjakan" || got[0].Completed == nil {
 		t.Fatalf("Data Pribadi = %+v", got)
@@ -320,14 +320,14 @@ func TestDataPribadiNextStoresAndOpensDataPasangan(t *testing.T) {
 func TestDataPribadiOwnDomicileAndOnlyItsFields(t *testing.T) {
 	h, c, caseID, id := prospect(t, false)
 	other := map[string]any{"idLifetime": true, "prenupCode": "PN1"}
-	if r := submitPersonal(t, c, caseID, id, "Data Pasangan", other); r.Status != http.StatusBadRequest {
+	if r := submitIndividualData(t, c, caseID, id, "Data Pasangan", other); r.Status != http.StatusBadRequest {
 		t.Fatalf("other form's field = %d", r.Status)
 	}
-	f := validPersonalForm("MS-1")
+	f := validIndividualDataForm("MS-1")
 	f.SameAsEKTP, f.MailingAddressCode = false, "MA-2"
 	f.Domicile = validEKTP()
 	f.Domicile.Address, f.Domicile.RT = "Jl. Domisili 9", "001"
-	movedTo(t, h, caseID, submitPersonal(t, c, caseID, id, "Data Pasangan", f), "Data Pasangan")
+	movedTo(t, h, caseID, submitIndividualData(t, c, caseID, id, "Data Pasangan", f), "Data Pasangan")
 	cu, _ := customerOf(t, h, caseID, "Nasabah")
 	if deref(cu.Mailing) != "MA-2" || cu.Same == nil || *cu.Same {
 		t.Fatalf("customer = %+v", cu)
@@ -358,7 +358,7 @@ type spouseForm struct {
 // toSpouse fills Data Pribadi with marital and returns Data Pasangan.
 func toSpouse(t *testing.T, h *apptest.Harness, c *apptest.Client, caseID string, id int64, marital string) int64 {
 	t.Helper()
-	return movedTo(t, h, caseID, submitPersonal(t, c, caseID, id, "Data Pasangan", validPersonalForm(marital)), "Data Pasangan")
+	return movedTo(t, h, caseID, submitIndividualData(t, c, caseID, id, "Data Pasangan", validIndividualDataForm(marital)), "Data Pasangan")
 }
 
 // AC-FR-APP-013-01, -03, -04, -06: married, Data Pasangan shows the
@@ -434,7 +434,7 @@ func TestDataPasanganNotMarried(t *testing.T) {
 	}
 }
 
-type familyForm struct {
+type closeRelativeForm struct {
 	Name             string `json:"name"`
 	RelationshipCode string `json:"relationshipCode"`
 	Address          string `json:"address"`
@@ -456,7 +456,7 @@ func TestDataKeluargaDekatCreate(t *testing.T) {
 	h, c, caseID, id := prospect(t, false)
 	sid := toSpouse(t, h, c, caseID, id, "MS-1")
 	fid := movedTo(t, h, caseID, c.Do(t, http.MethodPost, prospectPath(caseID, sid, "spouse", "Data Keluarga Dekat"), map[string]any{}), "Data Keluarga Dekat")
-	got := fieldErrors(t, c.Do(t, http.MethodPost, prospectPath(caseID, fid, "family", "create"), familyForm{Name: "Andi", Address: "Jl. Saudara 4"}))
+	got := fieldErrors(t, c.Do(t, http.MethodPost, prospectPath(caseID, fid, "close-relative", "create"), closeRelativeForm{Name: "Andi", Address: "Jl. Saudara 4"}))
 	var fields []string
 	for _, e := range got {
 		fields = append(fields, e.Field+" "+e.Code)
@@ -465,8 +465,8 @@ func TestDataKeluargaDekatCreate(t *testing.T) {
 	if !reflect.DeepEqual(fields, want) {
 		t.Fatalf("errors %v", fields)
 	}
-	f := familyForm{"Andi", "FR1", "Jl. Saudara 4", "021-123", "021-456", "31", "3171", "317101", "3171011", "0814", "ED1"}
-	r := c.Do(t, http.MethodPost, prospectPath(caseID, fid, "family", "create"), f)
+	f := closeRelativeForm{"Andi", "FR1", "Jl. Saudara 4", "021-123", "021-456", "31", "3171", "317101", "3171011", "0814", "ED1"}
+	r := c.Do(t, http.MethodPost, prospectPath(caseID, fid, "close-relative", "create"), f)
 	if r.Status != http.StatusOK {
 		t.Fatalf("create = %d %s", r.Status, r.Raw)
 	}
@@ -496,16 +496,16 @@ func TestDataKeluargaDekatCreate(t *testing.T) {
 // is no target; Create belongs to Data Keluarga Dekat only.
 func TestProspectBackAndBreadcrumb(t *testing.T) {
 	h, c, caseID, id := prospect(t, false)
-	if r := submitPersonal(t, c, caseID, id, "Data Pribadi", validPersonalForm("MS-1")); r.Status != http.StatusBadRequest {
+	if r := submitIndividualData(t, c, caseID, id, "Data Pribadi", validIndividualDataForm("MS-1")); r.Status != http.StatusBadRequest {
 		t.Fatalf("to itself = %d", r.Status)
 	}
-	if r := submitPersonal(t, c, caseID, id, "create", validPersonalForm("MS-1")); r.Status != http.StatusBadRequest {
+	if r := submitIndividualData(t, c, caseID, id, "create", validIndividualDataForm("MS-1")); r.Status != http.StatusBadRequest {
 		t.Fatalf("create from Data Pribadi = %d", r.Status)
 	}
 	// Breadcrumb straight to Data Keluarga Dekat, then Back twice.
-	fid := movedTo(t, h, caseID, submitPersonal(t, c, caseID, id, "Data Keluarga Dekat", validPersonalForm("MS-1")), "Data Keluarga Dekat")
-	sid := movedTo(t, h, caseID, c.Do(t, http.MethodPost, prospectPath(caseID, fid, "family", "Data Pasangan"),
-		familyForm{"Andi", "FR1", "Jl. Saudara 4", "", "", "31", "3171", "317101", "3171011", "0814", "ED1"}), "Data Pasangan")
+	fid := movedTo(t, h, caseID, submitIndividualData(t, c, caseID, id, "Data Keluarga Dekat", validIndividualDataForm("MS-1")), "Data Keluarga Dekat")
+	sid := movedTo(t, h, caseID, c.Do(t, http.MethodPost, prospectPath(caseID, fid, "close-relative", "Data Pasangan"),
+		closeRelativeForm{"Andi", "FR1", "Jl. Saudara 4", "", "", "31", "3171", "317101", "3171011", "0814", "ED1"}), "Data Pasangan")
 	pid := movedTo(t, h, caseID, c.Do(t, http.MethodPost, prospectPath(caseID, sid, "spouse", "Data Pribadi"), map[string]any{}), "Data Pribadi")
 	v := pipelinePage(t, c, caseID, pid)["values"].(map[string]any)
 	ektp := v["ektp"].(map[string]any)
@@ -513,7 +513,7 @@ func TestProspectBackAndBreadcrumb(t *testing.T) {
 		t.Fatalf("reopened values = %v", v)
 	}
 	// Back from Data Keluarga Dekat saved it: reopening shows it.
-	fid2 := movedTo(t, h, caseID, submitPersonal(t, c, caseID, pid, "Data Keluarga Dekat", validPersonalForm("MS-1")), "Data Keluarga Dekat")
+	fid2 := movedTo(t, h, caseID, submitIndividualData(t, c, caseID, pid, "Data Keluarga Dekat", validIndividualDataForm("MS-1")), "Data Keluarga Dekat")
 	if fv := pipelinePage(t, c, caseID, fid2)["values"].(map[string]any); fv["name"] != "Andi" || fv["subdistrictCode"] != "3171011" {
 		t.Fatalf("family values = %v", fv)
 	}
@@ -522,7 +522,7 @@ func TestProspectBackAndBreadcrumb(t *testing.T) {
 	if r := c.Do(t, http.MethodPost, prospectPath(caseID, fid2, "spouse", "Data Pribadi"), map[string]any{}); r.Status != http.StatusBadRequest {
 		t.Fatalf("wrong form = %d", r.Status)
 	}
-	if r := tl.Do(t, http.MethodPost, prospectPath(caseID, fid2, "family", "Data Pasangan"), familyForm{}); r.Status != http.StatusForbidden {
+	if r := tl.Do(t, http.MethodPost, prospectPath(caseID, fid2, "close-relative", "Data Pasangan"), closeRelativeForm{}); r.Status != http.StatusForbidden {
 		t.Fatalf("Team Lead = %d", r.Status)
 	}
 }

@@ -234,11 +234,11 @@ type AssignmentPage struct {
 	WaitingSLIK *WaitingSLIKPage
 	// Pipeline is set for Pipeline Data Entry (UI-024).
 	Pipeline *PipelinePage
-	// Personal, Spouse and Family are set for Data Pribadi, Data Pasangan
+	// IndividualData, Spouse and CloseRelative are set for Data Pribadi, Data Pasangan
 	// and Data Keluarga Dekat (UI-026 to UI-028).
-	Personal *PersonalPage
-	Spouse   *SpousePage
-	Family   *FamilyPage
+	IndividualData *IndividualDataPage
+	Spouse         *SpousePage
+	CloseRelative  *CloseRelativePage
 }
 
 // PreScreeningPage is the data UI-010 shows today: Nama Branch and the Tipe
@@ -305,12 +305,13 @@ func (s *Service) OpenAssignment(ctx context.Context, sess auth.Session, caseID 
 		p.Status = AssignmentStatus(status)
 	}
 
+	editable := owner && p.Status != AssignmentCompleted
 	if p.Name == AssignmentPreScreeningSubmission {
 		page, err := s.preScreeningPage(ctx, caseID)
 		if err != nil {
 			return AssignmentPage{}, err
 		}
-		page.Editable = owner && p.Status != AssignmentCompleted
+		page.Editable = editable
 		today, err := s.operatorToday(ctx, s.db, sess.UserID)
 		if err != nil {
 			return AssignmentPage{}, err
@@ -319,53 +320,52 @@ func (s *Service) OpenAssignment(ctx context.Context, sess auth.Session, caseID 
 		p.PreScreening = &page
 	}
 	if p.Name == AssignmentUnderlyingDocumentUpload {
-		page, err := s.underlyingPage(ctx, sess.UserID, caseID, owner && p.Status != AssignmentCompleted)
+		page, err := s.underlyingPage(ctx, sess.UserID, caseID, editable)
 		if err != nil {
 			return AssignmentPage{}, err
 		}
 		p.Underlying = &page
 	}
 	if p.Name == AssignmentWaitingSLIK {
-		page, err := s.waitingSLIKPage(ctx, caseID, owner && p.Status != AssignmentCompleted)
+		page, err := s.waitingSLIKPage(ctx, caseID, editable)
 		if err != nil {
 			return AssignmentPage{}, err
 		}
 		p.WaitingSLIK = &page
 	}
 	if p.Name == AssignmentPipelineDataEntry {
-		page, err := s.pipelinePage(ctx, caseID, owner && p.Status != AssignmentCompleted)
+		page, err := s.pipelinePage(ctx, caseID, editable)
 		if err != nil {
 			return AssignmentPage{}, err
 		}
 		p.Pipeline = &page
 	}
-	editable := owner && p.Status != AssignmentCompleted
 	switch p.Name {
 	case AssignmentIndividualData:
-		page, err := s.personalPage(ctx, caseID, editable)
+		page, err := s.individualDataPage(ctx, caseID, editable)
 		if err != nil {
 			return AssignmentPage{}, err
 		}
-		p.Personal = &page
+		p.IndividualData = &page
 	case AssignmentSpouseData:
 		page, err := s.spousePage(ctx, sess, caseID, editable)
 		if err != nil {
 			return AssignmentPage{}, err
 		}
 		p.Spouse = &page
-	case AssignmentFamilyData:
-		page, err := s.familyPage(ctx, caseID, editable)
+	case AssignmentCloseRelativeData:
+		page, err := s.closeRelativePage(ctx, caseID, editable)
 		if err != nil {
 			return AssignmentPage{}, err
 		}
-		p.Family = &page
+		p.CloseRelative = &page
 	}
 	if p.Name == AssignmentPreScreeningReview {
 		page, err := s.reviewPage(ctx, sess, caseID)
 		if err != nil {
 			return AssignmentPage{}, err
 		}
-		page.Editable = owner && p.Status != AssignmentCompleted
+		page.Editable = editable
 		p.Review = &page
 	}
 	return p, nil

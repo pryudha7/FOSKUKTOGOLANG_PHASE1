@@ -3,7 +3,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { apiFetch, assignmentPath, assignmentURL, type AssignmentRef } from "@/lib/api";
 import AssignmentHeader from "./AssignmentHeader";
-import Autocomplete, { Highlighted, inputClass } from "./Autocomplete";
+import Autocomplete, { Highlighted } from "./Autocomplete";
+import { inputClass, listFailedMessage } from "./fields";
 import Breadcrumb, { prospectSteps } from "./Breadcrumb";
 import DateField from "./DateField";
 import ErrorBanner from "./ErrorBanner";
@@ -11,12 +12,12 @@ import Field from "./Field";
 import { unavailableMessage } from "./names";
 import type {
   AddressForm,
-  FamilyForm,
-  FamilyPage,
+  CloseRelativeForm,
+  CloseRelativePage,
   FieldError,
   Option,
-  PersonalForm,
-  PersonalPage,
+  IndividualDataForm,
+  IndividualDataPage,
   Region,
   Section,
   SpouseForm,
@@ -25,7 +26,7 @@ import type {
 import styles from "./case.module.css";
 
 // The endpoint of each form and what moves it: a step name, or Create.
-type FormPath = "personal" | "spouse" | "family";
+type FormPath = "individual-data" | "spouse" | "close-relative";
 const create = "create";
 
 // useMove holds a form's errors and moves it (FR-APP-012 Process 4, agreed
@@ -159,7 +160,7 @@ function CodeSelect({
         {/* ERR-038: a failed list shows one item that cannot be chosen. */}
         {failedItem && (
           <option value="__failed" disabled>
-            Gagal mendapatkan data, harap refresh halaman
+            {listFailedMessage}
           </option>
         )}
         {options.map((o) => (
@@ -275,17 +276,25 @@ function cascade<R extends Region>(r: R, key: (typeof regionKeys)[number], code:
 // useRegion loads the units under each chosen one (FR-APP-005 rules 5 and
 // 6) and returns the fields to place: a unit is disabled until the one above
 // is chosen; Dati II is the Kota's Value1, Kode Pos the Kelurahan's.
-function useRegion(
-  assignment: AssignmentRef,
-  region: Region,
-  onChange: (r: Region) => void,
-  provinces: Option[],
-  section: Section,
-  errorOf: (section: Section, key: string) => string | undefined,
-  clear: (section: Section, key: string) => void,
-  required: boolean,
-  disabled: boolean,
-) {
+function useRegion({
+  assignment,
+  region,
+  onChange,
+  provinces,
+  section,
+  flow,
+  required,
+  disabled,
+}: {
+  assignment: AssignmentRef;
+  region: Region;
+  onChange: (r: Region) => void;
+  provinces: Option[];
+  section: Section;
+  flow: Pick<ReturnType<typeof useMove>, "errorOf" | "clear">;
+  required: boolean;
+  disabled: boolean;
+}) {
   const { endpointPath, caseId, assignmentId } = assignment;
   const source = assignmentURL({ endpointPath, caseId, assignmentId }, "regions");
   const cities = useList(source, "CITY", region.provinceCode);
@@ -299,8 +308,8 @@ function useRegion(
       placeholder={`Pilih ${label}`}
       options={options}
       value={region[key]}
-      onChange={(code) => (onChange(cascade(region, key, code)), clear(section, errorKey))}
-      error={errorOf(section, errorKey)}
+      onChange={(code) => (onChange(cascade(region, key, code)), flow.clear(section, errorKey))}
+      error={flow.errorOf(section, errorKey)}
       required={required}
       disabled={disabled || above === ""}
       failedItem={failed}
@@ -391,26 +400,26 @@ function EKTPBlock({
 }
 
 // UI-026 Data Pribadi (Gambar 51-53, FR-APP-012).
-export function PersonalData({ page, assignment }: { page: PersonalPage; assignment: AssignmentRef }) {
+export function IndividualData({ page, assignment }: { page: IndividualDataPage; assignment: AssignmentRef }) {
   const readOnly = !page.editable;
-  const [form, setForm] = useState<PersonalForm>(page.values);
+  const [form, setForm] = useState<IndividualDataForm>(page.values);
   const [sectorText, setSectorText] = useState(page.sector?.description ?? "");
-  const m = useMove(assignment, "personal");
+  const flow = useMove(assignment, "individual-data");
   const opts = page.options;
 
-  const set = <K extends keyof PersonalForm>(key: K, errorKey: string, v: PersonalForm[K]) => {
+  const set = <K extends keyof IndividualDataForm>(key: K, errorKey: string, v: IndividualDataForm[K]) => {
     setForm((f) => ({ ...f, [key]: v }));
-    m.clear("form", errorKey);
+    flow.clear("form", errorKey);
   };
   const setAddress = (block: "ektp" | "domicile") => (key: keyof AddressForm, v: string) => {
     setForm((f) => ({ ...f, [block]: { ...f[block], [key]: v } }));
-    m.clear(block === "ektp" ? "ektp" : "domicile", key.replace(/Code$/, ""));
+    flow.clear(block === "ektp" ? "ektp" : "domicile", key.replace(/Code$/, ""));
   };
   const setRegion = (block: "ektp" | "domicile") => (r: Region) => setForm((f) => ({ ...f, [block]: { ...f[block], ...r } }));
-  const ektpRegion = useRegion(assignment, form.ektp, setRegion("ektp"), opts.province, "ektp", m.errorOf, m.clear, true, readOnly);
-  const domicileRegion = useRegion(assignment, form.domicile, setRegion("domicile"), opts.province, "domicile", m.errorOf, m.clear, true, readOnly);
-  const err = (key: string) => m.errorOf("form", key);
-  const domErr = (key: string) => m.errorOf("domicile", key);
+  const ektpRegion = useRegion({ assignment, region: form.ektp, onChange: setRegion("ektp"), provinces: opts.province, section: "ektp", flow, required: true, disabled: readOnly });
+  const domicileRegion = useRegion({ assignment, region: form.domicile, onChange: setRegion("domicile"), provinces: opts.province, section: "domicile", flow, required: true, disabled: readOnly });
+  const err = (key: string) => flow.errorOf("form", key);
+  const domErr = (key: string) => flow.errorOf("domicile", key);
   const dom = setAddress("domicile");
 
   // Business Rule 6: unchecking copies e-KTP into Domisili; Alamat Surat
@@ -419,7 +428,7 @@ export function PersonalData({ page, assignment }: { page: PersonalPage; assignm
     setForm((f) => ({ ...f, sameAsEktp: same, domicile: same ? f.domicile : { ...f.ektp } }));
   }
 
-  const card = { ...m, body: () => form, editable: page.editable };
+  const card = { ...flow, body: () => form, editable: page.editable };
   return (
     <ProspectCard
       step={0}
@@ -431,7 +440,7 @@ export function PersonalData({ page, assignment }: { page: PersonalPage; assignm
             Close
           </button>
           {!readOnly && (
-            <button type="button" className={styles.next} disabled={m.busy} onClick={() => m.move(prospectSteps[1], form)}>
+            <button type="button" className={styles.next} disabled={flow.busy} onClick={() => flow.move(prospectSteps[1], form)}>
               Next
             </button>
           )}
@@ -507,7 +516,7 @@ export function PersonalData({ page, assignment }: { page: PersonalPage; assignm
         </div>
 
         <div className={styles.formGrid}>
-          <EKTPBlock value={form.ektp} onChange={setAddress("ektp")} regionFields={ektpRegion} errorOf={(k) => m.errorOf("ektp", k)} options={opts} disabled={readOnly} />
+          <EKTPBlock value={form.ektp} onChange={setAddress("ektp")} regionFields={ektpRegion} errorOf={(k) => flow.errorOf("ektp", k)} options={opts} disabled={readOnly} />
         </div>
 
         <label className={styles.checkboxLabel}>
@@ -522,7 +531,7 @@ export function PersonalData({ page, assignment }: { page: PersonalPage; assignm
             <TextField label="Nomor Telepon" required maxLength={20} value={form.domicile.phone} onChange={(v) => dom("phone", v)} error={domErr("phone")} disabled={readOnly} />
             <NumberField label="Lama Tinggal (Bulan)" maxDigits={2} value={form.domicile.monthsOfStay} onChange={(v) => dom("monthsOfStay", v)} error={domErr("monthsOfStay")} disabled={readOnly} />
             <NumberField label="Lama Tinggal (Tahun)" maxDigits={2} value={form.domicile.yearsOfStay} onChange={(v) => dom("yearsOfStay", v)} error={domErr("yearsOfStay")} disabled={readOnly} />
-            <CodeSelect label="Alamat Surat Menyurat" placeholder="Pilih Alamat" required options={opts.mailingAddress} value={form.mailingAddressCode} onChange={(v) => (setForm((f) => ({ ...f, mailingAddressCode: v })), m.clear("domicile", "mailingAddress"))} error={domErr("mailingAddress")} disabled={readOnly} />
+            <CodeSelect label="Alamat Surat Menyurat" placeholder="Pilih Alamat" required options={opts.mailingAddress} value={form.mailingAddressCode} onChange={(v) => (setForm((f) => ({ ...f, mailingAddressCode: v })), flow.clear("domicile", "mailingAddress"))} error={domErr("mailingAddress")} disabled={readOnly} />
             <CodeSelect label="Status Kepemilikan Rumah" placeholder="Pilih Status Kepemilikan Rumah" required options={opts.houseOwnership} value={form.domicile.houseOwnershipCode} onChange={(v) => dom("houseOwnershipCode", v)} error={domErr("houseOwnership")} disabled={readOnly} />
             <Pair>
               <TextField label="RT" required maxLength={3} value={form.domicile.rt} onChange={(v) => dom("rt", v)} error={domErr("rt")} disabled={readOnly} />
@@ -574,27 +583,27 @@ function RegionRows({ fields }: { fields: ReturnType<typeof useRegion> }) {
 export function SpouseData({ page, assignment }: { page: SpousePage; assignment: AssignmentRef }) {
   const readOnly = !page.editable;
   const [form, setForm] = useState<SpouseForm>(page.values);
-  const m = useMove(assignment, "spouse");
+  const flow = useMove(assignment, "spouse");
   const opts = page.options;
   const set = <K extends keyof SpouseForm>(key: K, errorKey: string, v: SpouseForm[K]) => {
     setForm((f) => ({ ...f, [key]: v }));
-    m.clear("form", errorKey);
+    flow.clear("form", errorKey);
   };
-  const region = useRegion(assignment, form, (r) => setForm((f) => ({ ...f, ...r })), opts.province, "form", m.errorOf, m.clear, false, readOnly);
-  const err = (key: string) => m.errorOf("form", key);
+  const region = useRegion({ assignment, region: form, onChange: (r) => setForm((f) => ({ ...f, ...r })), provinces: opts.province, section: "form", flow, required: false, disabled: readOnly });
+  const err = (key: string) => flow.errorOf("form", key);
   const body = () => (page.married ? form : {});
 
   return (
     <ProspectCard
       step={1}
-      move={{ ...m, body, editable: page.editable }}
+      move={{ ...flow, body, editable: page.editable }}
       buttons={
         !readOnly && (
           <>
-            <button type="button" className={styles.back} disabled={m.busy} onClick={() => m.move(prospectSteps[0], body())}>
+            <button type="button" className={styles.back} disabled={flow.busy} onClick={() => flow.move(prospectSteps[0], body())}>
               Back
             </button>
-            <button type="button" className={styles.next} disabled={m.busy} onClick={() => m.move(prospectSteps[2], body())}>
+            <button type="button" className={styles.next} disabled={flow.busy} onClick={() => flow.move(prospectSteps[2], body())}>
               Next
             </button>
           </>
@@ -647,29 +656,29 @@ export function SpouseData({ page, assignment }: { page: SpousePage; assignment:
 
 // UI-028 Data Keluarga Dekat (Gambar 56, FR-APP-014): Create ends Prospect
 // Data Entry.
-export function FamilyData({ page, assignment }: { page: FamilyPage; assignment: AssignmentRef }) {
+export function CloseRelativeData({ page, assignment }: { page: CloseRelativePage; assignment: AssignmentRef }) {
   const readOnly = !page.editable;
-  const [form, setForm] = useState<FamilyForm>(page.values);
-  const m = useMove(assignment, "family");
+  const [form, setForm] = useState<CloseRelativeForm>(page.values);
+  const flow = useMove(assignment, "close-relative");
   const opts = page.options;
-  const set = <K extends keyof FamilyForm>(key: K, errorKey: string, v: FamilyForm[K]) => {
+  const set = <K extends keyof CloseRelativeForm>(key: K, errorKey: string, v: CloseRelativeForm[K]) => {
     setForm((f) => ({ ...f, [key]: v }));
-    m.clear("form", errorKey);
+    flow.clear("form", errorKey);
   };
-  const region = useRegion(assignment, form, (r) => setForm((f) => ({ ...f, ...r })), opts.province, "form", m.errorOf, m.clear, true, readOnly);
-  const err = (key: string) => m.errorOf("form", key);
+  const region = useRegion({ assignment, region: form, onChange: (r) => setForm((f) => ({ ...f, ...r })), provinces: opts.province, section: "form", flow, required: true, disabled: readOnly });
+  const err = (key: string) => flow.errorOf("form", key);
 
   return (
     <ProspectCard
       step={2}
-      move={{ ...m, body: () => form, editable: page.editable }}
+      move={{ ...flow, body: () => form, editable: page.editable }}
       buttons={
         !readOnly && (
           <>
-            <button type="button" className={styles.back} disabled={m.busy} onClick={() => m.move(prospectSteps[1], form)}>
+            <button type="button" className={styles.back} disabled={flow.busy} onClick={() => flow.move(prospectSteps[1], form)}>
               Back
             </button>
-            <button type="button" className={styles.next} disabled={m.busy} onClick={() => m.move(create, form)}>
+            <button type="button" className={styles.next} disabled={flow.busy} onClick={() => flow.move(create, form)}>
               Create
             </button>
           </>

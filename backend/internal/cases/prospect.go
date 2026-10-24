@@ -2,12 +2,8 @@ package cases
 
 import (
 	"context"
-	"fmt"
-	"regexp"
 	"slices"
-	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
@@ -18,9 +14,9 @@ import (
 // (FR-APP-012 to FR-APP-014). Create on the last one enters Financing
 // Application (FR-APP-015).
 const (
-	AssignmentSpouseData   = "Data Pasangan"
-	AssignmentFamilyData   = "Data Keluarga Dekat"
-	AssignmentBusinessData = "Data Usaha Nasabah"
+	AssignmentSpouseData        = "Data Pasangan"
+	AssignmentCloseRelativeData = "Data Keluarga Dekat"
+	AssignmentBusinessData      = "Data Usaha Nasabah"
 
 	// ProspectCreate is the move of Create on Data Keluarga Dekat.
 	ProspectCreate = "create"
@@ -29,11 +25,11 @@ const (
 	maritalMarried = "MS-2"
 
 	// customer_type and address_type values set by the system (DB-RULE-099).
-	partyFamily     = "Keluarga"
-	addressEKTP     = "e-KTP"
-	addressDomicile = "Domisili"
-	addressOffice   = "Kantor"
-	addressFamily   = "Keluarga"
+	partyCloseRelative   = "Keluarga"
+	addressEKTP          = "e-KTP"
+	addressDomicile      = "Domisili"
+	addressOffice        = "Kantor"
+	addressCloseRelative = "Keluarga"
 
 	// Banner sections of the two Data Pribadi address blocks (PROPOSED prefixes).
 	SectionEKTP     = "ektp"
@@ -41,7 +37,7 @@ const (
 )
 
 // prospectSteps is the tabbed flow, in order.
-var prospectSteps = []string{AssignmentIndividualData, AssignmentSpouseData, AssignmentFamilyData}
+var prospectSteps = []string{AssignmentIndividualData, AssignmentSpouseData, AssignmentCloseRelativeData}
 
 // Address is an address block of a form: text, phones, stay and the
 // region codes (§9.29). Dati II and Kode Pos are worked out by the server.
@@ -56,8 +52,8 @@ type Region struct {
 	ProvinceCode, CityCode, DistrictCode, SubdistrictCode string
 }
 
-// PersonalForm is Data Pribadi (FR-APP-012). Numbers come as digits.
-type PersonalForm struct {
+// IndividualDataForm is Data Pribadi (FR-APP-012). Numbers come as digits.
+type IndividualDataForm struct {
 	IDLifetime                                                                    bool
 	Nationality, Email, NPWP, JobCode, Workplace, GenderCode, WorkplaceAddress    string
 	GrossIncome, IncomeSourceCode, RelationshipWithBankCode, CustomerCategoryCode string
@@ -76,19 +72,19 @@ type SpouseForm struct {
 	EducationCode, PrenupCode string
 }
 
-// FamilyForm is Data Keluarga Dekat (FR-APP-014).
-type FamilyForm struct {
+// CloseRelativeForm is Data Keluarga Dekat (FR-APP-014).
+type CloseRelativeForm struct {
 	Name, RelationshipCode, Address, HomePhone, OfficePhone string
 	Region
 	MobilePhone, EducationCode string
 }
 
-// PersonalPage is UI-026: the Pre-Screening identity, the customer status
+// IndividualDataPage is UI-026: the Pre-Screening identity, the customer status
 // banner, the saved values and the initial dropdowns.
-type PersonalPage struct {
+type IndividualDataPage struct {
 	NIK, Name, BirthDate string
 	ExistingCustomer     bool
-	Values               PersonalForm
+	Values               IndividualDataForm
 	// Sector is the saved Bidang Usaha Tempat Bekerja, shown by description.
 	Sector   *Option
 	Options  map[string][]Option
@@ -104,9 +100,9 @@ type SpousePage struct {
 	Today, EarliestBirthDate string
 }
 
-// FamilyPage is UI-028.
-type FamilyPage struct {
-	Values   FamilyForm
+// CloseRelativePage is UI-028.
+type CloseRelativePage struct {
+	Values   CloseRelativeForm
 	Options  map[string][]Option
 	Editable bool
 }
@@ -114,18 +110,6 @@ type FamilyPage struct {
 // RegionOption is a cascading region; Value1 is a Kota's Dati II.
 type RegionOption struct {
 	Code, Description, Value1 string
-}
-
-// regionLevels are the cascade, top first: BMV type, label and field key.
-var regionLevels = []struct{ bmvType, label, key string }{
-	{"PROVINCE", "Provinsi", "province"},
-	{"CITY", "Kota", "city"},
-	{"DISTRICT", "Kecamatan", "district"},
-	{"SUBDISTRICT", "Kelurahan", "subdistrict"},
-}
-
-func (r Region) codes() []string {
-	return []string{r.ProvinceCode, r.CityCode, r.DistrictCode, r.SubdistrictCode}
 }
 
 // pageOptions reads the Active options of each BMV type, keyed by name.
@@ -169,6 +153,15 @@ func savedAddress(ctx context.Context, q rowQuerier, customerID int64, addressTy
 	return a, err
 }
 
+// customerMarried reports whether Data Pribadi's Status Perkawinan is
+// Kawin, which shows the Data Pasangan form (FR-APP-013 rule 1).
+func customerMarried(ctx context.Context, q rowQuerier, caseID string) (bool, error) {
+	var marital *string
+	err := q.QueryRow(ctx, `SELECT marital_status_code FROM fos.customer WHERE case_id = $1 AND customer_type = $2`,
+		caseID, partyCustomer).Scan(&marital)
+	return value(marital) == maritalMarried, err
+}
+
 // existingCustomer is FR-APP-005 rule 1 for a Perorangan NIK: listed on
 // Registered Customers or Existing Customers (DB-RULE-095).
 func existingCustomer(ctx context.Context, q rowQuerier, idNumber string) (bool, error) {
@@ -180,8 +173,8 @@ func existingCustomer(ctx context.Context, q rowQuerier, idNumber string) (bool,
 	return found, err
 }
 
-func (s *Service) personalPage(ctx context.Context, caseID string, editable bool) (PersonalPage, error) {
-	page := PersonalPage{Editable: editable}
+func (s *Service) individualDataPage(ctx context.Context, caseID string, editable bool) (IndividualDataPage, error) {
+	page := IndividualDataPage{Editable: editable}
 	var (
 		id                                                                                   int64
 		nik, name, birthPlace, nationality, email, npwp, job, workplace, gender, workAddress *string
@@ -198,21 +191,21 @@ func (s *Service) personalPage(ctx context.Context, caseID string, editable bool
 		FROM fos.customer WHERE case_id = $1 AND customer_type = $2`, caseID, partyCustomer).
 		Scan(&id, &nik, &name, &born, &birthPlace, &nationality, &email, &npwp, &job, &workplace, &gender, &workAddress, &gross,
 			&income, &relation, &category, &sector, &businessType, &mailing, &education, &marital, &mother, &dependents, &lifetime, &same); err != nil {
-		return PersonalPage{}, err
+		return IndividualDataPage{}, err
 	}
 	page.NIK, page.Name, page.BirthDate = value(nik), value(name), value(born)
 	existing, err := existingCustomer(ctx, s.db, page.NIK)
 	if err != nil {
-		return PersonalPage{}, err
+		return IndividualDataPage{}, err
 	}
 	page.ExistingCustomer = existing
 	// Stored on every opening by the operator working on it (FR-APP-012 rule 1).
 	if editable {
 		if _, err := s.db.Exec(ctx, `UPDATE fos.customer SET is_existing_customer = $2 WHERE customer_id = $1`, id, existing); err != nil {
-			return PersonalPage{}, err
+			return IndividualDataPage{}, err
 		}
 	}
-	page.Values = PersonalForm{
+	page.Values = IndividualDataForm{
 		IDLifetime: lifetime != nil && *lifetime, Nationality: value(nationality), Email: value(email), NPWP: value(npwp),
 		JobCode: value(job), Workplace: value(workplace), GenderCode: value(gender), WorkplaceAddress: value(workAddress),
 		GrossIncome: value(gross), IncomeSourceCode: value(income), RelationshipWithBankCode: value(relation),
@@ -221,17 +214,17 @@ func (s *Service) personalPage(ctx context.Context, caseID string, editable bool
 		EducationCode: value(education), MaritalStatusCode: value(marital), MotherMaidenName: value(mother), DependentsCode: value(dependents),
 	}
 	if page.Values.EKTP, err = savedAddress(ctx, s.db, id, addressEKTP); err != nil {
-		return PersonalPage{}, err
+		return IndividualDataPage{}, err
 	}
 	if page.Values.Domicile, err = savedAddress(ctx, s.db, id, addressDomicile); err != nil {
-		return PersonalPage{}, err
+		return IndividualDataPage{}, err
 	}
 	// An Inactive sector still shows its description (BR-UI-012).
 	if code := page.Values.WorkplaceSectorCode; code != "" {
 		var description string
 		err := s.db.QueryRow(ctx, `SELECT description FROM fos.business_mapping_value WHERE type = 'ECONOMIC_SECTOR' AND sub_type = '' AND code = $1`, code).Scan(&description)
 		if err != nil && !isNotFound(err) {
-			return PersonalPage{}, err
+			return IndividualDataPage{}, err
 		}
 		page.Sector = &Option{code, description}
 	}
@@ -246,26 +239,25 @@ func (s *Service) personalPage(ctx context.Context, caseID string, editable bool
 
 func (s *Service) spousePage(ctx context.Context, sess auth.Session, caseID string, editable bool) (SpousePage, error) {
 	page := SpousePage{Editable: editable}
-	var marital *string
-	if err := s.db.QueryRow(ctx, `SELECT marital_status_code FROM fos.customer WHERE case_id = $1 AND customer_type = $2`,
-		caseID, partyCustomer).Scan(&marital); err != nil {
+	married, err := customerMarried(ctx, s.db, caseID)
+	if err != nil {
 		return SpousePage{}, err
 	}
-	page.Married = value(marital) == maritalMarried
+	page.Married = married
 	today, err := s.operatorToday(ctx, s.db, sess.UserID)
 	if err != nil {
 		return SpousePage{}, err
 	}
 	page.Today, page.EarliestBirthDate = today.Format(dateISO), EarliestBirthDate(today).Format(dateISO)
 	var (
-		id                                                                int64
-		nik, name, born, birthPlace, job, duration, mobile, education, pn *string
+		id                                                                    int64
+		nik, name, born, birthPlace, job, duration, mobile, education, prenup *string
 	)
 	err = s.db.QueryRow(ctx, `
 		SELECT customer_id, id_number, full_name, to_char(birth_date, 'YYYY-MM-DD'), birth_place, job_code, work_duration,
 		       mobile_phone, education_code, prenup_code
 		FROM fos.customer WHERE case_id = $1 AND customer_type = $2`, caseID, partySpouse).
-		Scan(&id, &nik, &name, &born, &birthPlace, &job, &duration, &mobile, &education, &pn)
+		Scan(&id, &nik, &name, &born, &birthPlace, &job, &duration, &mobile, &education, &prenup)
 	switch {
 	case isNotFound(err):
 	case err != nil:
@@ -278,269 +270,42 @@ func (s *Service) spousePage(ctx context.Context, sess auth.Session, caseID stri
 		page.Values = SpouseForm{
 			Name: value(name), NIK: value(nik), BirthDate: value(born), BirthPlace: value(birthPlace), JobCode: value(job),
 			WorkDuration: value(duration), OfficeAddress: office.Address, Phone: office.Phone, MobilePhone: value(mobile),
-			Region: office.Region, EducationCode: value(education), PrenupCode: value(pn),
+			Region: office.Region, EducationCode: value(education), PrenupCode: value(prenup),
 		}
 	}
 	page.Options, err = s.pageOptions(ctx, map[string]string{"job": "JOB", "education": "LAST_EDUCATION", "prenup": "PRENUP", "province": "PROVINCE"})
 	return page, err
 }
 
-func (s *Service) familyPage(ctx context.Context, caseID string, editable bool) (FamilyPage, error) {
-	page := FamilyPage{Editable: editable}
+func (s *Service) closeRelativePage(ctx context.Context, caseID string, editable bool) (CloseRelativePage, error) {
+	page := CloseRelativePage{Editable: editable}
 	var (
 		id                            int64
 		name, relationship, education *string
 	)
 	err := s.db.QueryRow(ctx, `SELECT customer_id, full_name, relationship_code, education_code FROM fos.customer WHERE case_id = $1 AND customer_type = $2`,
-		caseID, partyFamily).Scan(&id, &name, &relationship, &education)
+		caseID, partyCloseRelative).Scan(&id, &name, &relationship, &education)
 	switch {
 	case isNotFound(err):
 	case err != nil:
-		return FamilyPage{}, err
+		return CloseRelativePage{}, err
 	default:
-		a, err := savedAddress(ctx, s.db, id, addressFamily)
+		a, err := savedAddress(ctx, s.db, id, addressCloseRelative)
 		if err != nil {
-			return FamilyPage{}, err
+			return CloseRelativePage{}, err
 		}
 		var office *string
 		if err := s.db.QueryRow(ctx, `SELECT office_phone FROM fos.customer_address WHERE customer_id = $1 AND address_type = $2`,
-			id, addressFamily).Scan(&office); err != nil && !isNotFound(err) {
-			return FamilyPage{}, err
+			id, addressCloseRelative).Scan(&office); err != nil && !isNotFound(err) {
+			return CloseRelativePage{}, err
 		}
-		page.Values = FamilyForm{
+		page.Values = CloseRelativeForm{
 			Name: value(name), RelationshipCode: value(relationship), Address: a.Address, HomePhone: a.Phone, OfficePhone: value(office),
 			Region: a.Region, MobilePhone: a.MobilePhone, EducationCode: value(education),
 		}
 	}
 	page.Options, err = s.pageOptions(ctx, map[string]string{"relationship": "FAMILY_RELATIONSHIP", "education": "LAST_EDUCATION", "province": "PROVINCE"})
 	return page, err
-}
-
-// fieldCheck collects a form's errors in field order (one per field) and
-// keeps the first database error; section is the banner section of the
-// fields being checked.
-type fieldCheck struct {
-	ctx     context.Context
-	tx      pgx.Tx
-	section string
-	errs    []FieldError
-	err     error
-}
-
-func (c *fieldCheck) add(key, label, code, message string) {
-	c.errs = append(c.errs, FieldError{c.section, key, label, code, message})
-}
-
-func (c *fieldCheck) addError(e *FieldError) {
-	if e != nil {
-		c.errs = append(c.errs, *e)
-	}
-}
-
-// invalid is ERR-037 on a field (BR-UI-007).
-func (c *fieldCheck) invalid(key, label string) {
-	c.errs = append(c.errs, invalid(c.section, key, label))
-}
-
-// filled reports ERR-010 for an empty mandatory value; false when empty.
-func (c *fieldCheck) filled(key, label, v string, mandatory bool) bool {
-	if v != "" {
-		return true
-	}
-	if mandatory {
-		c.errs = append(c.errs, required(c.section, key, label))
-	}
-	return false
-}
-
-// text is a free text of at most max characters (ERR-040).
-func (c *fieldCheck) text(key, label, v string, mandatory bool, max int) {
-	if c.filled(key, label, v, mandatory) && utf8.RuneCountInString(v) > max {
-		c.add(key, label, "ERR-040", fmt.Sprintf("%s maksimal %d karakter", label, max))
-	}
-}
-
-// code is a value that must be an Active row of a BMV type (BR-UI-007).
-func (c *fieldCheck) code(key, label, bmvType, v string, mandatory bool) {
-	if !c.filled(key, label, v, mandatory) || c.err != nil {
-		return
-	}
-	known, err := activeCode(c.ctx, c.tx, bmvType, v)
-	switch {
-	case err != nil:
-		c.err = err
-	case !known:
-		c.invalid(key, label)
-	}
-}
-
-var (
-	phonePattern = regexp.MustCompile(`^[0-9+\-]+$`)
-	digits       = regexp.MustCompile(`^[0-9]+$`)
-	// Letters and spaces only (Tempat Lahir).
-	placePattern = regexp.MustCompile(`^[\p{L} ]+$`)
-)
-
-// phone is FR-APP-005 rule 8: 0-9, "+" and "-" only, one digit at least, at
-// most 15 digits and 20 characters.
-func (c *fieldCheck) phone(key, label, v string, mandatory bool) {
-	if !c.filled(key, label, v, mandatory) {
-		return
-	}
-	n := 0
-	for _, r := range v {
-		if r >= '0' && r <= '9' {
-			n++
-		}
-	}
-	if !phonePattern.MatchString(v) || n == 0 || n > 15 || len(v) > 20 {
-		c.invalid(key, label)
-	}
-}
-
-// email is FR-APP-005 rule 9: optional, one "@", local part and a domain
-// with a dot, no spaces, at most 254 characters.
-func (c *fieldCheck) email(key, label, v string) {
-	if !c.filled(key, label, v, false) {
-		return
-	}
-	local, domain, ok := strings.Cut(v, "@")
-	switch {
-	case utf8.RuneCountInString(v) > 254:
-		c.add(key, label, "ERR-040", fmt.Sprintf("%s maksimal %d karakter", label, 254))
-	case !ok || local == "" || domain == "" || strings.Contains(domain, "@") || !strings.Contains(domain, ".") || strings.ContainsAny(v, " \t"):
-		c.invalid(key, label)
-	}
-}
-
-// npwp is the Pre-Screening NPWP rule: digits only (ERR-011), 15 to 22 of
-// them (ERR-012).
-func (c *fieldCheck) npwp(key, label, v string) {
-	switch {
-	case !c.filled(key, label, v, true):
-	case !digits.MatchString(v):
-		c.add(key, label, "ERR-011", "Harap masukkan angka saja")
-	case len(v) < 15 || len(v) > 22:
-		c.add(key, label, "ERR-012", "NPWP minimal 15 digit maksimal 22 digit")
-	}
-}
-
-// number is a whole number from 0 to max (FR-APP-012 rule 10); over max is
-// ERR-037.
-func (c *fieldCheck) number(key, label, v string, max int) {
-	if !c.filled(key, label, v, true) {
-		return
-	}
-	n, err := strconv.Atoi(v)
-	if !digits.MatchString(v) || err != nil || n > max {
-		c.invalid(key, label)
-	}
-}
-
-// rtRW is RT or RW: digits only, at most 3, leading zeros kept.
-func (c *fieldCheck) rtRW(key, label, v string) {
-	switch {
-	case !c.filled(key, label, v, true):
-	case !digits.MatchString(v):
-		c.invalid(key, label)
-	case len(v) > 3:
-		c.add(key, label, "ERR-040", label+" maksimal 3 karakter")
-	}
-}
-
-// birthPlace is Tempat Lahir: letters and spaces, at most 50.
-func (c *fieldCheck) birthPlace(key, label, v string) {
-	switch {
-	case !c.filled(key, label, v, true):
-	case utf8.RuneCountInString(v) > 50:
-		c.add(key, label, "ERR-040", label+" maksimal 50 karakter")
-	case !placePattern.MatchString(v):
-		c.invalid(key, label)
-	}
-}
-
-// resolvedRegion is a checked region with what the server works out:
-// Dati II (the Kota's Value1) and Kode Pos (DB-RULE-096).
-type resolvedRegion struct {
-	Region
-	regency, postal string
-}
-
-// region checks the cascade (FR-APP-005 rules 5 and 6): each unit must be an
-// Active row under the unit above it. Below an empty unit a filled one is
-// ERR-037 when the region is optional (when mandatory the empty unit is
-// already ERR-010); below an invalid one nothing is judged again, but an
-// empty mandatory unit is still ERR-010.
-func (c *fieldCheck) region(r Region, mandatory bool) resolvedRegion {
-	const (
-		fine = iota
-		missing
-		broken
-	)
-	out := resolvedRegion{Region: r}
-	parent, above := "", fine
-	for i, code := range r.codes() {
-		level := regionLevels[i]
-		if !c.filled(level.key, level.label, code, mandatory) {
-			above = missing
-			continue
-		}
-		if above == missing && !mandatory {
-			c.invalid(level.key, level.label)
-		}
-		if above != fine {
-			continue
-		}
-		var value1 *string
-		err := c.tx.QueryRow(c.ctx, `
-			SELECT value1 FROM fos.business_mapping_value
-			WHERE type = $1 AND sub_type = $2 AND code = $3 AND `+activeStatus, level.bmvType, parent, code).Scan(&value1)
-		switch {
-		case isNotFound(err):
-			c.invalid(level.key, level.label)
-			above = broken
-			continue
-		case err != nil:
-			c.err = err
-			return out
-		}
-		if level.bmvType == "CITY" {
-			out.regency = value(value1)
-		}
-		parent = code
-	}
-	if above == fine && r.SubdistrictCode != "" {
-		err := c.tx.QueryRow(c.ctx, `
-			SELECT code FROM fos.business_mapping_value WHERE type = 'POSTALCODE' AND sub_type = $1 AND `+activeStatus+`
-			ORDER BY sort_order, code LIMIT 1`, r.SubdistrictCode).Scan(&out.postal)
-		if err != nil && !isNotFound(err) {
-			c.err = err
-		}
-	}
-	return out
-}
-
-// address checks a Data Pribadi address block in its layout order.
-func (c *fieldCheck) address(a Address, addressLabel string, mailing *string) resolvedRegion {
-	c.text("address", addressLabel, a.Address, true, 350)
-	c.phone("mobilePhone", "Nomor Handphone", a.MobilePhone, true)
-	c.phone("phone", "Nomor Telepon", a.Phone, true)
-	if mailing == nil {
-		c.rtRW("rt", "RT", a.RT)
-		c.rtRW("rw", "RW", a.RW)
-		c.number("yearsOfStay", "Lama Tinggal (Tahun)", a.YearsOfStay, 99)
-		c.number("monthsOfStay", "Lama Tinggal (Bulan)", a.MonthsOfStay, 11)
-		c.code("houseOwnership", "Status Kepemilikan Rumah", "HOUSE_OWNERSHIP_STATUS", a.HouseOwnershipCode, true)
-	} else {
-		// Domisili: Bulan, Tahun and Alamat Surat Menyurat come first (Gambar 52).
-		c.number("monthsOfStay", "Lama Tinggal (Bulan)", a.MonthsOfStay, 11)
-		c.number("yearsOfStay", "Lama Tinggal (Tahun)", a.YearsOfStay, 99)
-		c.code("mailingAddress", "Alamat Surat Menyurat", "MAILING_ADDRESS", *mailing, true)
-		c.code("houseOwnership", "Status Kepemilikan Rumah", "HOUSE_OWNERSHIP_STATUS", a.HouseOwnershipCode, true)
-		c.rtRW("rt", "RT", a.RT)
-		c.rtRW("rw", "RW", a.RW)
-	}
-	return c.region(a.Region, true)
 }
 
 // addressRow is a customer_address row to store; nil columns stay NULL.
@@ -593,9 +358,9 @@ func trimRegion(r Region) Region {
 	return Region{t(r.ProvinceCode), t(r.CityCode), t(r.DistrictCode), t(r.SubdistrictCode)}
 }
 
-// SubmitPersonal validates and stores Data Pribadi, then moves to `to`
+// SubmitIndividualData validates and stores Data Pribadi, then moves to `to`
 // (FR-APP-012 Process 4, agreed comment 3).
-func (s *Service) SubmitPersonal(ctx context.Context, sess auth.Session, caseID string, id int64, to string, f PersonalForm) (int64, error) {
+func (s *Service) SubmitIndividualData(ctx context.Context, sess auth.Session, caseID string, id int64, to string, f IndividualDataForm) (int64, error) {
 	return s.moveProspect(ctx, sess, caseID, id, AssignmentIndividualData, to, func(c *fieldCheck) error {
 		t := strings.TrimSpace
 		f.EKTP, f.Domicile = trimAddress(f.EKTP), trimAddress(f.Domicile)
@@ -683,16 +448,15 @@ func (s *Service) SubmitPersonal(ctx context.Context, sess auth.Session, caseID 
 // Process 3, agreed comment 2).
 func (s *Service) SubmitSpouse(ctx context.Context, sess auth.Session, caseID string, id int64, to string, f SpouseForm) (int64, error) {
 	return s.moveProspect(ctx, sess, caseID, id, AssignmentSpouseData, to, func(c *fieldCheck) error {
-		var marital *string
-		if err := c.tx.QueryRow(c.ctx, `SELECT marital_status_code FROM fos.customer WHERE case_id = $1 AND customer_type = $2`,
-			caseID, partyCustomer).Scan(&marital); err != nil {
+		married, err := customerMarried(c.ctx, c.tx, caseID)
+		if err != nil {
 			return err
 		}
 		spouseID, found, err := partyID(c.ctx, c.tx, caseID, partySpouse)
 		if err != nil {
 			return err
 		}
-		if value(marital) != maritalMarried {
+		if !married {
 			if !found {
 				return nil
 			}
@@ -750,10 +514,10 @@ func (s *Service) SubmitSpouse(ctx context.Context, sess auth.Session, caseID st
 	})
 }
 
-// SubmitFamily validates and stores Data Keluarga Dekat, then moves to `to`;
+// SubmitCloseRelative validates and stores Data Keluarga Dekat, then moves to `to`;
 // Create completes Prospect Data Entry (FR-APP-014 Process 3).
-func (s *Service) SubmitFamily(ctx context.Context, sess auth.Session, caseID string, id int64, to string, f FamilyForm) (int64, error) {
-	return s.moveProspect(ctx, sess, caseID, id, AssignmentFamilyData, to, func(c *fieldCheck) error {
+func (s *Service) SubmitCloseRelative(ctx context.Context, sess auth.Session, caseID string, id int64, to string, f CloseRelativeForm) (int64, error) {
+	return s.moveProspect(ctx, sess, caseID, id, AssignmentCloseRelativeData, to, func(c *fieldCheck) error {
 		t := strings.TrimSpace
 		region := trimRegion(f.Region)
 		c.addError(nameError(SectionForm, "name", "Nama Lengkap (Sesuai e-KTP)", t(f.Name)))
@@ -773,11 +537,11 @@ func (s *Service) SubmitFamily(ctx context.Context, sess auth.Session, caseID st
 			VALUES ($1, $2, $3, $4, $5)
 			ON CONFLICT (case_id, customer_type) WHERE customer_type <> 'Pengurus'
 			DO UPDATE SET full_name = EXCLUDED.full_name, relationship_code = EXCLUDED.relationship_code, education_code = EXCLUDED.education_code
-			RETURNING customer_id`, caseID, partyFamily, t(f.Name), t(f.RelationshipCode), t(f.EducationCode)).Scan(&familyID); err != nil {
+			RETURNING customer_id`, caseID, partyCloseRelative, t(f.Name), t(f.RelationshipCode), t(f.EducationCode)).Scan(&familyID); err != nil {
 			return err
 		}
 		// DB-RULE-103: phones of the family address.
-		return saveAddress(c.ctx, c.tx, familyID, addressFamily, addressRow{address: orNil(t(f.Address)), phone: orNil(t(f.HomePhone)),
+		return saveAddress(c.ctx, c.tx, familyID, addressCloseRelative, addressRow{address: orNil(t(f.Address)), phone: orNil(t(f.HomePhone)),
 			officePhone: orNil(t(f.OfficePhone)), mobile: orNil(t(f.MobilePhone)), region: resolved})
 	})
 }
@@ -787,7 +551,7 @@ func (s *Service) SubmitFamily(ctx context.Context, sess auth.Session, caseID st
 // (FR-ASSIGN-001 rule 5), or, for Create, enters Financing Application.
 func (s *Service) moveProspect(ctx context.Context, sess auth.Session, caseID string, id int64, form, to string, save func(c *fieldCheck) error) (int64, error) {
 	create := to == ProspectCreate
-	if (create && form != AssignmentFamilyData) || (!create && (to == form || !slices.Contains(prospectSteps, to))) {
+	if (create && form != AssignmentCloseRelativeData) || (!create && (to == form || !slices.Contains(prospectSteps, to))) {
 		return 0, ErrUnsupported
 	}
 	tx, err := s.db.Begin(ctx)

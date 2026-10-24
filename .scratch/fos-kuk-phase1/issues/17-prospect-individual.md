@@ -33,10 +33,21 @@ Agreed with the user before implementation (2026-10-24):
 
 Implementation notes (2026-10-24):
 
-- Endpoints on the assignment: POST personal, spouse and family with ?to=<step name> (Next, Back, breadcrumb) or ?to=create (Data Keluarga Dekat only); a step cannot target itself; each takes only its own form's fields (unknown field: 400). GET regions?type=CITY|DISTRICT|SUBDISTRICT|POSTALCODE&parent= and GET economic-sectors?q= for whoever may open the assignment.
+- Endpoints on the assignment: POST individual-data, spouse and close-relative with ?to=<step name> (Next, Back, breadcrumb) or ?to=create (Data Keluarga Dekat only); a step cannot target itself; each takes only its own form's fields (unknown field: 400). GET regions?type=CITY|DISTRICT|SUBDISTRICT|POSTALCODE&parent= and GET economic-sectors?q= for whoever may open the assignment.
 - One check per field in layout order (fieldCheck); the region cascade is checked against the BMV parent (sub_type) and the server stores Dati II (the Kota's Value1) and Kode Pos (the Kelurahan's first POSTALCODE). Below an invalid unit nothing is judged again; an empty mandatory unit is still ERR-010.
 - validatePerson was split into nikError, nameError and birthDateError so Data Pasangan uses the Pre-Screening rules with its own labels; startProcess and newBranchOfficerAssignment now take the stage.
 - The Autocomplete component is shared by Nama Bank (ticket 15) and Bidang Usaha Tempat Bekerja (two-line items, Gambar 50); the Breadcrumb fits three steps and, for Prospect, darkens the line up to the active step and bolds the steps passed (Gambar 54-56). Disabled date fields have the grey background.
 - UI check tools/uicheck/prospect.js (screens shots/prospect-*.png): Gambar 51-53 layout, 43 errors on an empty Next with "e-KTP - " prefixes, "Rp" income shown 15.000.000 with minus and decimals refused, sector "kon" listing "4100 / Konstruksi Gedung" and showing the description, RW kept to 3 digits, Kota disabled until Provinsi, Dati II and Kode Pos filled, domicile hidden when checked and a copy when unchecked, Next with Belum Kawin to "Status Nasabah Tidak Kawin" (Gambar 55), Back refilled from the saved data, Kawin to the prefilled spouse (Gambar 54) with its four ERR-010, Data Keluarga Dekat (Gambar 56) and Create to Financing Application, Pending-Submission, Data Usaha Nasabah new.
 - Mutation checks (each fails a test): no mailing default; domicile not copied; no Kode Pos; no Dati II; region parent ignored; not married keeps the Prospect data; Kantor kept when empty; move to itself; Create keeps the stage; customer status not stored; 16-digit phone; marital Value1 not stored; income over 15 digits; sector matched on description only.
+
+Review fixes (2026-10-24, agreed with the user):
+
+- Names follow the glossary (ADR 0001): Close Relative for Data Keluarga Dekat (CloseRelativeForm, AssignmentCloseRelativeData, route close-relative) and Individual for Data Pribadi (IndividualDataForm, route individual-data).
+- The field rules (fieldCheck, phone, email, NPWP, numbers, RT/RW, Tempat Lahir, the region cascade) moved to cases/field_checks.go for reuse by ticket 16; ERR-040 is built by one function (tooLong).
+- One access check (mayView) serves History, regions and sectors; one read of the marital status (customerMarried); OpenAssignment works out editable once; the JSON builders use keyed fields.
+- Frontend: inputClass and the ERR-038 text live in fields.ts (Autocomplete, DateField and the forms use them); useRegion takes one options object; the useMove result is named flow.
+- Noted, no change: the step names and "create" are written in Go and TypeScript, one constant per language.
+- AC-FR-APP-012-05 (RW "0012" refused with ERR-040) holds at the API; the browser input keeps maxLength 3, as ERR-040 itself says ("Input memakai maxlength sehingga error ini terutama terjadi bila request tidak melalui UI").
+- Tanggal Lahir on Data Pasangan shows the long form "01 Januari 2000" (BR-UI-011, CONFIRMED) where Gambar 54 shows "01/01/2000"; the text wins (UI-027 Reference). Logged in the open domain questions.
+- Mutation checks rerun after the split: all 14 fail a test; UI checks prospect.js and pipeline.js pass again.
 

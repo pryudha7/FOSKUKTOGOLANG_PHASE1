@@ -38,10 +38,11 @@ func (a addressJSON) toAddress() cases.Address {
 }
 
 func toAddressJSON(a cases.Address) addressJSON {
-	return addressJSON{a.Address, a.MobilePhone, a.Phone, a.RT, a.RW, a.YearsOfStay, a.MonthsOfStay, a.HouseOwnershipCode, regionJSON(a.Region)}
+	return addressJSON{Address: a.Address, MobilePhone: a.MobilePhone, Phone: a.Phone, RT: a.RT, RW: a.RW, YearsOfStay: a.YearsOfStay,
+		MonthsOfStay: a.MonthsOfStay, HouseOwnershipCode: a.HouseOwnershipCode, regionJSON: regionJSON(a.Region)}
 }
 
-type personalJSON struct {
+type individualDataJSON struct {
 	IDLifetime                bool        `json:"idLifetime"`
 	Nationality               string      `json:"nationality"`
 	Email                     string      `json:"email"`
@@ -67,8 +68,8 @@ type personalJSON struct {
 	DependentsCode            string      `json:"dependentsCode"`
 }
 
-func (f personalJSON) toForm() cases.PersonalForm {
-	return cases.PersonalForm{
+func (f individualDataJSON) toForm() cases.IndividualDataForm {
+	return cases.IndividualDataForm{
 		IDLifetime: f.IDLifetime, Nationality: f.Nationality, Email: f.Email, NPWP: f.NPWP, JobCode: f.JobCode, Workplace: f.Workplace,
 		GenderCode: f.GenderCode, WorkplaceAddress: f.WorkplaceAddress, GrossIncome: f.GrossIncome, IncomeSourceCode: f.IncomeSourceCode,
 		RelationshipWithBankCode: f.RelationshipWithBankCode, CustomerCategoryCode: f.CustomerCategoryCode,
@@ -78,12 +79,14 @@ func (f personalJSON) toForm() cases.PersonalForm {
 	}
 }
 
-func toPersonalJSON(f cases.PersonalForm) personalJSON {
-	return personalJSON{
-		f.IDLifetime, f.Nationality, f.Email, f.NPWP, f.JobCode, f.Workplace, f.GenderCode, f.WorkplaceAddress, f.GrossIncome,
-		f.IncomeSourceCode, f.RelationshipWithBankCode, f.CustomerCategoryCode, f.WorkplaceSectorCode, f.BirthPlace,
-		f.WorkplaceBusinessTypeCode, toAddressJSON(f.EKTP), f.SameAsEKTP, toAddressJSON(f.Domicile), f.MailingAddressCode,
-		f.EducationCode, f.MaritalStatusCode, f.MotherMaidenName, f.DependentsCode,
+func toIndividualDataJSON(f cases.IndividualDataForm) individualDataJSON {
+	return individualDataJSON{
+		IDLifetime: f.IDLifetime, Nationality: f.Nationality, Email: f.Email, NPWP: f.NPWP, JobCode: f.JobCode, Workplace: f.Workplace,
+		GenderCode: f.GenderCode, WorkplaceAddress: f.WorkplaceAddress, GrossIncome: f.GrossIncome, IncomeSourceCode: f.IncomeSourceCode,
+		RelationshipWithBankCode: f.RelationshipWithBankCode, CustomerCategoryCode: f.CustomerCategoryCode,
+		WorkplaceSectorCode: f.WorkplaceSectorCode, BirthPlace: f.BirthPlace, WorkplaceBusinessTypeCode: f.WorkplaceBusinessTypeCode,
+		EKTP: toAddressJSON(f.EKTP), SameAsEKTP: f.SameAsEKTP, Domicile: toAddressJSON(f.Domicile), MailingAddressCode: f.MailingAddressCode,
+		EducationCode: f.EducationCode, MaritalStatusCode: f.MaritalStatusCode, MotherMaidenName: f.MotherMaidenName, DependentsCode: f.DependentsCode,
 	}
 }
 
@@ -102,7 +105,7 @@ type spouseJSON struct {
 	PrenupCode    string `json:"prenupCode"`
 }
 
-type familyJSON struct {
+type closeRelativeJSON struct {
 	Name             string `json:"name"`
 	RelationshipCode string `json:"relationshipCode"`
 	Address          string `json:"address"`
@@ -121,19 +124,20 @@ func toOptionMapJSON(m map[string][]cases.Option) map[string][]optionJSON {
 	return out
 }
 
-type personalPageJSON struct {
+type individualDataPageJSON struct {
 	NIK              string                  `json:"nik"`
 	Name             string                  `json:"name"`
 	BirthDate        string                  `json:"birthDate"`
 	ExistingCustomer bool                    `json:"existingCustomer"`
-	Values           personalJSON            `json:"values"`
+	Values           individualDataJSON      `json:"values"`
 	Sector           *optionJSON             `json:"sector"`
 	Options          map[string][]optionJSON `json:"options"`
 	Editable         bool                    `json:"editable"`
 }
 
-func toPersonalPageJSON(p cases.PersonalPage) personalPageJSON {
-	out := personalPageJSON{p.NIK, p.Name, p.BirthDate, p.ExistingCustomer, toPersonalJSON(p.Values), nil, toOptionMapJSON(p.Options), p.Editable}
+func toIndividualDataPageJSON(p cases.IndividualDataPage) individualDataPageJSON {
+	out := individualDataPageJSON{NIK: p.NIK, Name: p.Name, BirthDate: p.BirthDate, ExistingCustomer: p.ExistingCustomer,
+		Values: toIndividualDataJSON(p.Values), Options: toOptionMapJSON(p.Options), Editable: p.Editable}
 	if p.Sector != nil {
 		out.Sector = &optionJSON{p.Sector.Code, p.Sector.Description}
 	}
@@ -153,26 +157,28 @@ func toSpousePageJSON(p cases.SpousePage) spousePageJSON {
 	v := p.Values
 	return spousePageJSON{
 		Married: p.Married, Options: toOptionMapJSON(p.Options), Editable: p.Editable, Today: p.Today, EarliestBirthDate: p.EarliestBirthDate,
-		Values: spouseJSON{v.Name, v.NIK, v.BirthDate, v.BirthPlace, v.JobCode, v.WorkDuration, v.OfficeAddress, v.Phone, v.MobilePhone,
-			regionJSON(v.Region), v.EducationCode, v.PrenupCode},
+		Values: spouseJSON{Name: v.Name, NIK: v.NIK, BirthDate: v.BirthDate, BirthPlace: v.BirthPlace, JobCode: v.JobCode,
+			WorkDuration: v.WorkDuration, OfficeAddress: v.OfficeAddress, Phone: v.Phone, MobilePhone: v.MobilePhone,
+			regionJSON: regionJSON(v.Region), EducationCode: v.EducationCode, PrenupCode: v.PrenupCode},
 	}
 }
 
-type familyPageJSON struct {
-	Values   familyJSON              `json:"values"`
+type closeRelativePageJSON struct {
+	Values   closeRelativeJSON       `json:"values"`
 	Options  map[string][]optionJSON `json:"options"`
 	Editable bool                    `json:"editable"`
 }
 
-func toFamilyPageJSON(p cases.FamilyPage) familyPageJSON {
+func toCloseRelativePageJSON(p cases.CloseRelativePage) closeRelativePageJSON {
 	v := p.Values
-	return familyPageJSON{
-		Values:  familyJSON{v.Name, v.RelationshipCode, v.Address, v.HomePhone, v.OfficePhone, regionJSON(v.Region), v.MobilePhone, v.EducationCode},
+	return closeRelativePageJSON{
+		Values: closeRelativeJSON{Name: v.Name, RelationshipCode: v.RelationshipCode, Address: v.Address, HomePhone: v.HomePhone,
+			OfficePhone: v.OfficePhone, regionJSON: regionJSON(v.Region), MobilePhone: v.MobilePhone, EducationCode: v.EducationCode},
 		Options: toOptionMapJSON(p.Options), Editable: p.Editable,
 	}
 }
 
-// submitProspect handles POST .../assignments/{id}/{personal|spouse|family}?to=:
+// submitProspect handles POST .../assignments/{id}/{individual-data|spouse|close-relative}?to=:
 // Next, Back, a breadcrumb step or Create on Prospect Data Entry
 // (FR-APP-012 to FR-APP-014). submit decodes the form's own fields only
 // (BR-UI-010) and moves.
@@ -204,13 +210,13 @@ func (s *server) submitProspect(ep endpoint,
 // form's field (BR-UI-010): 400.
 type badBody struct{ error }
 
-func (s *server) submitPersonal(ep endpoint) http.HandlerFunc {
+func (s *server) submitIndividualData(ep endpoint) http.HandlerFunc {
 	return s.submitProspect(ep, func(ctx context.Context, dec *json.Decoder, sess auth.Session, caseID string, id int64, to string) (int64, error) {
-		var f personalJSON
+		var f individualDataJSON
 		if err := dec.Decode(&f); err != nil {
 			return 0, badBody{err}
 		}
-		return s.cases.SubmitPersonal(ctx, sess, caseID, id, to, f.toForm())
+		return s.cases.SubmitIndividualData(ctx, sess, caseID, id, to, f.toForm())
 	})
 }
 
@@ -228,13 +234,13 @@ func (s *server) submitSpouse(ep endpoint) http.HandlerFunc {
 	})
 }
 
-func (s *server) submitFamily(ep endpoint) http.HandlerFunc {
+func (s *server) submitCloseRelative(ep endpoint) http.HandlerFunc {
 	return s.submitProspect(ep, func(ctx context.Context, dec *json.Decoder, sess auth.Session, caseID string, id int64, to string) (int64, error) {
-		var f familyJSON
+		var f closeRelativeJSON
 		if err := dec.Decode(&f); err != nil {
 			return 0, badBody{err}
 		}
-		return s.cases.SubmitFamily(ctx, sess, caseID, id, to, cases.FamilyForm{
+		return s.cases.SubmitCloseRelative(ctx, sess, caseID, id, to, cases.CloseRelativeForm{
 			Name: f.Name, RelationshipCode: f.RelationshipCode, Address: f.Address, HomePhone: f.HomePhone, OfficePhone: f.OfficePhone,
 			Region: cases.Region(f.regionJSON), MobilePhone: f.MobilePhone, EducationCode: f.EducationCode,
 		})

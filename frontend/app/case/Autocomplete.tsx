@@ -2,16 +2,9 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/api";
+import { inputClass, listFailedMessage } from "./fields";
 import type { Option } from "./types";
 import styles from "./case.module.css";
-
-// inputClass styles an input, select or pick list by its state.
-export function inputClass(disabled: boolean, invalid: boolean): string {
-  return disabled ? styles.inputDisabled : invalid ? styles.inputInvalid : styles.input;
-}
-
-// ERR-038: the suggestion query failed.
-const suggestionsFailed = "Gagal mendapatkan data, harap refresh halaman";
 
 // An autocomplete field (BR-UI-005): each pause of 300 ms in typing asks
 // source?q=<text> (the server limits and orders the list); matching letters
@@ -108,7 +101,7 @@ export default function Autocomplete({
         <ul className={styles.autocompleteList} role="listbox" aria-label={label}>
           {failed ? (
             <li className={styles.autocompleteFailed} aria-disabled="true">
-              {suggestionsFailed}
+              {listFailedMessage}
             </li>
           ) : (
             options.map((o, i) => (

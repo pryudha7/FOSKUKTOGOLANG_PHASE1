@@ -72,21 +72,12 @@ type APIDataField struct {
 // History returns the History Details card for whoever may open the
 // assignment (worklist holder or Authors, as OpenAssignment).
 func (s *Service) History(ctx context.Context, sess auth.Session, caseID string, assignmentID int64) (HistoryDetails, error) {
-	var kind string
-	var assignee *string
-	err := s.db.QueryRow(ctx, `SELECT assignment_type, assigned_user_id FROM fos.assignments WHERE assignment_id = $1 AND case_id = $2`,
-		assignmentID, caseID).Scan(&kind, &assignee)
-	if isNotFound(err) {
-		return HistoryDetails{}, ErrNotFound
-	}
-	if err != nil {
+	if err := s.mayView(ctx, sess, caseID, assignmentID); err != nil {
 		return HistoryDetails{}, err
-	}
-	if _, may := mayOpen(sess, AssignmentType(kind), value(assignee)); !may {
-		return HistoryDetails{}, ErrForbidden
 	}
 
 	var h HistoryDetails
+	var err error
 	if h.Cut, err = s.logCut(ctx); err != nil {
 		return h, err
 	}

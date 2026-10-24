@@ -3,7 +3,8 @@
 import { useRef, useState } from "react";
 import { apiFetch, assignmentURL, type AssignmentRef } from "@/lib/api";
 import AssignmentHeader from "./AssignmentHeader";
-import Autocomplete, { inputClass } from "./Autocomplete";
+import Autocomplete from "./Autocomplete";
+import { inputClass } from "./fields";
 import ErrorBanner from "./ErrorBanner";
 import Field from "./Field";
 import NoAccessPopup from "./NoAccessPopup";

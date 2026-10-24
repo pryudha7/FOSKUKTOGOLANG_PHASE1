@@ -187,7 +187,7 @@ export type AddressForm = Region & {
 };
 
 // Data Pribadi (FR-APP-012) as sent and saved: BMV codes, digits for numbers.
-export type PersonalForm = {
+export type IndividualDataForm = {
   idLifetime: boolean;
   nationality: string;
   email: string;
@@ -213,12 +213,12 @@ export type PersonalForm = {
   dependentsCode: string;
 };
 
-export type PersonalPage = {
+export type IndividualDataPage = {
   nik: string;
   name: string;
   birthDate: string; // yyyy-mm-dd
   existingCustomer: boolean;
-  values: PersonalForm;
+  values: IndividualDataForm;
   sector: Option | null; // the saved Bidang Usaha Tempat Bekerja
   options: Record<string, Option[]>;
   editable: boolean;
@@ -249,7 +249,7 @@ export type SpousePage = {
 };
 
 // Data Keluarga Dekat (FR-APP-014).
-export type FamilyForm = Region & {
+export type CloseRelativeForm = Region & {
   name: string;
   relationshipCode: string;
   address: string;
@@ -259,7 +259,7 @@ export type FamilyForm = Region & {
   educationCode: string;
 };
 
-export type FamilyPage = { values: FamilyForm; options: Record<string, Option[]>; editable: boolean };
+export type CloseRelativePage = { values: CloseRelativeForm; options: Record<string, Option[]>; editable: boolean };
 
 export type Assignment = {
   assignmentId: number;
@@ -267,5 +267,5 @@ export type Assignment = {
   status: string;
   // PreScreeningPage on Pre-Screening Submission, UnderlyingPage on
   // Document Underlying Upload.
-  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | PersonalPage | SpousePage | FamilyPage | null;
+  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | IndividualDataPage | SpousePage | CloseRelativePage | null;
 };

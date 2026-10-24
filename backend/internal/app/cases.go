@@ -236,6 +236,8 @@ func (s *server) openAssignment(ep endpoint) http.HandlerFunc {
 			body = toFacilityRequestPageJSON(*p.FacilityRequest)
 		case p.QCA != nil:
 			body = toQCAPageJSON(*p.QCA)
+		case p.Collateral != nil:
+			body = toCollateralPageJSON(*p.Collateral)
 		case p.BusinessEntity != nil:
 			body = toBusinessEntityPageJSON(*p.BusinessEntity)
 		case p.CloseRelative != nil:

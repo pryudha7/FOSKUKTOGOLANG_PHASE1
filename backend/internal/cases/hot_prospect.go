@@ -30,7 +30,12 @@ const (
 
 // hotProspectSteps is the tabbed flow, in order (FR-APP-015).
 var hotProspectSteps = []string{AssignmentBusinessData, AssignmentOtherFinancingData, AssignmentFacilityRequest, AssignmentQCAData,
-	"Collateral Data", "Document Upload"}
+	AssignmentCollateralData, AssignmentDocumentUpload}
+
+// stepAfter reports whether step comes after than in the tabbed flow.
+func stepAfter(step, than string) bool {
+	return slices.Index(hotProspectSteps, step) > slices.Index(hotProspectSteps, than)
+}
 
 // facilityRequested reports whether Next on Data Permohonan Fasilitas has
 // recorded its recommendation: only then do the steps after it open by
@@ -44,7 +49,7 @@ func facilityRequested(ctx context.Context, q rowQuerier, caseID string) (bool, 
 
 // pastFacilityRequest is a step after Data Permohonan Fasilitas.
 func pastFacilityRequest(step string) bool {
-	return slices.Index(hotProspectSteps, step) > slices.Index(hotProspectSteps, AssignmentFacilityRequest)
+	return stepAfter(step, AssignmentFacilityRequest)
 }
 
 // BusinessDataForm is Data Usaha Nasabah (FR-APP-016): the business and its

@@ -1,20 +1,27 @@
-import { sectionNumber, type FieldError } from "./types";
+import { sectionNumber, type FieldError, type NumberedSection } from "./types";
 import styles from "./case.module.css";
 
 // Banner prefixes that tell sections apart: "Data Pasangan - " on
 // Pre-Screening Submission (agreed), "e-KTP - " and "Domisili - " on Data
-// Pribadi (FR-APP-012 Validation, PROPOSED), "Pengurus <n> - " for card n
-// of Data Pengurus (FR-APP-002, FR-APP-005).
+// Pribadi (FR-APP-012 Validation, PROPOSED), and "<card> <n> - " for card
+// n of a list: Data Pengurus (FR-APP-002, FR-APP-005), Data Pembiayaan Lain
+// and the collateral sections (agreed for tickets 18 and 21; not in the SoT).
 const sectionPrefixes: Partial<Record<FieldError["section"], string>> = { spouse: "Data Pasangan - ", ektp: "e-KTP - ", domicile: "Domisili - " };
+const cardNames: [NumberedSection, string][] = [
+  ["company-officer", "Pengurus"],
+  ["other-financing", "Pembiayaan"],
+  ["main-collateral", "Agunan Utama"],
+  ["support-collateral", "Jaminan Pendukung"],
+];
 
 function sectionPrefix(section: FieldError["section"]): string {
-  const officer = sectionNumber("company-officer", section);
-  if (officer !== null) {
-    return `Pengurus ${officer} - `;
+  for (const [prefix, name] of cardNames) {
+    const n = sectionNumber(prefix, section);
+    if (n !== null) {
+      return `${name} ${n} - `;
+    }
   }
-  // Card n of Data Pembiayaan Lain (agreed for ticket 18; not in the SoT).
-  const financing = sectionNumber("other-financing", section);
-  return financing !== null ? `Pembiayaan ${financing} - ` : (sectionPrefixes[section] ?? "");
+  return sectionPrefixes[section] ?? "";
 }
 
 // UI-010 State Error banner (Gambar 13): a red block with a white warning

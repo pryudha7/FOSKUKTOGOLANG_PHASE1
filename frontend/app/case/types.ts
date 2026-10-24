@@ -145,16 +145,17 @@ export type UnderlyingPage = {
 
 // "documents" errors (ERR-026) belong to a document row, keyed
 // "<category>/<document type>", and are not banner items.
-// company-officer-<n> is card n of Data Pengurus (FR-APP-005).
-export type Section = "form" | "customer" | "spouse" | "upload" | "slik" | "documents" | "ektp" | "domicile" | `company-officer-${number}` | `other-financing-${number}`;
-
 // Numbered sections name card n (from 1) of a list: Data Pengurus
-// (company-officer-<n>, FR-APP-005) and Data Pembiayaan Lain
-// (other-financing-<n>, FR-APP-017). sectionNumber reads n back, or null for
-// another kind of section.
+// (company-officer-<n>, FR-APP-005), Data Pembiayaan Lain
+// (other-financing-<n>, FR-APP-017), Agunan Utama and Jaminan Pendukung
+// (main-collateral-<n>, support-collateral-<n>, FR-APP-021). sectionNumber
+// reads n back, or null for another kind of section.
+export type NumberedSection = "company-officer" | "other-financing" | "main-collateral" | "support-collateral";
+export type Section = "form" | "customer" | "spouse" | "upload" | "slik" | "documents" | "ektp" | "domicile" | `${NumberedSection}-${number}`;
+
 export const companyOfficerSection = (n: number): Section => `company-officer-${n}`;
 export const otherFinancingSection = (n: number): Section => `other-financing-${n}`;
-export function sectionNumber(prefix: "company-officer" | "other-financing", section: Section): number | null {
+export function sectionNumber(prefix: NumberedSection, section: Section): number | null {
   const m = new RegExp(`^${prefix}-(\\d+)$`).exec(section);
   return m ? Number(m[1]) : null;
 }
@@ -218,6 +219,54 @@ export type FacilityRequestPage = {
   facilityRequested: boolean;
   options: Record<string, Option[]>;
   failedOptions: string[];
+  editable: boolean;
+};
+
+// One Collateral Data card (FR-APP-021): codes, texts, amounts and years
+// as digits, dates as yyyy-mm-dd.
+export type CollateralCard = {
+  typeCode: string;
+  buildingFormCode: string;
+  ownershipTypeCode: string;
+  ownerName: string;
+  shmNumber: string;
+  shgbNumber: string;
+  shgbValidUntil: string;
+  bpkbNumber: string;
+  fiduciaryNumber: string;
+  location: string;
+  landArea: string;
+  dueDate: string;
+  physicalValue: string;
+  objectValue: string;
+  depositAmount: string;
+  vehicleBrand: string;
+  vehicleYear: string;
+  remarks: string;
+  collateralStatusCode: string;
+  collateralTypeText: string;
+  bindingType: string;
+  bindingDate: string;
+  appraisalDate: string;
+  kjppAppraisalDate: string;
+  njopValue: string;
+  kjppValue: string;
+  kjppAppraiserName: string;
+  pariPassuStatusCode: string;
+  pariPassuPercent: string;
+  jointFinancingCode: string;
+  insuredCode: string;
+};
+
+// UI-034 Collateral Data: the cards of each section, the card limit and
+// the operator's today.
+export type CollateralPage = {
+  values: { main: CollateralCard[]; support: CollateralCard[] };
+  options: Record<string, Option[]>;
+  failedOptions: string[];
+  maxCards: number;
+  today: string;
+  facilityRequested: boolean;
   editable: boolean;
 };
 
@@ -408,5 +457,5 @@ export type Assignment = {
   // The page of the assignment by its name (CaseView): Pre-Screening
   // Submission, Document Underlying Upload, Pre Screening, Waiting SLIK,
   // Pipeline Data Entry, Prospect and Hot Prospect Data Entry.
-  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | IndividualDataPage | SpousePage | CloseRelativePage | BusinessEntityPage | BusinessDataPage | OtherFinancingPage | FacilityRequestPage | QCAPage | null;
+  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | IndividualDataPage | SpousePage | CloseRelativePage | BusinessEntityPage | BusinessDataPage | OtherFinancingPage | FacilityRequestPage | QCAPage | CollateralPage | null;
 };

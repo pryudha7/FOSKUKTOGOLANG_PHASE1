@@ -249,6 +249,8 @@ type AssignmentPage struct {
 	// Data (UI-032, UI-033).
 	FacilityRequest *FacilityRequestPage
 	QCA             *QCAPage
+	// Collateral is set for Collateral Data (UI-034).
+	Collateral *CollateralPage
 }
 
 // PreScreeningPage is the data UI-010 shows today: Nama Branch and the Tipe
@@ -381,6 +383,12 @@ func (s *Service) OpenAssignment(ctx context.Context, sess auth.Session, caseID 
 			return AssignmentPage{}, err
 		}
 		p.QCA = &page
+	case AssignmentCollateralData:
+		page, err := s.collateralPage(ctx, sess, caseID, editable)
+		if err != nil {
+			return AssignmentPage{}, err
+		}
+		p.Collateral = &page
 	case AssignmentBusinessEntity:
 		page, err := s.businessEntityPage(ctx, sess, caseID, editable)
 		if err != nil {

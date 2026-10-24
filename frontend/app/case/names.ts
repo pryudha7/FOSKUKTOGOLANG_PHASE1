@@ -13,6 +13,7 @@ export const assignmentNames = {
   otherFinancingData: "Data Pembiayaan Lain", // UI-031
   facilityRequest: "Data Permohonan Fasilitas", // UI-032
   qcaData: "QCA Data", // UI-033
+  collateralData: "Collateral Data", // UI-034
 } as const;
 
 // The Tipe Nasabah description whose form exists today (Badan Usaha:

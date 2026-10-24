@@ -2059,3 +2059,74 @@
   font-weight: bold;
   cursor: pointer;
 }
+
+/* UI-034 Collateral Data (Gambar 84-90). */
+.collateralSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* A card: lavender, the type dropdown top left, the bin top right. */
+.collateralCard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 20px 24px;
+  border-radius: 8px;
+  background: #e5e8fc;
+}
+
+.collateralTypeRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.removeCollateral {
+  justify-self: end;
+  margin-top: 18px;
+  border: none;
+  background: none;
+  color: #e3242b;
+  cursor: pointer;
+}
+
+.collateralRemarksTitle {
+  margin: 4px 0 -8px;
+  font-size: 13px;
+  font-weight: bold;
+}
+
+/* Tipe Bukti Kepemilikan on Tanah Kosong Produktif is narrow (Gambar 88). */
+.narrowField {
+  max-width: 200px;
+}
+
+@media (max-width: 767px) {
+  .collateralTypeRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+/* The white card of collateral details (Field F): two columns. */
+.collateralDetails {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px 24px;
+  align-items: start;
+  padding: 18px 20px 22px;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.collateralDetails input,
+.collateralDetails select {
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .collateralDetails {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

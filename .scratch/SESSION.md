@@ -12,6 +12,7 @@ Where the FOS KUK rebuild stands, so the next session can continue without re-de
 | 04 | UI-008 sidebar, Create menu (AO/SAO), avatar Log off | f26b5ba, 1afbc13 |
 | 05 | Create Financing Case, Case ID / Customer Code, Case View frame (stage bar, info panel, lifecycle popup, attachments panel) | b512c0b, aa8d56d |
 | 30 | Pre-Screening Submission (Perorangan): validation, customer rows, Next to Document Underlying Upload, Back | 6a7229c, 4d258a9 |
+| 14 | Pre-Screening API Data (UI-021) and API Log History (UI-020) in History Details; Problem Flow split to ticket 37 | 70d82e3, 06c7a80 |
 | 36 | Waiting SLIK assignment (SLIKWQFlowAct, UI-023) and SLIKInquiry status check | 029ca8e, c4ddf15 |
 | 35 | Pefindo report details (§9.35-9.39), generated from one transcription of §9 by tools/codegen | 0ef8195, 4bd0c3d |
 | 34 | SLIK report PDF (fpdf, Helvetica), stored with the result; copy into Dokumen Pre-Screening on opening Document Underlying Upload | 8be9b65, e638e11 |
@@ -28,7 +29,7 @@ Each ticket file in `.scratch/fos-kuk-phase1/issues/` has a **Comments** section
 
 ## Next
 
-Next recommended: the Pre-Screening Check runs end to end, so **14** (Pre-Screening API Data view + Problem Flow; it also holds the UI moved from 11 and 13) and then **15** (Pipeline Data Entry, after a run completes). Also unblocked: **31** Badan Usaha form (now includes the Badan Usaha Document Underlying Upload variant), **32** Case View mode Case + To do, **06** assignment lock, **27** Dashboard. Ticket **29** (operator/master-data management) waits on TBD-003/018. Open domain questions for the SoT owner: `.scratch/fos-kuk-glossary/issues/01-open-domain-questions.md`.
+Next recommended: **15** (Pipeline Data Entry, after a run completes), **37** (Problem Flow; TBD-043 questions first). Also unblocked: **31** Badan Usaha form (now includes the Badan Usaha Document Underlying Upload variant), **32** Case View mode Case + To do, **06** assignment lock, **27** Dashboard. Ticket **29** (operator/master-data management) waits on TBD-003/018. Open domain questions for the SoT owner: `.scratch/fos-kuk-glossary/issues/01-open-domain-questions.md`.
 
 ## How each ticket was worked
 

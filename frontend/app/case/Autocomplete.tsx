@@ -41,7 +41,7 @@ export default function Autocomplete({
     }
     let live = true;
     const timer = setTimeout(() => {
-      apiFetch(`${source}?q=${encodeURIComponent(text)}`)
+      apiFetch(`${source}${source.includes("?") ? "&" : "?"}q=${encodeURIComponent(text)}`)
         .then((res) => (res.ok ? (res.json() as Promise<{ options: Option[] }>) : Promise.reject()))
         .then((body) => {
           if (live) {

@@ -1807,3 +1807,62 @@
   font-size: 13px;
 }
 
+/* UI-025 Badan Usaha (Gambar 48-50). */
+.optionNote {
+  font-size: 11px;
+}
+
+/* The corner marker of Kode Bidang Usaha and Golongan Nasabah. */
+.cornerMark {
+  position: relative;
+  display: block;
+}
+
+.cornerMark::after {
+  content: "";
+  position: absolute;
+  top: 26px;
+  right: 1px;
+  border-left: 7px solid transparent;
+  border-bottom: 7px solid #1a5fd6;
+  pointer-events: none;
+}
+
+.officersHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20px;
+}
+
+.addOfficer {
+  height: 26px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 13px;
+  background: #31f000;
+  color: #146000;
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.officerCard {
+  position: relative;
+  margin-top: 8px;
+}
+
+.officerRole {
+  max-width: 200px;
+}
+
+.removeOfficer {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  border: none;
+  background: none;
+  color: #e3242b;
+  cursor: pointer;
+}
+

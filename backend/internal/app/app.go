@@ -107,8 +107,9 @@ func New(cfg config.Config, pool *pgxpool.Pool, opts ...Option) *App {
 	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/individual-data", s.submitIndividualData(desktop))
 	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/spouse", s.submitSpouse(desktop))
 	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/close-relative", s.submitCloseRelative(desktop))
+	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/business-entity", s.submitBusinessEntity(desktop))
 	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/regions", s.regions(desktop))
-	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/economic-sectors", s.economicSectors(desktop))
+	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/suggestions", s.suggestions(desktop))
 	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/documents/{fileId}", s.downloadDocument(desktop))
 	// External services (FR-PSAPI-009) live at the root, outside the endpoints.
 	mux.HandleFunc(serviceNamespace+"v1/PBSResponse", s.pbsResponse)

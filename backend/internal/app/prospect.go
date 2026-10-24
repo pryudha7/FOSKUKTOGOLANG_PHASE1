@@ -132,12 +132,13 @@ type individualDataPageJSON struct {
 	Values           individualDataJSON      `json:"values"`
 	Sector           *optionJSON             `json:"sector"`
 	Options          map[string][]optionJSON `json:"options"`
+	FailedOptions    []string                `json:"failedOptions"`
 	Editable         bool                    `json:"editable"`
 }
 
 func toIndividualDataPageJSON(p cases.IndividualDataPage) individualDataPageJSON {
 	out := individualDataPageJSON{NIK: p.NIK, Name: p.Name, BirthDate: p.BirthDate, ExistingCustomer: p.ExistingCustomer,
-		Values: toIndividualDataJSON(p.Values), Options: toOptionMapJSON(p.Options), Editable: p.Editable}
+		Values: toIndividualDataJSON(p.Values), Options: toOptionMapJSON(p.Options), FailedOptions: p.FailedOptions, Editable: p.Editable}
 	if p.Sector != nil {
 		out.Sector = &optionJSON{p.Sector.Code, p.Sector.Description}
 	}
@@ -148,6 +149,7 @@ type spousePageJSON struct {
 	Married           bool                    `json:"married"`
 	Values            spouseJSON              `json:"values"`
 	Options           map[string][]optionJSON `json:"options"`
+	FailedOptions     []string                `json:"failedOptions"`
 	Editable          bool                    `json:"editable"`
 	Today             string                  `json:"today"`
 	EarliestBirthDate string                  `json:"earliestBirthDate"`
@@ -156,7 +158,7 @@ type spousePageJSON struct {
 func toSpousePageJSON(p cases.SpousePage) spousePageJSON {
 	v := p.Values
 	return spousePageJSON{
-		Married: p.Married, Options: toOptionMapJSON(p.Options), Editable: p.Editable, Today: p.Today, EarliestBirthDate: p.EarliestBirthDate,
+		Married: p.Married, Options: toOptionMapJSON(p.Options), FailedOptions: p.FailedOptions, Editable: p.Editable, Today: p.Today, EarliestBirthDate: p.EarliestBirthDate,
 		Values: spouseJSON{Name: v.Name, NIK: v.NIK, BirthDate: v.BirthDate, BirthPlace: v.BirthPlace, JobCode: v.JobCode,
 			WorkDuration: v.WorkDuration, OfficeAddress: v.OfficeAddress, Phone: v.Phone, MobilePhone: v.MobilePhone,
 			regionJSON: regionJSON(v.Region), EducationCode: v.EducationCode, PrenupCode: v.PrenupCode},
@@ -164,9 +166,10 @@ func toSpousePageJSON(p cases.SpousePage) spousePageJSON {
 }
 
 type closeRelativePageJSON struct {
-	Values   closeRelativeJSON       `json:"values"`
-	Options  map[string][]optionJSON `json:"options"`
-	Editable bool                    `json:"editable"`
+	Values        closeRelativeJSON       `json:"values"`
+	Options       map[string][]optionJSON `json:"options"`
+	FailedOptions []string                `json:"failedOptions"`
+	Editable      bool                    `json:"editable"`
 }
 
 func toCloseRelativePageJSON(p cases.CloseRelativePage) closeRelativePageJSON {
@@ -174,7 +177,7 @@ func toCloseRelativePageJSON(p cases.CloseRelativePage) closeRelativePageJSON {
 	return closeRelativePageJSON{
 		Values: closeRelativeJSON{Name: v.Name, RelationshipCode: v.RelationshipCode, Address: v.Address, HomePhone: v.HomePhone,
 			OfficePhone: v.OfficePhone, regionJSON: regionJSON(v.Region), MobilePhone: v.MobilePhone, EducationCode: v.EducationCode},
-		Options: toOptionMapJSON(p.Options), Editable: p.Editable,
+		Options: toOptionMapJSON(p.Options), FailedOptions: p.FailedOptions, Editable: p.Editable,
 	}
 }
 
@@ -280,9 +283,10 @@ func (s *server) regions(ep endpoint) http.HandlerFunc {
 	}
 }
 
-// economicSectors handles GET .../assignments/{id}/economic-sectors?q=: the
-// Bidang Usaha Tempat Bekerja autocomplete (BR-UI-005).
-func (s *server) economicSectors(ep endpoint) http.HandlerFunc {
+// suggestions handles GET .../assignments/{id}/suggestions?type=&q=: the
+// code-or-description autocompletes, Bidang Usaha and Golongan Nasabah
+// (BR-UI-005).
+func (s *server) suggestions(ep endpoint) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sess, ok := s.session(w, r, ep)
 		if !ok {
@@ -293,8 +297,9 @@ func (s *server) economicSectors(ep endpoint) http.HandlerFunc {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		opts, err := s.cases.EconomicSectors(r.Context(), sess, caseID, id, r.URL.Query().Get("q"))
-		if writeAssignmentError(w, "economic sectors", err) {
+		q := r.URL.Query()
+		opts, err := s.cases.Suggestions(r.Context(), sess, caseID, id, q.Get("type"), q.Get("q"))
+		if writeAssignmentError(w, "suggestions", err) {
 			return
 		}
 		writeJSON(w, http.StatusOK, struct {

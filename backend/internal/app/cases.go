@@ -228,6 +228,8 @@ func (s *server) openAssignment(ep endpoint) http.HandlerFunc {
 			body = toIndividualDataPageJSON(*p.IndividualData)
 		case p.Spouse != nil:
 			body = toSpousePageJSON(*p.Spouse)
+		case p.BusinessEntity != nil:
+			body = toBusinessEntityPageJSON(*p.BusinessEntity)
 		case p.CloseRelative != nil:
 			body = toCloseRelativePageJSON(*p.CloseRelative)
 		}

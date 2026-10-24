@@ -8,6 +8,7 @@ export const assignmentNames = {
   individualData: "Data Pribadi", // UI-026
   spouseData: "Data Pasangan", // UI-027
   closeRelativeData: "Data Keluarga Dekat", // UI-028
+  businessEntity: "Badan Usaha", // UI-025
 } as const;
 
 // The Tipe Nasabah description whose form exists today (Badan Usaha:

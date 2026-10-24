@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
@@ -256,4 +257,36 @@ func (c *fieldCheck) address(a Address, addressLabel string, mailing *string) re
 		c.rtRW("rw", "RW", a.RW)
 	}
 	return c.region(a.Region, true)
+}
+
+// pastDate is an optional date (yyyy-mm-dd) before today, with no lower
+// bound (FR-APP-005 rule 7); today or later, or no real date, is ERR-037.
+func (c *fieldCheck) pastDate(key, label, v string, today time.Time) {
+	if !c.filled(key, label, v, false) {
+		return
+	}
+	d, err := time.Parse(dateISO, v)
+	if err != nil || !d.Before(today) {
+		c.invalid(key, label)
+	}
+}
+
+// description is a mandatory value that must be the description of an
+// Active row of a BMV type, for a field stored by description (Go Public,
+// §9.6).
+func (c *fieldCheck) description(key, label, bmvType, v string) {
+	if !c.filled(key, label, v, true) || c.err != nil {
+		return
+	}
+	opts, err := optionsIn(c.ctx, c.tx, bmvType)
+	if err != nil {
+		c.err = err
+		return
+	}
+	for _, o := range opts {
+		if o.Description == v {
+			return
+		}
+	}
+	c.invalid(key, label)
 }

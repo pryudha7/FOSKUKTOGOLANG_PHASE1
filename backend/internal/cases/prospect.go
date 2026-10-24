@@ -2,6 +2,7 @@ package cases
 
 import (
 	"context"
+	"log/slog"
 	"slices"
 	"strings"
 
@@ -86,9 +87,11 @@ type IndividualDataPage struct {
 	ExistingCustomer     bool
 	Values               IndividualDataForm
 	// Sector is the saved Bidang Usaha Tempat Bekerja, shown by description.
-	Sector   *Option
-	Options  map[string][]Option
-	Editable bool
+	Sector  *Option
+	Options map[string][]Option
+	// FailedOptions names the dropdowns whose list could not be read (ERR-039).
+	FailedOptions []string
+	Editable      bool
 }
 
 // SpousePage is UI-027: the form only when the customer is married.
@@ -96,15 +99,17 @@ type SpousePage struct {
 	Married                  bool
 	Values                   SpouseForm
 	Options                  map[string][]Option
+	FailedOptions            []string
 	Editable                 bool
 	Today, EarliestBirthDate string
 }
 
 // CloseRelativePage is UI-028.
 type CloseRelativePage struct {
-	Values   CloseRelativeForm
-	Options  map[string][]Option
-	Editable bool
+	Values        CloseRelativeForm
+	Options       map[string][]Option
+	FailedOptions []string
+	Editable      bool
 }
 
 // RegionOption is a cascading region; Value1 is a Kota's Dati II.
@@ -112,17 +117,23 @@ type RegionOption struct {
 	Code, Description, Value1 string
 }
 
-// pageOptions reads the Active options of each BMV type, keyed by name.
-func (s *Service) pageOptions(ctx context.Context, types map[string]string) (map[string][]Option, error) {
-	out := map[string][]Option{}
+// pageOptions reads the Active options of each BMV type, keyed by name. A
+// failed query leaves its list empty and names it in failed, so the page
+// still opens with ERR-038 on that dropdown and the ERR-039 popup
+// (BR-UI-004, AC-FR-APP-005-07); an empty list is no failure.
+func (s *Service) pageOptions(ctx context.Context, types map[string]string) (opts map[string][]Option, failed []string) {
+	opts, failed = map[string][]Option{}, []string{}
 	for key, bmvType := range types {
-		opts, err := s.options(ctx, bmvType)
+		list, err := s.options(ctx, bmvType)
 		if err != nil {
-			return nil, err
+			slog.Error("dropdown options unreadable (ERR-039)", "type", bmvType, "error", err)
+			list = []Option{}
+			failed = append(failed, key)
 		}
-		out[key] = opts
+		opts[key] = list
 	}
-	return out, nil
+	slices.Sort(failed)
+	return opts, failed
 }
 
 // partyID is the customer_id of a party of the case, if it has a row.
@@ -162,14 +173,15 @@ func customerMarried(ctx context.Context, q rowQuerier, caseID string) (bool, er
 	return value(marital) == maritalMarried, err
 }
 
-// existingCustomer is FR-APP-005 rule 1 for a Perorangan NIK: listed on
-// Registered Customers or Existing Customers (DB-RULE-095).
-func existingCustomer(ctx context.Context, q rowQuerier, idNumber string) (bool, error) {
+// existingCustomer is FR-APP-005 rule 1: the NIK (Perorangan) or NPWP
+// (Badan Usaha) listed with its type on Registered Customers or Existing
+// Customers (DB-RULE-095).
+func existingCustomer(ctx context.Context, q rowQuerier, idNumber, customerType string) (bool, error) {
 	var found bool
 	err := q.QueryRow(ctx, `
 		SELECT EXISTS (SELECT 1 FROM fos.registered_customers WHERE id_number = $1 AND customer_type = $2)
 		    OR EXISTS (SELECT 1 FROM fos.existing_customers WHERE id_number = $1 AND customer_type = $2)`,
-		idNumber, customerTypeIndividual).Scan(&found)
+		idNumber, customerType).Scan(&found)
 	return found, err
 }
 
@@ -194,7 +206,7 @@ func (s *Service) individualDataPage(ctx context.Context, caseID string, editabl
 		return IndividualDataPage{}, err
 	}
 	page.NIK, page.Name, page.BirthDate = value(nik), value(name), value(born)
-	existing, err := existingCustomer(ctx, s.db, page.NIK)
+	existing, err := existingCustomer(ctx, s.db, page.NIK, customerTypeIndividual)
 	if err != nil {
 		return IndividualDataPage{}, err
 	}
@@ -228,13 +240,13 @@ func (s *Service) individualDataPage(ctx context.Context, caseID string, editabl
 		}
 		page.Sector = &Option{code, description}
 	}
-	page.Options, err = s.pageOptions(ctx, map[string]string{
+	page.Options, page.FailedOptions = s.pageOptions(ctx, map[string]string{
 		"job": "JOB", "gender": "GENDER", "sourceIncome": "SOURCE_INCOME", "relationshipWithBank": "RELATIONSHIP_WITH_BANK",
 		"customerCategory": "CUSTOMER_CATEGORY", "businessType": "BUSINESS_TYPE", "houseOwnership": "HOUSE_OWNERSHIP_STATUS",
 		"mailingAddress": "MAILING_ADDRESS", "education": "LAST_EDUCATION", "maritalStatus": "MARITAL_STATUS",
 		"dependents": "DEPENDENTSLIST", "province": "PROVINCE",
 	})
-	return page, err
+	return page, nil
 }
 
 func (s *Service) spousePage(ctx context.Context, sess auth.Session, caseID string, editable bool) (SpousePage, error) {
@@ -273,8 +285,8 @@ func (s *Service) spousePage(ctx context.Context, sess auth.Session, caseID stri
 			Region: office.Region, EducationCode: value(education), PrenupCode: value(prenup),
 		}
 	}
-	page.Options, err = s.pageOptions(ctx, map[string]string{"job": "JOB", "education": "LAST_EDUCATION", "prenup": "PRENUP", "province": "PROVINCE"})
-	return page, err
+	page.Options, page.FailedOptions = s.pageOptions(ctx, map[string]string{"job": "JOB", "education": "LAST_EDUCATION", "prenup": "PRENUP", "province": "PROVINCE"})
+	return page, nil
 }
 
 func (s *Service) closeRelativePage(ctx context.Context, caseID string, editable bool) (CloseRelativePage, error) {
@@ -304,8 +316,8 @@ func (s *Service) closeRelativePage(ctx context.Context, caseID string, editable
 			Region: a.Region, MobilePhone: a.MobilePhone, EducationCode: value(education),
 		}
 	}
-	page.Options, err = s.pageOptions(ctx, map[string]string{"relationship": "FAMILY_RELATIONSHIP", "education": "LAST_EDUCATION", "province": "PROVINCE"})
-	return page, err
+	page.Options, page.FailedOptions = s.pageOptions(ctx, map[string]string{"relationship": "FAMILY_RELATIONSHIP", "education": "LAST_EDUCATION", "province": "PROVINCE"})
+	return page, nil
 }
 
 // addressRow is a customer_address row to store; nil columns stay NULL.
@@ -554,6 +566,23 @@ func (s *Service) moveProspect(ctx context.Context, sess auth.Session, caseID st
 	if (create && form != AssignmentCloseRelativeData) || (!create && (to == form || !slices.Contains(prospectSteps, to))) {
 		return 0, ErrUnsupported
 	}
+	return s.saveForm(ctx, sess, caseID, id, form, save, func(tx pgx.Tx, from int64) (int64, error) {
+		if create {
+			return 0, s.enterFinancingApplication(ctx, tx, sess, caseID, from)
+		}
+		next, err := s.moveTo(ctx, tx, sess, caseID, from, to)
+		if err != nil {
+			return 0, err
+		}
+		return next, startProcess(ctx, tx, caseID, StageFinancingSubmission, to, s.now())
+	})
+}
+
+// saveForm validates and saves form on the operator's open assignment of
+// that name (save fills c.errs), then moves on with then, all in one
+// transaction; any error leaves everything as it was.
+func (s *Service) saveForm(ctx context.Context, sess auth.Session, caseID string, id int64, form string,
+	save func(c *fieldCheck) error, then func(tx pgx.Tx, from int64) (int64, error)) (int64, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return 0, err
@@ -573,17 +602,8 @@ func (s *Service) moveProspect(ctx context.Context, sess auth.Session, caseID st
 	if len(c.errs) > 0 {
 		return 0, &ValidationError{c.errs}
 	}
-	if create {
-		if err := s.enterFinancingApplication(ctx, tx, sess, caseID, a.id); err != nil {
-			return 0, err
-		}
-		return 0, tx.Commit(ctx)
-	}
-	next, err := s.moveTo(ctx, tx, sess, caseID, a.id, to)
+	next, err := then(tx, a.id)
 	if err != nil {
-		return 0, err
-	}
-	if err := startProcess(ctx, tx, caseID, StageFinancingSubmission, to, s.now()); err != nil {
 		return 0, err
 	}
 	return next, tx.Commit(ctx)
@@ -658,10 +678,18 @@ func (s *Service) Regions(ctx context.Context, sess auth.Session, caseID string,
 	return opts, err
 }
 
-// EconomicSectors are the Bidang Usaha Tempat Bekerja suggestions: Active
-// ECONOMIC_SECTOR rows whose code or description contains text, ignoring
-// case, at most ui/autocomplete/max_results (BR-UI-005, AC-FR-APP-012-07).
-func (s *Service) EconomicSectors(ctx context.Context, sess auth.Session, caseID string, id int64, text string) ([]Option, error) {
+// suggestionTypes are the BMV types of the code-or-description
+// autocompletes: Bidang Usaha (ECONOMIC_SECTOR) and Golongan Nasabah of a
+// Badan Usaha (BUSINESSENTITY_CATEGORY).
+var suggestionTypes = []string{"ECONOMIC_SECTOR", "BUSINESSENTITY_CATEGORY"}
+
+// Suggestions are Active rows of such a type whose code or description
+// contains text, ignoring case, at most ui/autocomplete/max_results
+// (BR-UI-005, AC-FR-APP-012-07, AC-FR-APP-005-05).
+func (s *Service) Suggestions(ctx context.Context, sess auth.Session, caseID string, id int64, bmvType, text string) ([]Option, error) {
+	if !slices.Contains(suggestionTypes, bmvType) {
+		return nil, ErrUnsupported
+	}
 	if err := s.mayView(ctx, sess, caseID, id); err != nil {
 		return nil, err
 	}
@@ -671,7 +699,7 @@ func (s *Service) EconomicSectors(ctx context.Context, sess auth.Session, caseID
 	}
 	return optionList(collect(ctx, s, scanOption, `
 		SELECT code, description FROM fos.business_mapping_value
-		WHERE type = 'ECONOMIC_SECTOR' AND sub_type = '' AND `+activeStatus+`
+		WHERE type = $3 AND sub_type = '' AND `+activeStatus+`
 		  AND (strpos(lower(code), lower($1)) > 0 OR strpos(lower(description), lower($1)) > 0)
-		ORDER BY sort_order, code LIMIT $2`, text, limit))
+		ORDER BY sort_order, code LIMIT $2`, text, limit, bmvType))
 }

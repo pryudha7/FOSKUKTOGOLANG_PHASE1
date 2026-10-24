@@ -145,7 +145,8 @@ export type UnderlyingPage = {
 
 // "documents" errors (ERR-026) belong to a document row, keyed
 // "<category>/<document type>", and are not banner items.
-export type Section = "form" | "customer" | "spouse" | "upload" | "slik" | "documents" | "ektp" | "domicile";
+// officer-<n> is card n of Data Pengurus (FR-APP-005).
+export type Section = "form" | "customer" | "spouse" | "upload" | "slik" | "documents" | "ektp" | "domicile" | `officer-${number}`;
 
 // A validation failure returned with 422 by a submit: key is the stable
 // field key, field the label shown in the banner.
@@ -221,6 +222,7 @@ export type IndividualDataPage = {
   values: IndividualDataForm;
   sector: Option | null; // the saved Bidang Usaha Tempat Bekerja
   options: Record<string, Option[]>;
+  failedOptions: string[]; // dropdowns that could not be loaded (ERR-039)
   editable: boolean;
 };
 
@@ -243,6 +245,7 @@ export type SpousePage = {
   married: boolean;
   values: SpouseForm;
   options: Record<string, Option[]>;
+  failedOptions: string[];
   editable: boolean;
   today: string;
   earliestBirthDate: string;
@@ -259,7 +262,46 @@ export type CloseRelativeForm = Region & {
   educationCode: string;
 };
 
-export type CloseRelativePage = { values: CloseRelativeForm; options: Record<string, Option[]>; editable: boolean };
+export type CloseRelativePage = { values: CloseRelativeForm; options: Record<string, Option[]>; failedOptions: string[]; editable: boolean };
+
+// One Data Pengurus card (FR-APP-002); birthDate is yyyy-mm-dd.
+export type Officer = { roleCode: string; nik: string; name: string; birthDate: string };
+
+// The Badan Usaha form (FR-APP-005); goPublic is the BMV description.
+export type BusinessEntityForm = Region & {
+  businessEntityCode: string;
+  placeOfEstablishment: string;
+  deedNumber: string;
+  lastDeedNumber: string;
+  lastDeedDate: string;
+  phone: string;
+  mobilePhone: string;
+  email: string;
+  economicSectorCode: string;
+  relationshipWithBankCode: string;
+  businessTypeCode: string;
+  customerCategoryCode: string;
+  address: string;
+  goPublic: string;
+  businessGroupName: string;
+  officers: Officer[];
+};
+
+export type BusinessEntityPage = {
+  npwp: string;
+  name: string;
+  establishmentDate: string;
+  existingCustomer: boolean;
+  values: BusinessEntityForm;
+  sector: Option | null;
+  category: Option | null;
+  options: Record<string, Option[]>;
+  failedOptions: string[];
+  editable: boolean;
+  today: string;
+  earliestBirthDate: string;
+  latestDeedDate: string;
+};
 
 export type Assignment = {
   assignmentId: number;
@@ -267,5 +309,5 @@ export type Assignment = {
   status: string;
   // PreScreeningPage on Pre-Screening Submission, UnderlyingPage on
   // Document Underlying Upload.
-  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | IndividualDataPage | SpousePage | CloseRelativePage | null;
+  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | IndividualDataPage | SpousePage | CloseRelativePage | BusinessEntityPage | null;
 };

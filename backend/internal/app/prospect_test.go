@@ -556,10 +556,10 @@ func TestProspectRegionsAndSectors(t *testing.T) {
 	if r := c.Do(t, http.MethodGet, submitPath(caseID, id, "regions?type=JOB&parent=x"), nil); r.Status != http.StatusBadRequest {
 		t.Fatalf("other type = %d", r.Status)
 	}
-	if got := regionOptions(t, c, caseID, id, "economic-sectors?q=KON"); !reflect.DeepEqual(got, []string{"1100=Konstruksi Gedung="}) {
+	if got := regionOptions(t, c, caseID, id, "suggestions?type=ECONOMIC_SECTOR&q=KON"); !reflect.DeepEqual(got, []string{"1100=Konstruksi Gedung="}) {
 		t.Fatalf("sectors kon = %v", got)
 	}
-	if got := regionOptions(t, c, caseID, id, "economic-sectors?q=22"); !reflect.DeepEqual(got, []string{"2200=Perdagangan="}) {
+	if got := regionOptions(t, c, caseID, id, "suggestions?type=ECONOMIC_SECTOR&q=22"); !reflect.DeepEqual(got, []string{"2200=Perdagangan="}) {
 		t.Fatalf("sectors 22 = %v", got)
 	}
 }

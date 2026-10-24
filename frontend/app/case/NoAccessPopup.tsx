@@ -4,9 +4,10 @@ import styles from "./case.module.css";
 
 // ERR-035 (Gambar 43): a popup in the middle of the page over a dark layer,
 // titled with the application host and a globe icon, with one OK button.
+// ERR-039 uses the same popup with its own message.
 export const noAccessMessage = "Unable to open the attachment. You lack the required permissions.";
 
-export default function NoAccessPopup({ onClose }: { onClose: () => void }) {
+export default function NoAccessPopup({ onClose, message = noAccessMessage }: { onClose: () => void; message?: string }) {
   return (
     <div className={styles.overlay} role="presentation">
       <div className={styles.noAccess} role="alertdialog" aria-labelledby="no-access-host" aria-describedby="no-access-text">
@@ -18,7 +19,7 @@ export default function NoAccessPopup({ onClose }: { onClose: () => void }) {
           {window.location.host}
         </div>
         <p id="no-access-text" className={styles.noAccessText}>
-          {noAccessMessage}
+          {message}
         </p>
         <div className={styles.noAccessActions}>
           <button type="button" className={styles.noAccessOk} onClick={onClose} autoFocus>

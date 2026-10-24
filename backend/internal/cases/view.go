@@ -239,6 +239,8 @@ type AssignmentPage struct {
 	IndividualData *IndividualDataPage
 	Spouse         *SpousePage
 	CloseRelative  *CloseRelativePage
+	// BusinessEntity is set for Badan Usaha (UI-025).
+	BusinessEntity *BusinessEntityPage
 }
 
 // PreScreeningPage is the data UI-010 shows today: Nama Branch and the Tipe
@@ -347,6 +349,12 @@ func (s *Service) OpenAssignment(ctx context.Context, sess auth.Session, caseID 
 			return AssignmentPage{}, err
 		}
 		p.IndividualData = &page
+	case AssignmentBusinessEntity:
+		page, err := s.businessEntityPage(ctx, sess, caseID, editable)
+		if err != nil {
+			return AssignmentPage{}, err
+		}
+		p.BusinessEntity = &page
 	case AssignmentSpouseData:
 		page, err := s.spousePage(ctx, sess, caseID, editable)
 		if err != nil {

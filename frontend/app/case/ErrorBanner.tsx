@@ -1,11 +1,16 @@
 import type { FieldError } from "./types";
 import styles from "./case.module.css";
 
-// Banner prefixes that tell sections apart, like "Pengurus <n> - " in the
-// SoT (agreed: "Data Pasangan - "; Data Pribadi has none).
-// Data Pribadi address blocks: "e-KTP - " and "Domisili - " (FR-APP-012
-// Validation, PROPOSED).
-const sectionPrefix: Partial<Record<FieldError["section"], string>> = { spouse: "Data Pasangan - ", ektp: "e-KTP - ", domicile: "Domisili - " };
+// Banner prefixes that tell sections apart: "Data Pasangan - " on
+// Pre-Screening Submission (agreed), "e-KTP - " and "Domisili - " on Data
+// Pribadi (FR-APP-012 Validation, PROPOSED), "Pengurus <n> - " for card n
+// of Data Pengurus (FR-APP-002, FR-APP-005).
+const sectionPrefixes: Partial<Record<FieldError["section"], string>> = { spouse: "Data Pasangan - ", ektp: "e-KTP - ", domicile: "Domisili - " };
+
+function sectionPrefix(section: FieldError["section"]): string {
+  const officer = /^officer-(\d+)$/.exec(section);
+  return officer ? `Pengurus ${officer[1]} - ` : (sectionPrefixes[section] ?? "");
+}
 
 // UI-010 State Error banner (Gambar 13): a red block with a white warning
 // sign, then one bullet per error "<Nama Field> : <pesan>", field in bold.
@@ -29,7 +34,7 @@ export default function ErrorBanner({ errors, message }: { errors: FieldError[];
             ) : (
               e.field && (
                 <strong>
-                  {sectionPrefix[e.section] ?? ""}
+                  {sectionPrefix(e.section)}
                   {e.field} :
                 </strong>
               )

@@ -60,7 +60,7 @@ func invalid(section, key, label string) FieldError {
 // Entry, Pending-Submission (FR-APP-004 Assignment 1-2, AC-FR-APP-004-01).
 func (e *Executor) openPipeline(ctx context.Context, tx pgx.Tx, caseID string) error {
 	now := e.s.now()
-	if _, err := newBranchOfficerAssignment(ctx, tx, caseID, AssignmentPipelineDataEntry, now); err != nil {
+	if _, err := newBranchOfficerAssignment(ctx, tx, caseID, StageFinancingSubmission, AssignmentPipelineDataEntry, now); err != nil {
 		return err
 	}
 	_, err := tx.Exec(ctx, `UPDATE fos.work SET case_status = $2, updated_at = $3 WHERE case_id = $1`,
@@ -264,7 +264,7 @@ func (s *Service) SubmitPipeline(ctx context.Context, sess auth.Session, caseID 
 		id, string(AssignmentCompleted), now); err != nil {
 		return 0, err
 	}
-	nextID, err := newBranchOfficerAssignment(ctx, tx, caseID, nextName, now)
+	nextID, err := newBranchOfficerAssignment(ctx, tx, caseID, StageFinancingSubmission, nextName, now)
 	if err != nil {
 		return 0, err
 	}

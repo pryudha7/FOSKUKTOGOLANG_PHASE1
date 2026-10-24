@@ -3,7 +3,9 @@ import styles from "./case.module.css";
 
 // Banner prefixes that tell sections apart, like "Pengurus <n> - " in the
 // SoT (agreed: "Data Pasangan - "; Data Pribadi has none).
-const sectionPrefix: Partial<Record<FieldError["section"], string>> = { spouse: "Data Pasangan - " };
+// Data Pribadi address blocks: "e-KTP - " and "Domisili - " (FR-APP-012
+// Validation, PROPOSED).
+const sectionPrefix: Partial<Record<FieldError["section"], string>> = { spouse: "Data Pasangan - ", ektp: "e-KTP - ", domicile: "Domisili - " };
 
 // UI-010 State Error banner (Gambar 13): a red block with a white warning
 // sign, then one bullet per error "<Nama Field> : <pesan>", field in bold.

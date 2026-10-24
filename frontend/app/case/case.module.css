@@ -416,16 +416,27 @@
   list-style: none;
 }
 
-.breadcrumb::before {
+.breadcrumb::before,
+.breadcrumb::after {
   content: "";
   position: absolute;
-  left: 25%;
-  right: 25%;
+  left: var(--edge, 25%);
   bottom: 7px;
+}
+
+.breadcrumb::before {
+  right: var(--edge, 25%);
   border-top: 1px solid #c9d0d8;
 }
 
+/* The part of the line up to the active step (UI-027, UI-028). */
+.breadcrumb::after {
+  width: calc((100% - 2 * var(--edge, 25%)) * var(--done, 0));
+  border-top: 1px solid #0e2e5d;
+}
+
 .crumb,
+.crumbDone,
 .crumbActive {
   position: relative;
   flex: 1;
@@ -449,6 +460,15 @@
   border-radius: 50%;
   border: 2px solid #d9d9d9;
   background: #ffffff;
+}
+
+/* A step already passed: bold label, dark ring (Gambar 54-56). */
+.crumbDone .crumbLabel {
+  font-weight: bold;
+}
+
+.crumbDone .crumbDot {
+  border-color: #0e2e5d;
 }
 
 .crumbActive .crumbDot {
@@ -1673,5 +1693,117 @@
 .autocompleteFailed {
   color: #8a8c99;
   cursor: default;
+}
+
+/* UI-026 to UI-028 Prospect Data Entry (Gambar 51-56): two columns of
+   fields (BR-UI-008), some cells holding two fields side by side. */
+.formGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px 24px;
+  align-items: start;
+}
+
+.formGrid + .formGrid {
+  margin-top: 24px;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.formGrid input,
+.formGrid select,
+.formGrid textarea {
+  min-width: 0;
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+@media (max-width: 767px) {
+  .formGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.textArea {
+  height: 106px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+
+/* "Rp" fixed inside the input (BR-UI-009). */
+.money {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.moneyInput {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+}
+
+.radioRow {
+  display: flex;
+  gap: 90px;
+  min-height: 34px;
+  align-items: center;
+}
+
+.radioLabel,
+.checkboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.checkboxLabel {
+  min-height: 34px;
+}
+
+/* Nasabah Baru / Nasabah Eksisting (Gambar 51): cream, warning triangle. */
+.customerStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 4px;
+  background: #fdecc8;
+  font-size: 13px;
+}
+
+.customerStatusIcon {
+  color: #e8a33d;
+  font-size: 11px;
+}
+
+.twoLineOption {
+  display: flex;
+  flex-direction: column;
+}
+
+.notMarried {
+  margin: 0 0 8px;
+  color: #5c5d65;
+  font-size: 13px;
 }
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import type { Assignment, CaseFrame, PipelinePage, PreScreeningPage, ReviewPage, UnderlyingPage, WaitingSLIKPage } from "./types";
+import type { Assignment, CaseFrame, FamilyPage, PersonalPage, PipelinePage, PreScreeningPage, ReviewPage, SpousePage, UnderlyingPage, WaitingSLIKPage } from "./types";
 import CaseInfoPanel, { CaseHeader } from "./CaseInfoPanel";
 import StageBar from "./StageBar";
 import AttachmentsPanel from "./AttachmentsPanel";
@@ -11,6 +11,7 @@ import UnderlyingDocumentUpload from "./UnderlyingDocumentUpload";
 import PreScreeningReview from "./PreScreeningReview";
 import WaitingSLIK from "./WaitingSLIK";
 import PipelineDataEntry from "./PipelineDataEntry";
+import { FamilyData, PersonalData, SpouseData } from "./ProspectDataEntry";
 import HistoryDetails from "./HistoryDetails";
 import { assignmentNames } from "./names";
 import styles from "./case.module.css";
@@ -82,6 +83,12 @@ export default function CaseView({
             <WaitingSLIK page={assignment.page as WaitingSLIKPage} assignment={ref} />
           ) : assignment.page && assignment.name === assignmentNames.pipelineDataEntry ? (
             <PipelineDataEntry page={assignment.page as PipelinePage} assignment={ref} onFilesChanged={load} />
+          ) : assignment.page && assignment.name === assignmentNames.personalData ? (
+            <PersonalData page={assignment.page as PersonalPage} assignment={ref} />
+          ) : assignment.page && assignment.name === assignmentNames.spouseData ? (
+            <SpouseData page={assignment.page as SpousePage} assignment={ref} />
+          ) : assignment.page && assignment.name === assignmentNames.familyData ? (
+            <FamilyData page={assignment.page as FamilyPage} assignment={ref} />
           ) : (
             <section className={styles.card}>
               <h2 className={styles.cardTitle}>{assignment.name}</h2>

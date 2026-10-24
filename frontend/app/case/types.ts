@@ -145,7 +145,7 @@ export type UnderlyingPage = {
 
 // "documents" errors (ERR-026) belong to a document row, keyed
 // "<category>/<document type>", and are not banner items.
-export type Section = "form" | "customer" | "spouse" | "upload" | "slik" | "documents";
+export type Section = "form" | "customer" | "spouse" | "upload" | "slik" | "documents" | "ektp" | "domicile";
 
 // A validation failure returned with 422 by a submit: key is the stable
 // field key, field the label shown in the banner.
@@ -171,11 +171,101 @@ export type PipelinePage = {
   editable: boolean;
 };
 
+// The region cascade of a form: codes of Provinsi, Kota, Kecamatan, Kelurahan.
+export type Region = { provinceCode: string; cityCode: string; districtCode: string; subdistrictCode: string };
+
+// A Data Pribadi address block (UI-026); numbers are digits.
+export type AddressForm = Region & {
+  address: string;
+  mobilePhone: string;
+  phone: string;
+  rt: string;
+  rw: string;
+  yearsOfStay: string;
+  monthsOfStay: string;
+  houseOwnershipCode: string;
+};
+
+// Data Pribadi (FR-APP-012) as sent and saved: BMV codes, digits for numbers.
+export type PersonalForm = {
+  idLifetime: boolean;
+  nationality: string;
+  email: string;
+  npwp: string;
+  jobCode: string;
+  workplace: string;
+  genderCode: string;
+  workplaceAddress: string;
+  grossIncome: string;
+  incomeSourceCode: string;
+  relationshipWithBankCode: string;
+  customerCategoryCode: string;
+  workplaceSectorCode: string;
+  birthPlace: string;
+  workplaceBusinessTypeCode: string;
+  ektp: AddressForm;
+  sameAsEktp: boolean;
+  domicile: AddressForm;
+  mailingAddressCode: string;
+  educationCode: string;
+  maritalStatusCode: string;
+  motherMaidenName: string;
+  dependentsCode: string;
+};
+
+export type PersonalPage = {
+  nik: string;
+  name: string;
+  birthDate: string; // yyyy-mm-dd
+  existingCustomer: boolean;
+  values: PersonalForm;
+  sector: Option | null; // the saved Bidang Usaha Tempat Bekerja
+  options: Record<string, Option[]>;
+  editable: boolean;
+};
+
+// Data Pasangan (FR-APP-013); birthDate is yyyy-mm-dd.
+export type SpouseForm = Region & {
+  name: string;
+  nik: string;
+  birthDate: string;
+  birthPlace: string;
+  jobCode: string;
+  workDuration: string;
+  officeAddress: string;
+  phone: string;
+  mobilePhone: string;
+  educationCode: string;
+  prenupCode: string;
+};
+
+export type SpousePage = {
+  married: boolean;
+  values: SpouseForm;
+  options: Record<string, Option[]>;
+  editable: boolean;
+  today: string;
+  earliestBirthDate: string;
+};
+
+// Data Keluarga Dekat (FR-APP-014).
+export type FamilyForm = Region & {
+  name: string;
+  relationshipCode: string;
+  address: string;
+  homePhone: string;
+  officePhone: string;
+  mobilePhone: string;
+  educationCode: string;
+};
+
+export type FamilyPage = { values: FamilyForm; options: Record<string, Option[]>; editable: boolean };
+
 export type Assignment = {
   assignmentId: number;
   name: string;
   status: string;
   // PreScreeningPage on Pre-Screening Submission, UnderlyingPage on
   // Document Underlying Upload.
-  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | null;
+  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | PersonalPage | SpousePage | FamilyPage | null;
 };

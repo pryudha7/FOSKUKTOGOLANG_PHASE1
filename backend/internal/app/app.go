@@ -104,6 +104,11 @@ func New(cfg config.Config, pool *pgxpool.Pool, opts ...Option) *App {
 	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/banks", s.bankSuggestions(desktop))
 	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/submission-type-change", s.changeSubmissionType(desktop))
 	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/bank-letter", s.uploadBankLetter(desktop))
+	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/personal", s.submitPersonal(desktop))
+	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/spouse", s.submitSpouse(desktop))
+	mux.HandleFunc("POST "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/family", s.submitFamily(desktop))
+	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/regions", s.regions(desktop))
+	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/assignments/{assignmentId}/economic-sectors", s.economicSectors(desktop))
 	mux.HandleFunc("GET "+desktop.path+"/api/cases/{caseId}/documents/{fileId}", s.downloadDocument(desktop))
 	// External services (FR-PSAPI-009) live at the root, outside the endpoints.
 	mux.HandleFunc(serviceNamespace+"v1/PBSResponse", s.pbsResponse)

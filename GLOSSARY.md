@@ -80,6 +80,9 @@ _Avoid_: Underlying Document (it is not part of the Pre-Screening list)
 The party who requests the Financing in a Financing Case.
 _Avoid_: Debtor, Debitur, Client
 
+**Existing Customer** (_Nasabah Eksisting_):
+A Customer already listed on Registered Customers (disbursed through FOS) or Existing Customers (from other systems), matched on NIK or NPWP and Customer Type; otherwise a new Customer (_Nasabah Baru_).
+
 **Customer Code**:
 The identifier of the Customer as recorded on one Financing Case; the same person applying twice has two Customer Codes.
 _Avoid_: Customer Unique ID

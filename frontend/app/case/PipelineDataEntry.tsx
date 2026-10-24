@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { apiFetch, assignmentURL, type AssignmentRef } from "@/lib/api";
 import AssignmentHeader from "./AssignmentHeader";
+import Autocomplete, { inputClass } from "./Autocomplete";
 import ErrorBanner from "./ErrorBanner";
 import Field from "./Field";
 import NoAccessPopup from "./NoAccessPopup";
@@ -13,11 +14,6 @@ import styles from "./case.module.css";
 
 // The SUBMISSION_TYPE code of a Take Over (FR-APP-004 rule 2, DEC-116).
 const takeOver = "Take Over";
-
-// inputClass styles an input, select or pick list by its state.
-function inputClass(disabled: boolean, invalid: boolean): string {
-  return disabled ? styles.inputDisabled : invalid ? styles.inputInvalid : styles.input;
-}
 
 // UI-024 Pipeline Data Entry (Gambar 45-47, FR-APP-004). Jenis Pengajuan
 // and Produk are saved on Submit, which returns to the Dashboard and leaves
@@ -152,7 +148,15 @@ export default function PipelineDataEntry({
               </Field>
               {isTakeOver && (
                 <Field label="Nama Bank" required error={errorOf("bankName")}>
-                  <BankAutocomplete assignment={assignment} value={bankName} invalid={!!errorOf("bankName")} disabled={readOnly || busy} onChange={(v) => (setBankName(v), clearError("bankName"))} />
+                  <Autocomplete
+                    label="Nama Bank"
+                    source={assignmentURL(assignment, "banks")}
+                    text={bankName}
+                    onType={(v) => (setBankName(v), clearError("bankName"))}
+                    onChoose={(o) => (setBankName(o.description), clearError("bankName"))}
+                    invalid={!!errorOf("bankName")}
+                    disabled={readOnly || busy}
+                  />
                 </Field>
               )}
               <Field label="Produk" required error={errorOf("product")}>
@@ -359,137 +363,4 @@ function FileItem({ item, onDownload }: { item: DocumentItem; onDownload: (item:
       </span>
     </div>
   );
-}
-
-// ERR-038: the suggestion query failed.
-const suggestionsFailed = "Gagal mendapatkan data, harap refresh halaman";
-
-// The Nama Bank autocomplete (Field 6, BR-UI-005): each pause of 300 ms in
-// typing queries the server; matching letters are bold; arrows and Enter or
-// a click choose. Any typed text may stay as it is.
-function BankAutocomplete({
-  assignment,
-  value,
-  invalid,
-  disabled,
-  onChange,
-}: {
-  assignment: AssignmentRef;
-  value: string;
-  invalid: boolean;
-  disabled: boolean;
-  onChange: (v: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [options, setOptions] = useState<Option[]>([]);
-  const [failed, setFailed] = useState(false);
-  const [active, setActive] = useState(0);
-  const { endpointPath, caseId, assignmentId } = assignment;
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    let live = true;
-    const timer = setTimeout(() => {
-      apiFetch(`${assignmentURL({ endpointPath, caseId, assignmentId }, "banks")}?q=${encodeURIComponent(value)}`)
-        .then((res) => (res.ok ? (res.json() as Promise<{ options: Option[] }>) : Promise.reject()))
-        .then((body) => {
-          if (live) {
-            setOptions(body.options);
-            setFailed(false);
-            setActive(0);
-          }
-        })
-        .catch(() => live && setFailed(true));
-    }, 300);
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [endpointPath, caseId, assignmentId, value, open]);
-
-  function choose(o: Option) {
-    onChange(o.description);
-    setOpen(false);
-  }
-
-  return (
-    <div className={styles.autocomplete}>
-      <input
-        aria-label="Nama Bank"
-        role="combobox"
-        aria-expanded={open}
-        aria-autocomplete="list"
-        className={inputClass(disabled, invalid)}
-        value={value}
-        disabled={disabled}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        onChange={(e) => {
-          onChange(e.target.value);
-          setOpen(true);
-        }}
-        onKeyDown={(e) => {
-          if (!open || failed || options.length === 0) {
-            return;
-          }
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setActive((i) => Math.min(i + 1, options.length - 1));
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setActive((i) => Math.max(i - 1, 0));
-          } else if (e.key === "Enter") {
-            e.preventDefault();
-            choose(options[active]);
-          } else if (e.key === "Escape") {
-            setOpen(false);
-          }
-        }}
-      />
-      {open && (failed || options.length > 0) && (
-        <ul className={styles.autocompleteList} role="listbox">
-          {failed ? (
-            <li className={styles.autocompleteFailed} aria-disabled="true">
-              {suggestionsFailed}
-            </li>
-          ) : (
-            options.map((o, i) => (
-              <li
-                key={o.code}
-                role="option"
-                aria-selected={i === active}
-                className={i === active ? styles.autocompleteActive : styles.autocompleteOption}
-                // Chosen before the input's blur closes the list.
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  choose(o);
-                }}
-              >
-                <Highlighted text={o.description} match={value} />
-              </li>
-            ))
-          )}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-// Highlighted shows text with each case-insensitive occurrence of match bold.
-function Highlighted({ text, match }: { text: string; match: string }) {
-  if (match === "") {
-    return <>{text}</>;
-  }
-  const parts: React.ReactNode[] = [];
-  const lower = text.toLowerCase();
-  const needle = match.toLowerCase();
-  let at = 0;
-  for (let i = lower.indexOf(needle); i >= 0; i = lower.indexOf(needle, at)) {
-    parts.push(text.slice(at, i), <strong key={i}>{text.slice(i, i + needle.length)}</strong>);
-    at = i + needle.length;
-  }
-  parts.push(text.slice(at));
-  return <>{parts}</>;
 }

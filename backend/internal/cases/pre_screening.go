@@ -120,34 +120,63 @@ var (
 // operator's date. Each field reports its first failure.
 func validatePerson(section string, p Person, today time.Time) []FieldError {
 	var errs []FieldError
-	switch {
-	case p.NIK == "":
-		errs = append(errs, required(section, KeyNIK, labelNIK))
-	case !nikPattern.MatchString(p.NIK):
-		errs = append(errs, FieldError{section, KeyNIK, labelNIK, "ERR-007", msgNIK})
-	}
-	switch {
-	case p.Name == "":
-		errs = append(errs, required(section, KeyName, labelName))
-	case utf8.RuneCountInString(p.Name) > 30:
-		errs = append(errs, FieldError{section, KeyName, labelName, "ERR-013", msgNameLen})
-	case !namePattern.MatchString(p.Name):
-		errs = append(errs, FieldError{section, KeyName, labelName, "ERR-008", msgName})
-	}
-	if p.BirthDate == "" {
-		return append(errs, required(section, KeyBirthDate, labelBirthDate))
-	}
-	born, err := time.Parse("2006-01-02", p.BirthDate)
-	switch {
-	case err != nil:
-		errs = append(errs, FieldError{section, KeyBirthDate, labelBirthDate, "DATE_INVALID", msgBadDate})
-	case born.After(today) || born.Before(EarliestBirthDate(today)):
-		errs = append(errs, FieldError{section, KeyBirthDate, labelBirthDate, "DATE_OUT_OF_RANGE", msgOutRange})
-	// At least 17 full years on today's date.
-	case born.After(today.AddDate(-17, 0, 0)):
-		errs = append(errs, FieldError{section, KeyBirthDate, labelBirthDate, "ERR-009", msgAge})
+	for _, e := range []*FieldError{
+		nikError(section, KeyNIK, labelNIK, p.NIK),
+		nameError(section, KeyName, labelName, p.Name),
+		birthDateError(section, KeyBirthDate, labelBirthDate, p.BirthDate, today),
+	} {
+		if e != nil {
+			errs = append(errs, *e)
+		}
 	}
 	return errs
+}
+
+// nikError is the first failure of a required NIK: 16 digits (ERR-007).
+func nikError(section, key, label, nik string) *FieldError {
+	switch {
+	case nik == "":
+		e := required(section, key, label)
+		return &e
+	case !nikPattern.MatchString(nik):
+		return &FieldError{section, key, label, "ERR-007", msgNIK}
+	}
+	return nil
+}
+
+// nameError is the first failure of a required person name: at most 30
+// characters (ERR-013), only the allowed characters (ERR-008).
+func nameError(section, key, label, name string) *FieldError {
+	switch {
+	case name == "":
+		e := required(section, key, label)
+		return &e
+	case utf8.RuneCountInString(name) > 30:
+		return &FieldError{section, key, label, "ERR-013", msgNameLen}
+	case !namePattern.MatchString(name):
+		return &FieldError{section, key, label, "ERR-008", msgName}
+	}
+	return nil
+}
+
+// birthDateError is the first failure of a required birth date
+// (yyyy-mm-dd): a real date within range, at least 17 years ago (ERR-009).
+func birthDateError(section, key, label, date string, today time.Time) *FieldError {
+	if date == "" {
+		e := required(section, key, label)
+		return &e
+	}
+	born, err := time.Parse("2006-01-02", date)
+	switch {
+	case err != nil:
+		return &FieldError{section, key, label, "DATE_INVALID", msgBadDate}
+	case born.After(today) || born.Before(EarliestBirthDate(today)):
+		return &FieldError{section, key, label, "DATE_OUT_OF_RANGE", msgOutRange}
+	// At least 17 full years on today's date.
+	case born.After(today.AddDate(-17, 0, 0)):
+		return &FieldError{section, key, label, "ERR-009", msgAge}
+	}
+	return nil
 }
 
 // EarliestBirthDate bounds Tanggal Lahir: from 100 years before today, to

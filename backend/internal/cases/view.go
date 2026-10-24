@@ -234,6 +234,11 @@ type AssignmentPage struct {
 	WaitingSLIK *WaitingSLIKPage
 	// Pipeline is set for Pipeline Data Entry (UI-024).
 	Pipeline *PipelinePage
+	// Personal, Spouse and Family are set for Data Pribadi, Data Pasangan
+	// and Data Keluarga Dekat (UI-026 to UI-028).
+	Personal *PersonalPage
+	Spouse   *SpousePage
+	Family   *FamilyPage
 }
 
 // PreScreeningPage is the data UI-010 shows today: Nama Branch and the Tipe
@@ -333,6 +338,27 @@ func (s *Service) OpenAssignment(ctx context.Context, sess auth.Session, caseID 
 			return AssignmentPage{}, err
 		}
 		p.Pipeline = &page
+	}
+	editable := owner && p.Status != AssignmentCompleted
+	switch p.Name {
+	case AssignmentIndividualData:
+		page, err := s.personalPage(ctx, caseID, editable)
+		if err != nil {
+			return AssignmentPage{}, err
+		}
+		p.Personal = &page
+	case AssignmentSpouseData:
+		page, err := s.spousePage(ctx, sess, caseID, editable)
+		if err != nil {
+			return AssignmentPage{}, err
+		}
+		p.Spouse = &page
+	case AssignmentFamilyData:
+		page, err := s.familyPage(ctx, caseID, editable)
+		if err != nil {
+			return AssignmentPage{}, err
+		}
+		p.Family = &page
 	}
 	if p.Name == AssignmentPreScreeningReview {
 		page, err := s.reviewPage(ctx, sess, caseID)

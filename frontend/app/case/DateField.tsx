@@ -56,7 +56,7 @@ export default function DateField({
   return (
     <div className={styles.dateField}>
       <input
-        className={`${invalid ? styles.inputInvalid : styles.input} ${showLong ? styles.dateHidden : ""}`}
+        className={`${disabled ? styles.inputDisabled : invalid ? styles.inputInvalid : styles.input} ${showLong ? styles.dateHidden : ""}`}
         aria-label={ariaLabel}
         value={typed}
         disabled={disabled}

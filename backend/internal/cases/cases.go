@@ -56,8 +56,9 @@ func CreatableCaseTypes(sess auth.Session) []CaseType {
 
 // Case and assignment vocabulary (SoT §8.1, §8.2, §9.5).
 const (
-	StageFinancingSubmission = "Financing Submission"
-	CaseStatusNew            = "New"
+	StageFinancingSubmission  = "Financing Submission"
+	StageFinancingApplication = "Financing Application"
+	CaseStatusNew             = "New"
 
 	AssignmentPreScreeningSubmission = "Pre-Screening Submission"
 	ProcessPreScreeningSubmission    = "Pre-Screening Submission"
@@ -81,7 +82,7 @@ const (
 // WF-010, shown only once entered (FR-CASE-004).
 var (
 	MainStages = []string{
-		StageFinancingSubmission, "Financing Application", "Financing Checker", "Survey Analyst",
+		StageFinancingSubmission, StageFinancingApplication, "Financing Checker", "Survey Analyst",
 		"Recommendation", "Pre-Disbursement", "FAC Checker", "Disbursement",
 	}
 	AlternateStages = []string{"Rejected", "Financing Revision"}
@@ -183,7 +184,7 @@ func (s *Service) Create(ctx context.Context, creator auth.Session, caseType str
 		caseID, StageFinancingSubmission, now); err != nil {
 		return Created{}, err
 	}
-	if err := startProcess(ctx, tx, caseID, ProcessPreScreeningSubmission, now); err != nil {
+	if err := startProcess(ctx, tx, caseID, StageFinancingSubmission, ProcessPreScreeningSubmission, now); err != nil {
 		return Created{}, err
 	}
 	// FR-ASSIGN-001 rule 1: a worklist assignment for the creator, already opened.
@@ -202,22 +203,22 @@ func (s *Service) Create(ctx context.Context, creator auth.Session, caseType str
 	return Created{CaseID: caseID, AssignmentID: assignmentID}, nil
 }
 
-// startProcess records that the case started a Financing Submission
-// process, when its first assignment is created (TBD-034a, agreed).
-func startProcess(ctx context.Context, tx pgx.Tx, caseID, process string, now time.Time) error {
+// startProcess records that the case started a process of a stage, when
+// its first assignment is created (TBD-034a, agreed).
+func startProcess(ctx context.Context, tx pgx.Tx, caseID, stage, process string, now time.Time) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO fos.case_process_progress (case_id, process_id, first_started_at)
 		SELECT $1, process_id, $4 FROM fos.lifecycle_process
 		WHERE stage_name = $2 AND process_name = $3 ORDER BY sort_order LIMIT 1
 		ON CONFLICT (case_id, process_id) DO NOTHING`,
-		caseID, StageFinancingSubmission, process, now)
+		caseID, stage, process, now)
 	return err
 }
 
 // newBranchOfficerAssignment creates a new worklist assignment for the
-// case's branch_officer, starting its process.
-func newBranchOfficerAssignment(ctx context.Context, tx pgx.Tx, caseID, name string, now time.Time) (int64, error) {
-	if err := startProcess(ctx, tx, caseID, name, now); err != nil {
+// case's branch_officer, starting its process in stage.
+func newBranchOfficerAssignment(ctx context.Context, tx pgx.Tx, caseID, stage, name string, now time.Time) (int64, error) {
+	if err := startProcess(ctx, tx, caseID, stage, name, now); err != nil {
 		return 0, err
 	}
 	var id int64

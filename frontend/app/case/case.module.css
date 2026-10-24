@@ -448,6 +448,7 @@
 
 .crumbLabel {
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .crumbActive .crumbLabel {
@@ -1868,5 +1869,68 @@
   background: none;
   color: #e3242b;
   cursor: pointer;
+}
+
+/* UI-030, UI-031 Hot Prospect Data Entry (Gambar 71-73). */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.percentInput {
+  text-align: right;
+}
+
+/* A Data Pembiayaan Lain card: white inside the lavender panel. */
+.financingCard {
+  position: relative;
+  padding: 36px 16px 16px;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.slikGroups {
+  align-self: stretch;
+}
+
+.slikGroup {
+  background: #ffffff;
+}
+
+.slikGroupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px 0 0;
+  border-bottom: 1px solid #d5dbe2;
+  background: #e9eef3;
+}
+
+.slikGroupToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: none;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.slikFacility {
+  position: relative;
+  margin: 8px;
+  padding: 16px;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px #eef0f3;
+}
+
+.slikFacilityTick {
+  position: absolute;
+  top: 16px;
+  right: 16px;
 }
 

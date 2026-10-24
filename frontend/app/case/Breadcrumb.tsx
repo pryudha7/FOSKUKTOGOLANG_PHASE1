@@ -7,6 +7,9 @@ export const preScreeningSteps = ["Pre - Screening Submission", "Document Underl
 // (FR-APP-012).
 export const prospectSteps = ["Data Pribadi", "Data Pasangan", "Data Keluarga Dekat"];
 
+// The six assignments of the Hot Prospect Data Entry tabbed flow (FR-APP-015).
+export const hotProspectSteps = ["Data Usaha Nasabah", "Data Pembiayaan Lain", "Data Permohonan Fasilitas", "QCA Data", "Collateral Data", "Document Upload"];
+
 // UI-010 breadcrumb: steps joined by a line, the active one filled dark;
 // clicking another step asks to move there (validated by the server). With
 // progress (UI-026 to UI-028) the line is dark up to the active step and

@@ -34,11 +34,13 @@ func (r Region) codes() []string {
 
 // fieldCheck collects a form's errors in field order (one per field) and
 // keeps the first database error; section is the banner section of the
-// fields being checked.
+// fields being checked. lenient is Save on Hot Prospect: no field is
+// required, formats and ranges still are checked (FR-APP-016 Process 4).
 type fieldCheck struct {
 	ctx     context.Context
 	tx      pgx.Tx
 	section string
+	lenient bool
 	errs    []FieldError
 	err     error
 }
@@ -63,7 +65,7 @@ func (c *fieldCheck) filled(key, label, v string, mandatory bool) bool {
 	if v != "" {
 		return true
 	}
-	if mandatory {
+	if mandatory && !c.lenient {
 		c.errs = append(c.errs, required(c.section, key, label))
 	}
 	return false
@@ -141,14 +143,37 @@ func (c *fieldCheck) npwp(key, label, v string) {
 	}
 }
 
-// number is a whole number from 0 to max (FR-APP-012 rule 10); over max is
-// ERR-037.
-func (c *fieldCheck) number(key, label, v string, max int) {
-	if !c.filled(key, label, v, true) {
+// number is a whole number from 0 to max (FR-APP-012 rule 10); over max or
+// not a whole number is ERR-037.
+func (c *fieldCheck) number(key, label, v string, max int, mandatory bool) {
+	if !c.filled(key, label, v, mandatory) {
 		return
 	}
 	n, err := strconv.Atoi(v)
 	if !digits.MatchString(v) || err != nil || n > max {
+		c.invalid(key, label)
+	}
+}
+
+// money is an optional whole rupiah amount, 0 to 999.999.999.999.999
+// (BR-UI-009, FR-APP-017 Field 2-3).
+func (c *fieldCheck) money(key, label, v string) {
+	if c.filled(key, label, v, false) && (!digits.MatchString(v) || len(v) > 15) {
+		c.invalid(key, label)
+	}
+}
+
+// percentPattern is up to three whole digits and two decimals, dot-separated.
+var percentPattern = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{1,2})?$`)
+
+// percent is an optional rate from 0 to 100 with at most two decimals
+// (BR-UI-013, Margin / Ujrah).
+func (c *fieldCheck) percent(key, label, v string) {
+	if !c.filled(key, label, v, false) {
+		return
+	}
+	rate, err := strconv.ParseFloat(v, 64)
+	if !percentPattern.MatchString(v) || err != nil || rate > 100 {
 		c.invalid(key, label)
 	}
 }
@@ -244,13 +269,13 @@ func (c *fieldCheck) address(a Address, addressLabel string, mailing *string) re
 	if mailing == nil {
 		c.rtRW("rt", "RT", a.RT)
 		c.rtRW("rw", "RW", a.RW)
-		c.number("yearsOfStay", "Lama Tinggal (Tahun)", a.YearsOfStay, 99)
-		c.number("monthsOfStay", "Lama Tinggal (Bulan)", a.MonthsOfStay, 11)
+		c.number("yearsOfStay", "Lama Tinggal (Tahun)", a.YearsOfStay, 99, true)
+		c.number("monthsOfStay", "Lama Tinggal (Bulan)", a.MonthsOfStay, 11, true)
 		c.code("houseOwnership", "Status Kepemilikan Rumah", "HOUSE_OWNERSHIP_STATUS", a.HouseOwnershipCode, true)
 	} else {
 		// Domisili: Bulan, Tahun and Alamat Surat Menyurat come first (Gambar 52).
-		c.number("monthsOfStay", "Lama Tinggal (Bulan)", a.MonthsOfStay, 11)
-		c.number("yearsOfStay", "Lama Tinggal (Tahun)", a.YearsOfStay, 99)
+		c.number("monthsOfStay", "Lama Tinggal (Bulan)", a.MonthsOfStay, 11, true)
+		c.number("yearsOfStay", "Lama Tinggal (Tahun)", a.YearsOfStay, 99, true)
 		c.code("mailingAddress", "Alamat Surat Menyurat", "MAILING_ADDRESS", *mailing, true)
 		c.code("houseOwnership", "Status Kepemilikan Rumah", "HOUSE_OWNERSHIP_STATUS", a.HouseOwnershipCode, true)
 		c.rtRW("rt", "RT", a.RT)

@@ -1,4 +1,4 @@
-import { companyOfficerNumber, type FieldError } from "./types";
+import { companyOfficerNumber, otherFinancingNumber, type FieldError } from "./types";
 import styles from "./case.module.css";
 
 // Banner prefixes that tell sections apart: "Data Pasangan - " on
@@ -8,8 +8,13 @@ import styles from "./case.module.css";
 const sectionPrefixes: Partial<Record<FieldError["section"], string>> = { spouse: "Data Pasangan - ", ektp: "e-KTP - ", domicile: "Domisili - " };
 
 function sectionPrefix(section: FieldError["section"]): string {
-  const n = companyOfficerNumber(section);
-  return n !== null ? `Pengurus ${n} - ` : (sectionPrefixes[section] ?? "");
+  const officer = companyOfficerNumber(section);
+  if (officer !== null) {
+    return `Pengurus ${officer} - `;
+  }
+  // Card n of Data Pembiayaan Lain (agreed for ticket 18; not in the SoT).
+  const financing = otherFinancingNumber(section);
+  return financing !== null ? `Pembiayaan ${financing} - ` : (sectionPrefixes[section] ?? "");
 }
 
 // UI-010 State Error banner (Gambar 13): a red block with a white warning

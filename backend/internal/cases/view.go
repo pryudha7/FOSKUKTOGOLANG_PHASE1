@@ -241,6 +241,10 @@ type AssignmentPage struct {
 	CloseRelative  *CloseRelativePage
 	// BusinessEntity is set for Badan Usaha (UI-025).
 	BusinessEntity *BusinessEntityPage
+	// BusinessData and OtherFinancing are set for Data Usaha Nasabah and
+	// Data Pembiayaan Lain (UI-030, UI-031).
+	BusinessData   *BusinessDataPage
+	OtherFinancing *OtherFinancingPage
 }
 
 // PreScreeningPage is the data UI-010 shows today: Nama Branch and the Tipe
@@ -349,6 +353,18 @@ func (s *Service) OpenAssignment(ctx context.Context, sess auth.Session, caseID 
 			return AssignmentPage{}, err
 		}
 		p.IndividualData = &page
+	case AssignmentBusinessData:
+		page, err := s.businessDataPage(ctx, caseID, editable)
+		if err != nil {
+			return AssignmentPage{}, err
+		}
+		p.BusinessData = &page
+	case AssignmentOtherFinancingData:
+		page, err := s.otherFinancingPage(ctx, caseID, editable)
+		if err != nil {
+			return AssignmentPage{}, err
+		}
+		p.OtherFinancing = &page
 	case AssignmentBusinessEntity:
 		page, err := s.businessEntityPage(ctx, sess, caseID, editable)
 		if err != nil {

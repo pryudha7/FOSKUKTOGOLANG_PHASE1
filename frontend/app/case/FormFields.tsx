@@ -12,8 +12,10 @@ import type { FieldError, Option, Region, Section } from "./types";
 import styles from "./case.module.css";
 
 // The endpoint of each form and what moves it: a step name, or Create.
-export type FormPath = "individual-data" | "spouse" | "close-relative" | "business-entity";
+export type FormPath = "individual-data" | "spouse" | "close-relative" | "business-entity" | "business-data" | "other-financing";
 export const create = "create";
+// save is Save on Hot Prospect: the form is kept and the page stays.
+export const save = "save";
 
 // useMove holds a form's errors and moves it (FR-APP-012 Process 4, agreed
 // comment 3): the server validates and saves the form, then the browser
@@ -34,6 +36,11 @@ export function useMove(assignment: AssignmentRef, form: FormPath) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).catch(() => null);
+    if (res?.ok && to === save) {
+      setErrors([]);
+      setBusy(false);
+      return;
+    }
     if (res?.ok) {
       const next = (await res.json()) as { assignmentId: number };
       window.location.assign(to === create ? assignment.endpointPath : assignmentPath(assignment.endpointPath, assignment.caseId, next.assignmentId));
@@ -184,6 +191,8 @@ export function NumberField({
   disabled,
   maxDigits,
   money = false,
+  required = true,
+  placeholder,
 }: {
   label: string;
   value: string;
@@ -192,6 +201,8 @@ export function NumberField({
   disabled: boolean;
   maxDigits: number;
   money?: boolean;
+  required?: boolean;
+  placeholder?: string;
 }) {
   const input = (
     <input
@@ -200,11 +211,12 @@ export function NumberField({
       className={money ? styles.moneyInput : inputClass(disabled, !!error)}
       value={thousands(value)}
       disabled={disabled}
+      placeholder={placeholder}
       onChange={(e) => onChange(e.target.value.replace(/\D/g, "").slice(0, maxDigits))}
     />
   );
   return (
-    <Field label={label} required error={error}>
+    <Field label={label} required={required} error={error}>
       {money ? (
         <span className={`${inputClass(disabled, !!error)} ${styles.money}`}>
           <span aria-hidden="true">Rp</span>
@@ -213,6 +225,46 @@ export function NumberField({
       ) : (
         input
       )}
+    </Field>
+  );
+}
+
+// A percentage (BR-UI-013): typed with digits and one comma, at most two
+// decimals, shown "21,00" with a fixed "%" once the field is left. value is
+// the API form, with a dot ("21.00").
+export function PercentField({
+  label,
+  value,
+  onChange,
+  error,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  error?: string;
+  disabled: boolean;
+}) {
+  const typed = value.replace(".", ",");
+  return (
+    <Field label={label} error={error}>
+      <span className={`${inputClass(disabled, !!error)} ${styles.money}`}>
+        <input
+          aria-label={label}
+          inputMode="decimal"
+          className={`${styles.moneyInput} ${styles.percentInput}`}
+          value={typed}
+          disabled={disabled}
+          onChange={(e) => {
+            const v = e.target.value.replace(/[^0-9,]/g, "");
+            if (/^[0-9]*(,[0-9]{0,2})?$/.test(v)) {
+              onChange(v.replace(",", "."));
+            }
+          }}
+          onBlur={() => value !== "" && !Number.isNaN(Number(value)) && onChange(Number(value).toFixed(2))}
+        />
+        <span aria-hidden="true">%</span>
+      </span>
     </Field>
   );
 }

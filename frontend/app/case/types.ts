@@ -146,7 +146,7 @@ export type UnderlyingPage = {
 // "documents" errors (ERR-026) belong to a document row, keyed
 // "<category>/<document type>", and are not banner items.
 // company-officer-<n> is card n of Data Pengurus (FR-APP-005).
-export type Section = "form" | "customer" | "spouse" | "upload" | "slik" | "documents" | "ektp" | "domicile" | `company-officer-${number}`;
+export type Section = "form" | "customer" | "spouse" | "upload" | "slik" | "documents" | "ektp" | "domicile" | `company-officer-${number}` | `other-financing-${number}`;
 
 // companyOfficerSection is the section of Data Pengurus card n (from 1);
 // companyOfficerNumber reads n back, or null for another section.
@@ -155,6 +155,51 @@ export function companyOfficerNumber(section: Section): number | null {
   const m = /^company-officer-(\d+)$/.exec(section);
   return m ? Number(m[1]) : null;
 }
+
+// otherFinancingNumber reads n back from other-financing-<n>, card n of
+// Data Pembiayaan Lain (FR-APP-017), or null for another section.
+export function otherFinancingNumber(section: Section): number | null {
+  const m = /^other-financing-(\d+)$/.exec(section);
+  return m ? Number(m[1]) : null;
+}
+
+// Data Usaha Nasabah (FR-APP-016); numbers are digits.
+export type BusinessDataForm = Region & {
+  businessField: string;
+  businessCategoryCode: string;
+  businessAgeMonths: string;
+  employeeCount: string;
+  businessLocationCode: string;
+  address: string;
+  houseOwnershipCode: string;
+  yearsOfStay: string;
+  monthsOfStay: string;
+  phone: string;
+  rt: string;
+  rw: string;
+};
+
+export type BusinessDataPage = { values: BusinessDataForm; options: Record<string, Option[]>; failedOptions: string[]; editable: boolean };
+
+// One Data Pembiayaan Lain card (FR-APP-017): amounts and counts as digits,
+// marginRate with a dot ("21.00").
+export type OtherFinancingCard = {
+  bankName: string;
+  financingType: string;
+  financingAmount: string;
+  outstandingAmount: string;
+  tenorMonths: string;
+  marginRate: string;
+  slikCollect: string;
+  purpose: string;
+};
+
+export type OtherFinancingPage = { values: { otherFinancings: OtherFinancingCard[] }; slikAvailable: boolean; editable: boolean };
+
+// The customer's SLIK facilities for Isi Data dari SLIK: amounts and margin
+// as SLIK has them (two decimals) and the card each fills.
+export type SLIKFacility = { financingAmount: string; outstandingAmount: string; marginRate: string; card: OtherFinancingCard };
+export type SLIKFacilityGroup = { title: string; facilities: SLIKFacility[] };
 
 // A validation failure returned with 422 by a submit: key is the stable
 // field key, field the label shown in the banner.
@@ -317,5 +362,5 @@ export type Assignment = {
   status: string;
   // PreScreeningPage on Pre-Screening Submission, UnderlyingPage on
   // Document Underlying Upload.
-  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | IndividualDataPage | SpousePage | CloseRelativePage | BusinessEntityPage | null;
+  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | IndividualDataPage | SpousePage | CloseRelativePage | BusinessEntityPage | BusinessDataPage | OtherFinancingPage | null;
 };

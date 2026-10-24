@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import type { Assignment, BusinessEntityPage, CaseFrame, CloseRelativePage, IndividualDataPage, PipelinePage, PreScreeningPage, ReviewPage, SpousePage, UnderlyingPage, WaitingSLIKPage } from "./types";
+import type { Assignment, BusinessDataPage, BusinessEntityPage, OtherFinancingPage, CaseFrame, CloseRelativePage, IndividualDataPage, PipelinePage, PreScreeningPage, ReviewPage, SpousePage, UnderlyingPage, WaitingSLIKPage } from "./types";
 import CaseInfoPanel, { CaseHeader } from "./CaseInfoPanel";
 import StageBar from "./StageBar";
 import AttachmentsPanel from "./AttachmentsPanel";
@@ -13,6 +13,7 @@ import WaitingSLIK from "./WaitingSLIK";
 import PipelineDataEntry from "./PipelineDataEntry";
 import { CloseRelativeData, IndividualData, SpouseData } from "./ProspectDataEntry";
 import BusinessEntityData from "./BusinessEntityData";
+import { BusinessData, OtherFinancingData } from "./HotProspectData";
 import HistoryDetails from "./HistoryDetails";
 import { assignmentNames } from "./names";
 import styles from "./case.module.css";
@@ -84,6 +85,10 @@ export default function CaseView({
             <WaitingSLIK page={assignment.page as WaitingSLIKPage} assignment={ref} />
           ) : assignment.page && assignment.name === assignmentNames.pipelineDataEntry ? (
             <PipelineDataEntry page={assignment.page as PipelinePage} assignment={ref} onFilesChanged={load} />
+          ) : assignment.page && assignment.name === assignmentNames.businessData ? (
+            <BusinessData page={assignment.page as BusinessDataPage} assignment={ref} />
+          ) : assignment.page && assignment.name === assignmentNames.otherFinancingData ? (
+            <OtherFinancingData page={assignment.page as OtherFinancingPage} assignment={ref} />
           ) : assignment.page && assignment.name === assignmentNames.businessEntity ? (
             <BusinessEntityData page={assignment.page as BusinessEntityPage} assignment={ref} />
           ) : assignment.page && assignment.name === assignmentNames.individualData ? (

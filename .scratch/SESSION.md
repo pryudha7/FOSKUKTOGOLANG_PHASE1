@@ -12,6 +12,7 @@ Where the FOS KUK rebuild stands, so the next session can continue without re-de
 | 04 | UI-008 sidebar, Create menu (AO/SAO), avatar Log off | f26b5ba, 1afbc13 |
 | 05 | Create Financing Case, Case ID / Customer Code, Case View frame (stage bar, info panel, lifecycle popup, attachments panel) | b512c0b, aa8d56d |
 | 30 | Pre-Screening Submission (Perorangan): validation, customer rows, Next to Document Underlying Upload, Back | 6a7229c, 4d258a9 |
+| 17 | Prospect Data Entry Perorangan (UI-026 to UI-028): Data Pribadi with customer status, region cascade, e-KTP copy; Data Pasangan (Kawin only); Data Keluarga Dekat; Create to Financing Application with Data Usaha Nasabah | 0bfd12f, ceada0f |
 | 15 | Pipeline Data Entry (UI-024): assignment on run COMPLETED, Jenis Pengajuan / Produk (product_management §9.26) / Nama Bank autocomplete, Bukti Surat upload and deletion, Submit to Badan Usaha or Data Pribadi | b284728, 37e7bc9 |
 | 14 | Pre-Screening API Data (UI-021) and API Log History (UI-020) in History Details; Problem Flow split to ticket 37 | 70d82e3, 06c7a80 |
 | 36 | Waiting SLIK assignment (SLIKWQFlowAct, UI-023) and SLIKInquiry status check | 029ca8e, c4ddf15 |
@@ -30,7 +31,7 @@ Each ticket file in `.scratch/fos-kuk-phase1/issues/` has a **Comments** section
 
 ## Next
 
-Next recommended: **17** (Prospect Data Entry, Perorangan: Data Pribadi, the assignment ticket 15 creates), **16** (Badan Usaha), **37** (Problem Flow; TBD-043 questions first). Also unblocked: **31** Badan Usaha form (now includes the Badan Usaha Document Underlying Upload variant), **32** Case View mode Case + To do, **06** assignment lock, **27** Dashboard. Ticket **29** (operator/master-data management) waits on TBD-003/018. Open domain questions for the SoT owner: `.scratch/fos-kuk-glossary/issues/01-open-domain-questions.md`.
+Next recommended: **16** (Prospect Data Entry Badan Usaha; reuse cases/field_checks.go), **18** (Hot Prospect: Data Usaha Nasabah, the assignment ticket 17 creates), **37** (Problem Flow; TBD-043 questions first). Also unblocked: **31** Badan Usaha form (now includes the Badan Usaha Document Underlying Upload variant), **32** Case View mode Case + To do, **06** assignment lock, **27** Dashboard. Ticket **29** (operator/master-data management) waits on TBD-003/018. Open domain questions for the SoT owner: `.scratch/fos-kuk-glossary/issues/01-open-domain-questions.md`.
 
 ## How each ticket was worked
 

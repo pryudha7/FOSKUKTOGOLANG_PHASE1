@@ -4,6 +4,7 @@ go 1.26.5
 
 require (
 	github.com/go-ldap/ldap/v3 v3.4.15
+	github.com/go-pdf/fpdf v0.9.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/jimlambrt/gldap v0.1.14

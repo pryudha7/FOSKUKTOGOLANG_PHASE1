@@ -41,24 +41,35 @@ const (
 	docZIPRequest      = "SLIK_ZIP_REQUEST"
 	docZIPCustomer     = "SLIK_ZIP_CUSTOMER"
 	docZIPSpouse       = "SLIK_ZIP_SPOUSE"
+	docPDFCustomer     = "SLIK_PDF_CUSTOMER"
+	docPDFSpouse       = "SLIK_PDF_SPOUSE"
 
 	categoryPreScreening = "DokumenPreScreening"
 )
 
 // slikSubject is what differs between the Customer's SLIK and the Spouse's:
-// the customer row, the API name and the ZIP result slot and name.
+// the customer row, the API name, the ZIP result slot and name, and the
+// report PDF slot and name suffix (FR-PSAPI-010 Laporan PDF).
 type slikSubject struct {
 	code, party string
 	api         outboundAPI
 	zipDoc      string
 	zipName     func(referenceCode string) string
+	pdfDoc      string
+	pdfSuffix   string
 }
 
 var slikSubjects = map[string]slikSubject{
 	subjectCustomer: {subjectCustomer, partyCustomer, outboundAPI{logName: "SLIK", settings: "slik", keyHeader: "x-api-key"},
-		docZIPCustomer, func(code string) string { return code + ".zip" }},
+		docZIPCustomer, func(code string) string { return code + ".zip" }, docPDFCustomer, ""},
 	subjectSpouse: {subjectSpouse, partySpouse, outboundAPI{logName: "SLIKPasangan", settings: "slik", keyHeader: "x-api-key"},
-		docZIPSpouse, func(code string) string { return code + " - Spouse.zip" }},
+		docZIPSpouse, func(code string) string { return code + " - Spouse.zip" }, docPDFSpouse, " - Spouse"},
+}
+
+// pdfName is the report PDF's name: "SLIK Report - " + the case's customer
+// code (agreed for TBD-044b) + " - Spouse" for the Spouse.
+func (s slikSubject) pdfName(customerCode string) string {
+	return "SLIK Report - " + customerCode + s.pdfSuffix + ".pdf"
 }
 
 var (

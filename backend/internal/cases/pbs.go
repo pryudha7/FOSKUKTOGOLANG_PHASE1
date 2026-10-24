@@ -108,17 +108,35 @@ func (s *Service) receiveSLIK(ctx context.Context, rpaUser, kode string, zipData
 		return refused(err.Error())
 	}
 
-	// The ZIP goes to GCS before the transaction, outside the locks
-	// (DB-RULE-025); it is removed again unless the transaction commits.
+	// The report PDF is made from the same file (FR-PSAPI-010 Laporan PDF);
+	// a file it cannot be made from is not processed (agreed for ticket 34).
+	report, err := renderSLIKPDF(file.doc)
+	if err != nil {
+		return res, 0, err
+	}
+	var customerCode *string
+	if err := s.db.QueryRow(ctx, `SELECT customer_code FROM fos.work WHERE case_id = $1`, caseID).Scan(&customerCode); err != nil {
+		return res, 0, err
+	}
+
+	// The ZIP and the PDF go to GCS before the transaction, outside the locks
+	// (DB-RULE-025); they are removed again unless the transaction commits.
 	subject := slikSubjects[subjectCode]
+	committed := false
 	doc := generatedDoc{category: categoryResponse, docType: subject.zipDoc, fileName: subject.zipName(kode),
 		contentType: "application/zip", data: zipData, createdBy: rpaUser}
 	sd, err := s.putGenerated(ctx, caseID, doc)
 	if err != nil {
 		return res, 0, fmt.Errorf("storing the SLIK ZIP: %w", err)
 	}
-	committed := false
 	defer func() { s.settleGenerated(context.WithoutCancel(ctx), sd, committed) }()
+	pdfDoc := generatedDoc{category: categoryResponse, docType: subject.pdfDoc, fileName: subject.pdfName(value(customerCode)),
+		contentType: mediaTypePDF, data: report, createdBy: rpaUser}
+	pdfStored, err := s.putGenerated(ctx, caseID, pdfDoc)
+	if err != nil {
+		return res, 0, fmt.Errorf("storing the SLIK report PDF: %w", err)
+	}
+	defer func() { s.settleGenerated(context.WithoutCancel(ctx), pdfStored, committed) }()
 
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -146,15 +164,17 @@ func (s *Service) receiveSLIK(ctx context.Context, rpaUser, kode string, zipData
 	if err := s.slotGenerated(ctx, tx, caseID, doc, &sd); err != nil {
 		return res, 0, err
 	}
+	if err := s.slotGenerated(ctx, tx, caseID, pdfDoc, &pdfStored); err != nil {
+		return res, 0, err
+	}
 	now := s.now()
 	worst, err := storeSLIK(ctx, tx, reportID, file, now)
 	if err != nil {
 		return res, 0, err
 	}
-	// DB-RULE-058: RECEIVED with the data in one transaction; the PDF comes
-	// with ticket 34 (agreed).
-	if _, err := tx.Exec(ctx, `UPDATE fos.slik_report SET status = $2, received_at = $3, zip_document_id = $4, updated_at = $3 WHERE slik_report_id = $1`,
-		reportID, slikReceived, now, sd.fileID); err != nil {
+	// DB-RULE-058: RECEIVED with the data and the PDF in one transaction.
+	if _, err := tx.Exec(ctx, `UPDATE fos.slik_report SET status = $2, received_at = $3, zip_document_id = $4, pdf_document_id = $5, updated_at = $3
+		WHERE slik_report_id = $1`, reportID, slikReceived, now, sd.fileID, pdfStored.fileID); err != nil {
 		return res, 0, err
 	}
 	if subjectCode == subjectCustomer {

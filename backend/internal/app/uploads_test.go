@@ -210,8 +210,13 @@ func uploadHarness(t *testing.T) (*apptest.Harness, *apptest.FakeGCS) {
 	gcs, configure := apptest.StartFakeGCS(t)
 	h := apptest.New(t, configure)
 	h.SeedBMV(t, "BRANCH", "032", "Pekanbaru-Imam Munandar", 30, "Active")
+	fakeGCSOf[h] = gcs
 	return h, gcs
 }
+
+// fakeGCSOf is each upload harness's fake GCS, for tests that reach the
+// harness through helpers that do not return it.
+var fakeGCSOf = map[*apptest.Harness]*apptest.FakeGCS{}
 
 func uploadPath(caseID string, assignmentID any) string {
 	return fmt.Sprintf("%s/api/cases/%s/assignments/%v/documents", apptest.EndpointPathDesktop, caseID, assignmentID)

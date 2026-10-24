@@ -89,6 +89,11 @@ func (s *Service) underlyingPage(ctx context.Context, userID, caseID string, edi
 			slog.Error("document list initialisation failed (ERR-027)", "case_id", caseID, "error", err)
 			page.ListFailed = true
 		}
+		// A failed copy leaves the page as it is; the next opening tries again
+		// (agreed for ticket 34).
+		if err := s.copySLIKReport(ctx, caseID, userID); err != nil {
+			slog.Error("copying the SLIK report into Dokumen Pre-Screening failed", "case_id", caseID, "error", err)
+		}
 	}
 	categories, err := s.documentList(ctx, caseID)
 	if err != nil {
@@ -235,4 +240,45 @@ func (s *Service) documentList(ctx context.Context, caseID string) ([]DocumentCa
 		cat.Documents = append(cat.Documents, doc)
 	}
 	return out, nil
+}
+
+// copySLIKReport fills Dokumen Pre-Screening's empty SLIK row with a copy of
+// the Customer's automatic SLIK report PDF, a file of its own (DB-RULE-097
+// (1)): the source's names, content type and size, made by the operator who
+// opens the page. An upload in the meantime wins: the copy is only inserted
+// while the row is still empty.
+func (s *Service) copySLIKReport(ctx context.Context, caseID, userID string) error {
+	var src storedObject
+	var original, name, contentType string
+	err := s.db.QueryRow(ctx, `
+		SELECT bucket_name, object_name, original_file_name, file_name, content_type FROM fos.case_document a
+		WHERE a.case_id = $1 AND a.document_category = $2 AND a.document_type = $3
+		  AND NOT EXISTS (SELECT 1 FROM fos.case_document b WHERE b.case_id = $1 AND b.document_category = $4 AND b.document_type = $5)`,
+		caseID, categoryResponse, docPDFCustomer, categoryPreScreening, docSLIK).Scan(&src.bucket, &src.object, &original, &name, &contentType)
+	if isNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := s.storageConfigured(); err != nil {
+		return err
+	}
+	data, err := s.readObject(ctx, src)
+	if err != nil {
+		return err
+	}
+	d := generatedDoc{category: categoryPreScreening, docType: docSLIK, fileName: name, contentType: contentType, data: data, createdBy: userID}
+	sd, err := s.putGenerated(ctx, caseID, d)
+	if err != nil {
+		return err
+	}
+	tag, err := s.db.Exec(ctx, `
+		INSERT INTO fos.case_document (file_id, case_id, document_category, document_type, original_file_name, file_name,
+			bucket_name, object_name, content_type, file_size_bytes, created_at, created_by)
+		SELECT $1, $2::varchar, $3::varchar, $4::varchar, $5, $6, $7, $8, $9, $10, $11, $12
+		WHERE NOT EXISTS (SELECT 1 FROM fos.case_document WHERE case_id = $2::varchar AND document_category = $3::varchar AND document_type = $4::varchar)`,
+		sd.fileID, caseID, categoryPreScreening, docSLIK, original, name, sd.object.bucket, sd.object.object, contentType, len(data), s.now(), userID)
+	s.settleGenerated(context.WithoutCancel(ctx), sd, err == nil && tag.RowsAffected() == 1)
+	return err
 }

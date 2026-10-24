@@ -62,11 +62,16 @@ func repeat(n int, m month) []month {
 // a Recap file that must be ignored.
 func slikZip(t *testing.T, kode, nik string, facilities ...map[string]any) []byte {
 	t.Helper()
+	return slikZipOf(t, nik, slikDoc(kode, nik, facilities...))
+}
+
+// slikDoc is the SLIK file's JSON with the given facilities.
+func slikDoc(kode, nik string, facilities ...map[string]any) map[string]any {
 	items := make([]any, len(facilities))
 	for i, f := range facilities {
 		items[i] = f
 	}
-	doc := map[string]any{
+	return map[string]any{
 		"header": map[string]any{"kodeReferensiPengguna": kode, "tanggalHasil": "20261014", "idPermintaan": "0000000001"},
 		"individual": map[string]any{
 			"nomorLaporan": "R000001", "posisiDataTerakhir": "202609",
@@ -76,6 +81,11 @@ func slikZip(t *testing.T, kode, nik string, facilities ...map[string]any) []byt
 			"fasilitas":          map[string]any{"kreditPembiayan": items, "lc": []any{}, "garansiYgDiberikan": []any{}, "fasilitasLain": []any{}},
 		},
 	}
+}
+
+// slikZipOf zips a SLIK file's JSON as KTP_<nik>.txt beside a Recap file.
+func slikZipOf(t *testing.T, nik string, doc map[string]any) []byte {
+	t.Helper()
 	body, _ := json.Marshal(doc)
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)

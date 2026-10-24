@@ -267,3 +267,24 @@ func TestCollateralDataSaveAndMoves(t *testing.T) {
 	}
 	movedTo(t, h, caseID, submitCollateral(t, c, caseID, id, "Document Upload", []card{land}, nil), "Document Upload")
 }
+
+// AC-FR-APP-021-08, DB-RULE-127 (ticket 21 review): Status Paripasu Y with
+// an empty percent is saved empty, not 0, so Next still asks for it.
+func TestCollateralDataSavedEmptyPariPassu(t *testing.T) {
+	h, c, caseID, id := collateralData(t)
+	if r := submitCollateral(t, c, caseID, id, "save", nil, []card{{"typeCode": "Kendaraan", "pariPassuStatusCode": "Y"}}); r.Status != http.StatusOK {
+		t.Fatalf("save = %d %s", r.Status, r.Raw)
+	}
+	if got := collateralRows(t, h, caseID); len(got) != 1 || !strings.HasSuffix(got[0], "|Y|-|-|-") {
+		t.Fatalf("rows = %v", got)
+	}
+	v := pipelinePage(t, c, caseID, id)["values"].(map[string]any)
+	saved := v["support"].([]any)[0].(map[string]any)
+	if saved["pariPassuPercent"] != "" {
+		t.Fatalf("reopened percent = %v", saved["pariPassuPercent"])
+	}
+	want := []fieldError{{"support-collateral-1", "Presentase Paripasu", "ERR-010", "Presentase Paripasu wajib diisi"}}
+	if got := fieldErrors(t, submitCollateral(t, c, caseID, id, "Document Upload", nil, []card{{"typeCode": "Kendaraan", "pariPassuStatusCode": "Y"}})); !reflect.DeepEqual(got, want) {
+		t.Fatalf("next = %v", got)
+	}
+}

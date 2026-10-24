@@ -176,7 +176,7 @@ export default function FacilityRequestData({ page, assignment }: { page: Facili
 
       <div className={styles.sectionHeader}>
         <h3 className={styles.sectionTitle}>Catatan Petugas Bank</h3>
-        <button type="button" className={styles.addCompanyOfficer} disabled={!simulation.ready || stale} onClick={() => setSimulationOpen(true)}>
+        <button type="button" className={styles.addCard} disabled={!simulation.ready || stale} onClick={() => setSimulationOpen(true)}>
           Hitung Simulasi Angsuran
         </button>
       </div>

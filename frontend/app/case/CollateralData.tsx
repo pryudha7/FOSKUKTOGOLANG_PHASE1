@@ -8,7 +8,7 @@ import Field from "./Field";
 import { CodeSelect, NumberField, Pair, save, TextField, useMove } from "./FormFields";
 import { inputClass } from "./fields";
 import { HotProspectCard, leave } from "./HotProspectData";
-import { sectionNumber, type CollateralCard, type CollateralPage, type NumberedSection, type Option, type Section } from "./types";
+import { numberedSection, sectionNumber, type CollateralCard, type CollateralPage, type NumberedSection, type Option } from "./types";
 import styles from "./case.module.css";
 
 // The collateral types (BMV MAINCOLLATERAL, COLLATERALSUPPORT codes) and
@@ -53,6 +53,8 @@ const emptyCard: CollateralCard = {
   insuredCode: "",
 };
 
+const shownPariPassu = (c: CollateralCard): CollateralCard => (c.pariPassuStatusCode === pariPassuYes ? c : { ...c, pariPassuPercent: "" });
+
 // The two sections: Agunan Utama then Jaminan Pendukung.
 type SectionName = "main" | "support";
 const sections: { name: SectionName; title: string; prefix: NumberedSection; typeOptions: string; errorKey: string }[] = [
@@ -65,7 +67,9 @@ const sections: { name: SectionName; title: string; prefix: NumberedSection; typ
 // Previous Step saves and opens QCA Data (agreed comment 4).
 export default function CollateralData({ page, assignment }: { page: CollateralPage; assignment: AssignmentRef }) {
   const readOnly = !page.editable;
-  const [cards, setCards] = useState(page.values);
+  // Presentase Paripasu shows empty unless Status Paripasu is Y (Process 5);
+  // the stored 0 is the server's.
+  const [cards, setCards] = useState(() => ({ main: page.values.main.map(shownPariPassu), support: page.values.support.map(shownPariPassu) }));
   const flow = useMove(assignment, "collateral");
   const body = () => cards;
   const opts = page.options;
@@ -75,7 +79,7 @@ export default function CollateralData({ page, assignment }: { page: CollateralP
   const dropCardErrors = (prefix: NumberedSection) => flow.dropErrors((e) => sectionNumber(prefix, e.section) !== null);
   const setCard = (name: SectionName, prefix: NumberedSection, i: number, next: CollateralCard, changed: (keyof CollateralCard)[]) => {
     setCards((all) => ({ ...all, [name]: all[name].map((c, j) => (j === i ? next : c)) }));
-    changed.forEach((key) => flow.clear(`${prefix}-${i + 1}` as Section, key));
+    changed.forEach((key) => flow.clear(numberedSection(prefix, i + 1), key));
   };
 
   return (
@@ -120,7 +124,7 @@ export default function CollateralData({ page, assignment }: { page: CollateralP
                 // At most maxCards cards per section (Process 2, PROPOSED).
                 <button
                   type="button"
-                  className={styles.addCompanyOfficer}
+                  className={styles.addCard}
                   disabled={list.length >= page.maxCards}
                   onClick={() => (setCards((all) => ({ ...all, [s.name]: [...all[s.name], emptyCard] })), dropCardErrors(s.prefix))}
                 >
@@ -141,7 +145,7 @@ export default function CollateralData({ page, assignment }: { page: CollateralP
                 failed={failed}
                 today={page.today}
                 readOnly={readOnly}
-                error={(key) => flow.errorOf(`${s.prefix}-${i + 1}` as Section, key)}
+                error={(key) => flow.errorOf(numberedSection(s.prefix, i + 1), key)}
                 onChange={(next, changed) => setCard(s.name, s.prefix, i, next, changed)}
                 onRemove={() => (setCards((all) => ({ ...all, [s.name]: all[s.name].filter((_, j) => j !== i) })), dropCardErrors(s.prefix))}
               />
@@ -196,6 +200,9 @@ function CollateralCardFields({
   const setType = (v: string) => v !== card.typeCode && onChange({ ...emptyCard, typeCode: v }, Object.keys(emptyCard) as (keyof CollateralCard)[]);
   // Process 4: another Tipe Bukti Kepemilikan empties the number fields.
   const setOwnership = (v: string) => {
+    if (v === card.ownershipTypeCode) {
+      return;
+    }
     const next = { ...card, ownershipTypeCode: v };
     ownershipNumbers.forEach((k) => (next[k] = ""));
     onChange(next, ["ownershipTypeCode", ...ownershipNumbers]);

@@ -37,3 +37,13 @@ Implementation notes (2026-10-25):
 - UI check tools/uicheck/collateral.js (shots/collateral-*.png): Gambar 84 empty page and type lists; ERR-044 on the banner and the section; Gambar 85 with Presentase Paripasu disabled; SHM then SHGB number fields; AC-03 Deposito reset; paripasu Ya, 25, Tidak (disabled, emptied); Gambar 88-90; Tahun Pembuatan typed "20a24" kept "2024"; delete; add disabled at 10 cards; Next storing two rows and opening Document Upload.
 - Mutation checks (each fails a test): ERR-044 at the threshold itself, on every move, or never; eleven cards accepted; empty cards kept; the paripasu percent kept when not Y; Status Paripasu or Tanah dan Bangunan Yang Berbentuk optional; Berlaku Sampai today or past 100 years accepted; Tahun Pembuatan 1899 or after next year accepted; a hidden number or another type's fields stored; a saved Inactive code refused or not shown; dates checked against today; rows not replaced; one empty card always shown.
 
+Review fixes (2026-10-25, approved by the user):
+
+- Status Paripasu Y with an empty Presentase Paripasu is saved empty (NULL), not 0, so Next asks for it with ERR-010 (AC-FR-APP-021-08); 0 only when the status is not Y (DB-RULE-127). Test added.
+- A disabled Presentase Paripasu shows empty on reopening (Process 5), the stored 0 being the server's.
+- Picking the same Tipe Bukti Kepemilikan again keeps the number fields (Process 4 speaks of changing it).
+- One collateralSections table (§9.48 code, BMV type, options key, label, banner prefix) replaces the main/support branches; a named codedField and a detailCodes list give the coded fields and the page options; the error prefixes renamed; the unused money constant removed; AssignmentDocumentUpload moved with the step names.
+- Frontend: numberedSection(prefix, n) for the card sections; the add button class addCompanyOfficer renamed addCard on every page.
+- Kept as it is, noted: emptyCard lists its 31 keys (plain TypeScript); keepSavedOption stays in collateral.go.
+- The facility.js UI check now sets product 794's limits even when another check created the product, so it runs on a shared smoke database. Mutations: 20, all fail a test. UI checks collateral.js, business.js, hotprospect.js, facility.js and qca.js pass.
+

@@ -153,8 +153,9 @@ export type UnderlyingPage = {
 export type NumberedSection = "company-officer" | "other-financing" | "main-collateral" | "support-collateral";
 export type Section = "form" | "customer" | "spouse" | "upload" | "slik" | "documents" | "ektp" | "domicile" | `${NumberedSection}-${number}`;
 
-export const companyOfficerSection = (n: number): Section => `company-officer-${n}`;
-export const otherFinancingSection = (n: number): Section => `other-financing-${n}`;
+export const numberedSection = (prefix: NumberedSection, n: number): Section => `${prefix}-${n}`;
+export const companyOfficerSection = (n: number): Section => numberedSection("company-officer", n);
+export const otherFinancingSection = (n: number): Section => numberedSection("other-financing", n);
 export function sectionNumber(prefix: NumberedSection, section: Section): number | null {
   const m = new RegExp(`^${prefix}-(\\d+)$`).exec(section);
   return m ? Number(m[1]) : null;

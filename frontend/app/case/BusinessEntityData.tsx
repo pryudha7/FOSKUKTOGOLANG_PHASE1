@@ -157,7 +157,7 @@ export default function BusinessEntityData({ page, assignment }: { page: Busines
         <div className={styles.companyOfficersHeader}>
           <h3 className={styles.sectionTitle}>Data Pengurus</h3>
           {!readOnly && (
-            <button type="button" className={styles.addCompanyOfficer} onClick={addCompanyOfficer}>
+            <button type="button" className={styles.addCard} onClick={addCompanyOfficer}>
               <span aria-hidden="true">+</span> Tambah
             </button>
           )}

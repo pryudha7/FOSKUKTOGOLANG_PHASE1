@@ -16,6 +16,7 @@ import (
 // one tabbed flow on stage Financing Application.
 const (
 	AssignmentOtherFinancingData = "Data Pembiayaan Lain"
+	AssignmentDocumentUpload     = "Document Upload"
 
 	// HotProspectSave is Save: the form is kept and the page stays (agreed
 	// comment 2).

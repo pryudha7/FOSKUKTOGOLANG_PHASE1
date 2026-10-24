@@ -1855,7 +1855,7 @@
   margin-top: 20px;
 }
 
-.addCompanyOfficer {
+.addCard {
   height: 26px;
   padding: 0 16px;
   border: none;
@@ -1999,7 +1999,7 @@
   align-items: start;
 }
 
-.addCompanyOfficer:disabled {
+.addCard:disabled {
   background: #c9d0d8;
   color: #6f747b;
   cursor: default;

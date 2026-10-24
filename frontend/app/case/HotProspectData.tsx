@@ -222,11 +222,11 @@ export function OtherFinancingData({ page, assignment }: { page: OtherFinancingP
         {!readOnly && (
           <div className={styles.buttonGroup}>
             {page.slikAvailable && (
-              <button type="button" className={styles.addCompanyOfficer} onClick={() => setSLIKOpen(true)}>
+              <button type="button" className={styles.addCard} onClick={() => setSLIKOpen(true)}>
                 <span aria-hidden="true">+</span> Isi Data dari SLIK
               </button>
             )}
-            <button type="button" className={styles.addCompanyOfficer} onClick={() => (setCards((all) => [...all, emptyCard]), dropCardErrors())}>
+            <button type="button" className={styles.addCard} onClick={() => (setCards((all) => [...all, emptyCard]), dropCardErrors())}>
               <span aria-hidden="true">+</span> Tambah Pembiayaan
             </button>
           </div>

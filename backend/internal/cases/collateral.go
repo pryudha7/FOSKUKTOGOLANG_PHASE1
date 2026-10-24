@@ -14,11 +14,6 @@ import (
 // type.
 const (
 	AssignmentCollateralData = "Collateral Data"
-	AssignmentDocumentUpload = "Document Upload"
-
-	// §9.48 collateral_section of each section.
-	sectionMain    = "MAIN"
-	sectionSupport = "SUPPORT"
 
 	// The collateral types (BMV MAINCOLLATERAL, COLLATERALSUPPORT codes).
 	collateralLandBuilding = "Tanah dan Bangunan"
@@ -29,13 +24,23 @@ const (
 	// Status Paripasu Ya (BMV STATUS_PARIPASU).
 	pariPassuYes = "Y"
 
-	maxCardsSetting        = "validation/collateral/max_cards_per_section"
-	mainRequiredSetting    = "validation/collateral/main_required_above_amount"
-	maxCollateralMoney     = 999999999999999
-	earliestVehicleYear    = 1900
-	shgbValidityYears      = 100
-	sectionMainCollateral  = "main-collateral-"
-	sectionSupportCollater = "support-collateral-"
+	maxCardsSetting     = "validation/collateral/max_cards_per_section"
+	mainRequiredSetting = "validation/collateral/main_required_above_amount"
+	earliestVehicleYear = 1900
+	shgbValidityYears   = 100
+)
+
+// collateralSection is one section of the page: its §9.48
+// collateral_section, the BMV type and options key of its collateral
+// types, its label and the banner section prefix of its cards.
+type collateralSection struct {
+	code, typeBMV, typeKey, label, errorPrefix string
+}
+
+var (
+	mainSection        = collateralSection{"MAIN", bmvMainCollateral, "mainCollateral", "Agunan Utama", "main-collateral-"}
+	supportSection     = collateralSection{"SUPPORT", bmvSupportCollateral, "supportCollateral", "Jaminan Pendukung", "support-collateral-"}
+	collateralSections = []collateralSection{mainSection, supportSection}
 )
 
 // Collateral is one card (FR-APP-021 Field A-F): codes, texts, amounts and
@@ -101,34 +106,59 @@ const (
 	bmvInsured           = "COLLATERAL_ASURANSI"
 )
 
-// collateralCodes are a card's coded fields with their BMV type and the
-// page options key.
-func collateralCodes(c *Collateral, section string) []struct {
+// codedField is a coded field of a card: its BMV type, the page options
+// key and the code.
+type codedField struct {
+	bmvType, key, code string
+}
+
+// detailCodes are the coded fields other than the collateral type.
+var detailCodes = []struct {
 	bmvType, key string
-	code         string
-} {
-	typeBMV, typeKey := bmvMainCollateral, "mainCollateral"
-	if section == sectionSupport {
-		typeBMV, typeKey = bmvSupportCollateral, "supportCollateral"
+	field        func(*Collateral) *string
+}{
+	{bmvBuildingForm, "buildingForm", func(c *Collateral) *string { return &c.BuildingFormCode }},
+	{bmvOwnershipType, "ownershipType", func(c *Collateral) *string { return &c.OwnershipTypeCode }},
+	{bmvCollateralStatus, "collateralStatus", func(c *Collateral) *string { return &c.CollateralStatusCode }},
+	{bmvJointFinancing, "jointFinancing", func(c *Collateral) *string { return &c.JointFinancingCode }},
+	{bmvPariPassuStatus, "pariPassuStatus", func(c *Collateral) *string { return &c.PariPassuStatusCode }},
+	{bmvInsured, "insured", func(c *Collateral) *string { return &c.InsuredCode }},
+}
+
+// collateralCodes are a card's coded fields.
+func collateralCodes(c *Collateral, s collateralSection) []codedField {
+	out := []codedField{{s.typeBMV, s.typeKey, c.TypeCode}}
+	for _, d := range detailCodes {
+		out = append(out, codedField{d.bmvType, d.key, *d.field(c)})
 	}
-	return []struct {
-		bmvType, key string
-		code         string
-	}{
-		{typeBMV, typeKey, c.TypeCode},
-		{bmvBuildingForm, "buildingForm", c.BuildingFormCode},
-		{bmvOwnershipType, "ownershipType", c.OwnershipTypeCode},
-		{bmvCollateralStatus, "collateralStatus", c.CollateralStatusCode},
-		{bmvJointFinancing, "jointFinancing", c.JointFinancingCode},
-		{bmvPariPassuStatus, "pariPassuStatus", c.PariPassuStatusCode},
-		{bmvInsured, "insured", c.InsuredCode},
+	return out
+}
+
+// collateralOptions are the BMV types of the page's dropdowns by options
+// key.
+func collateralOptions() map[string]string {
+	out := map[string]string{}
+	for _, s := range collateralSections {
+		out[s.typeKey] = s.typeBMV
 	}
+	for _, d := range detailCodes {
+		out[d.key] = d.bmvType
+	}
+	return out
 }
 
 // CollateralForm is Collateral Data: the cards of each section in screen
 // order.
 type CollateralForm struct {
 	Main, Support []Collateral
+}
+
+// cards are the cards of a section.
+func (f *CollateralForm) cards(s collateralSection) *[]Collateral {
+	if s == supportSection {
+		return &f.Support
+	}
+	return &f.Main
 }
 
 // CollateralPage is UI-034: the saved cards (one empty card per section
@@ -169,10 +199,10 @@ func savedCollaterals(ctx context.Context, q querier, caseID string) (Collateral
 		for i, col := range collateralColumns {
 			*col.field(&card) = value(values[i])
 		}
-		if section == sectionMain {
-			form.Main = append(form.Main, card)
-		} else {
-			form.Support = append(form.Support, card)
+		for _, s := range collateralSections {
+			if s.code == section {
+				*form.cards(s) = append(*form.cards(s), card)
+			}
 		}
 	}
 	return form, rows.Err()
@@ -182,9 +212,10 @@ func savedCollaterals(ctx context.Context, q querier, caseID string) (Collateral
 // a new submit even when no longer Active (BR-UI-012, agreed comment 10).
 func savedCodes(form CollateralForm) map[string]map[string]bool {
 	out := map[string]map[string]bool{}
-	add := func(section string, cards []Collateral) {
+	for _, s := range collateralSections {
+		cards := *form.cards(s)
 		for i := range cards {
-			for _, code := range collateralCodes(&cards[i], section) {
+			for _, code := range collateralCodes(&cards[i], s) {
 				if code.code == "" {
 					continue
 				}
@@ -195,8 +226,6 @@ func savedCodes(form CollateralForm) map[string]map[string]bool {
 			}
 		}
 	}
-	add(sectionMain, form.Main)
-	add(sectionSupport, form.Support)
 	return out
 }
 
@@ -206,14 +235,11 @@ func (s *Service) collateralPage(ctx context.Context, sess auth.Session, caseID 
 		return CollateralPage{}, err
 	}
 	page := CollateralPage{Values: form, Editable: editable}
-	page.PageOptions = s.pageOptions(ctx, map[string]string{
-		"mainCollateral": bmvMainCollateral, "supportCollateral": bmvSupportCollateral, "buildingForm": bmvBuildingForm,
-		"ownershipType": bmvOwnershipType, "collateralStatus": bmvCollateralStatus, "jointFinancing": bmvJointFinancing,
-		"pariPassuStatus": bmvPariPassuStatus, "insured": bmvInsured,
-	})
-	for section, cards := range map[string][]Collateral{sectionMain: form.Main, sectionSupport: form.Support} {
+	page.PageOptions = s.pageOptions(ctx, collateralOptions())
+	for _, sec := range collateralSections {
+		cards := *form.cards(sec)
 		for i := range cards {
-			for _, code := range collateralCodes(&cards[i], section) {
+			for _, code := range collateralCodes(&cards[i], sec) {
 				if err := s.keepSavedOption(ctx, &page.PageOptions, code.key, code.bmvType, code.code); err != nil {
 					return CollateralPage{}, err
 				}
@@ -316,14 +342,10 @@ func (c collateralCheck) money(key, label, v string) {
 // card checks one card in its screen order and returns what is stored:
 // only the fields of its type, and of its Tipe Bukti Kepemilikan, the
 // others empty (FR-APP-021 Field A-F, Validation, DB-RULE-127).
-func (c collateralCheck) card(section string, in Collateral) Collateral {
-	typeBMV, typeLabel := bmvMainCollateral, "Agunan Utama"
-	if section == sectionSupport {
-		typeBMV, typeLabel = bmvSupportCollateral, "Jaminan Pendukung"
-	}
+func (c collateralCheck) card(s collateralSection, in Collateral) Collateral {
 	out := Collateral{TypeCode: in.TypeCode}
 	before := len(c.errs)
-	c.code("typeCode", typeLabel, typeBMV, in.TypeCode, true)
+	c.code("typeCode", s.label, s.typeBMV, in.TypeCode, true)
 	if len(c.errs) > before || c.err != nil {
 		return out
 	}
@@ -393,8 +415,8 @@ func (c collateralCheck) ownershipNumber(in Collateral, out *Collateral) {
 
 // details is the white card of collateral details (Field F), in its
 // screen order; Status Paripasu is required on Tanah dan Bangunan;
-// Presentase Paripasu is 1 to 100 and required with Status Paripasu Y,
-// else stored 0 (rule 4, DB-RULE-127).
+// Presentase Paripasu is 1 to 100 and required with Status Paripasu Y
+// (empty on Save stays empty), else stored 0 (rule 4, DB-RULE-127).
 func (c collateralCheck) details(in Collateral, out *Collateral, pariPassuRequired bool) {
 	c.code("collateralStatusCode", "Status Agunan", bmvCollateralStatus, in.CollateralStatusCode, false)
 	c.text("collateralTypeText", "Jenis Agunan", in.CollateralTypeText, false, 100)
@@ -416,10 +438,6 @@ func (c collateralCheck) details(in Collateral, out *Collateral, pariPassuRequir
 	out.CollateralStatusCode, out.CollateralTypeText, out.BindingType, out.BindingDate = in.CollateralStatusCode, in.CollateralTypeText, in.BindingType, in.BindingDate
 	out.NJOPValue, out.AppraisalDate, out.KJPPValue, out.KJPPAppraisalDate = in.NJOPValue, in.AppraisalDate, in.KJPPValue, in.KJPPAppraisalDate
 	out.KJPPAppraiserName, out.JointFinancingCode, out.PariPassuStatusCode, out.InsuredCode = in.KJPPAppraiserName, in.JointFinancingCode, in.PariPassuStatusCode, in.InsuredCode
-	// An empty percent with Y on Save stores 0 rather than NULL.
-	if out.PariPassuPercent == "" {
-		out.PariPassuPercent = "0"
-	}
 }
 
 func trimCollateral(in Collateral) Collateral {
@@ -461,28 +479,22 @@ func (s *Service) SubmitCollateral(ctx context.Context, sess auth.Session, caseI
 		}
 		c := collateralCheck{fieldCheck: fc, saved: savedCodes(saved), today: today}
 		var kept CollateralForm
-		for _, sec := range []struct {
-			section, prefix, key, label string
-			cards                       []Collateral
-			kept                        *[]Collateral
-		}{
-			{sectionMain, sectionMainCollateral, "mainCollateral", "Agunan Utama", f.Main, &kept.Main},
-			{sectionSupport, sectionSupportCollater, "supportCollateral", "Jaminan Pendukung", f.Support, &kept.Support},
-		} {
+		for _, sec := range collateralSections {
+			cards := *f.cards(sec)
 			var typed []int
-			for i, card := range sec.cards {
+			for i, card := range cards {
 				if strings.TrimSpace(card.TypeCode) != "" {
 					typed = append(typed, i)
 				}
 			}
 			c.section = SectionForm
 			if int64(len(typed)) > maxCards {
-				c.invalid(sec.key, sec.label)
+				c.invalid(sec.typeKey, sec.label)
 				continue
 			}
 			for _, i := range typed {
-				c.section = sec.prefix + strconv.Itoa(i+1)
-				*sec.kept = append(*sec.kept, c.card(sec.section, trimCollateral(sec.cards[i])))
+				c.section = sec.errorPrefix + strconv.Itoa(i+1)
+				*kept.cards(sec) = append(*kept.cards(sec), c.card(sec, trimCollateral(cards[i])))
 			}
 		}
 		c.section = SectionForm
@@ -512,7 +524,7 @@ func (s *Service) mainCollateralRequired(c *fieldCheck, caseID string) error {
 		return err
 	}
 	if above {
-		c.add("mainCollateral", "Agunan Utama", "ERR-044", "Agunan Utama minimal 1 untuk total nilai pengajuan lebih dari "+rupiah(threshold)+".")
+		c.add(mainSection.typeKey, mainSection.label, "ERR-044", "Agunan Utama minimal 1 untuk total nilai pengajuan lebih dari "+rupiah(threshold)+".")
 	}
 	return nil
 }
@@ -530,9 +542,10 @@ func saveCollaterals(c *fieldCheck, caseID string, form CollateralForm) error {
 	}
 	insert := `INSERT INTO fos.case_collateral (case_id, collateral_section, sequence_number, ` + strings.Join(cols, ", ") + `)
 		VALUES ($1, $2, $3, ` + strings.Join(params, ", ") + `)`
-	for section, cards := range map[string][]Collateral{sectionMain: form.Main, sectionSupport: form.Support} {
+	for _, sec := range collateralSections {
+		cards := *form.cards(sec)
 		for i := range cards {
-			args := []any{caseID, section, i + 1}
+			args := []any{caseID, sec.code, i + 1}
 			for _, col := range collateralColumns {
 				args = append(args, orNil(*col.field(&cards[i])))
 			}

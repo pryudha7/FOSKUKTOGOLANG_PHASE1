@@ -39,7 +39,9 @@ async function uploadDoc(page, doc) {
       ('INV', 'DPFHPDE', '', 'Investasi', 2, 'Active', now(), 'x', now(), 'x')
     ON CONFLICT DO NOTHING;
     INSERT INTO fos.product_management (code, name, financing_limit_start, financing_limit_end, tenure_limit, contract_type, created_at, created_by, updated_at, updated_by)
-    VALUES ('794', 'testing_mikro_aira_qardh', 0, 2000000000, 60, 'Qardh', now(), 'x', now(), 'x') ON CONFLICT DO NOTHING;`);
+    VALUES ('794', 'testing_mikro_aira_qardh', 0, 2000000000, 60, 'Qardh', now(), 'x', now(), 'x')
+    ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, financing_limit_start = EXCLUDED.financing_limit_start,
+      financing_limit_end = EXCLUDED.financing_limit_end, contract_type = EXCLUDED.contract_type;`);
   const browser = await chromium.launch({ executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe" });
   const r = {};
   const ao = await login(browser, "pebrianto");

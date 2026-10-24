@@ -12,7 +12,7 @@ import type { FieldError, Option, Region, Section } from "./types";
 import styles from "./case.module.css";
 
 // The endpoint of each form and what moves it: a step name, or Create.
-export type FormPath = "individual-data" | "spouse" | "close-relative" | "business-entity" | "business-data" | "other-financing" | "facility-request";
+export type FormPath = "individual-data" | "spouse" | "close-relative" | "business-entity" | "business-data" | "other-financing" | "facility-request" | "qca";
 export const create = "create";
 // save is Save on Hot Prospect: the form is kept and the page stays.
 export const save = "save";

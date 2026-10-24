@@ -67,6 +67,9 @@ Whether a Margin Rate is Flat or Effective; the one typed fixes the other throug
 The calculation of instalments from a Requested Amount, Tenor and Margin Rate.
 _Avoid_: Credit Simulation
 
+**QCA**:
+Ten fixed questions the Branch Officer answers on Hot Prospect about the Customer's business and household, each from its own list of answers; the answers feed scoring (TBD-057). The SoT does not expand the acronym.
+
 **Facility Request** (_Permohonan Fasilitas_):
 The Branch Officer's request on Hot Prospect: the purpose, Requested Amount, Tenor, Margin Rate and the Customer's existing financing at the bank, submitted as a Recommendation with its Financing Simulation.
 _Avoid_: loan application

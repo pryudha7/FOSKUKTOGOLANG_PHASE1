@@ -221,6 +221,16 @@ export type FacilityRequestPage = {
   editable: boolean;
 };
 
+// UI-033 QCA Data: the answer code of questions 1 to 10, "" when not
+// answered; options keyed qca1 to qca10.
+export type QCAPage = {
+  values: { answers: string[] };
+  options: Record<string, Option[]>;
+  failedOptions: string[];
+  facilityRequested: boolean;
+  editable: boolean;
+};
+
 // The Financing Simulation of the values on screen: installments in whole
 // rupiah, margins with five decimals; all zero until ready (DEC-146).
 export type FinancingSimulation = {
@@ -398,5 +408,5 @@ export type Assignment = {
   // The page of the assignment by its name (CaseView): Pre-Screening
   // Submission, Document Underlying Upload, Pre Screening, Waiting SLIK,
   // Pipeline Data Entry, Prospect and Hot Prospect Data Entry.
-  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | IndividualDataPage | SpousePage | CloseRelativePage | BusinessEntityPage | BusinessDataPage | OtherFinancingPage | FacilityRequestPage | null;
+  page: PreScreeningPage | UnderlyingPage | ReviewPage | WaitingSLIKPage | PipelinePage | IndividualDataPage | SpousePage | CloseRelativePage | BusinessEntityPage | BusinessDataPage | OtherFinancingPage | FacilityRequestPage | QCAPage | null;
 };

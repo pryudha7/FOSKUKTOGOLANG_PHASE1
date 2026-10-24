@@ -245,8 +245,10 @@ type AssignmentPage struct {
 	// Data Pembiayaan Lain (UI-030, UI-031).
 	BusinessData   *BusinessDataPage
 	OtherFinancing *OtherFinancingPage
-	// FacilityRequest is set for Data Permohonan Fasilitas (UI-032).
+	// FacilityRequest and QCA are set for Data Permohonan Fasilitas and QCA
+	// Data (UI-032, UI-033).
 	FacilityRequest *FacilityRequestPage
+	QCA             *QCAPage
 }
 
 // PreScreeningPage is the data UI-010 shows today: Nama Branch and the Tipe
@@ -373,6 +375,12 @@ func (s *Service) OpenAssignment(ctx context.Context, sess auth.Session, caseID 
 			return AssignmentPage{}, err
 		}
 		p.FacilityRequest = &page
+	case AssignmentQCAData:
+		page, err := s.qcaPage(ctx, caseID, editable)
+		if err != nil {
+			return AssignmentPage{}, err
+		}
+		p.QCA = &page
 	case AssignmentBusinessEntity:
 		page, err := s.businessEntityPage(ctx, sess, caseID, editable)
 		if err != nil {

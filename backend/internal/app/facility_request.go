@@ -24,18 +24,32 @@ type facilityRequestJSON struct {
 	Notes                   string `json:"notes"`
 }
 
+func (f facilityRequestJSON) toForm() cases.FacilityRequestForm {
+	return cases.FacilityRequestForm{PurposeCode: f.PurposeCode,
+		SimulationInput: cases.SimulationInput{RequestedAmount: f.RequestedAmount, TenureMonths: f.TenureMonths, MarginTypeCode: f.MarginTypeCode,
+			MarginRate: f.MarginRate},
+		ExistingFinancingAmount: f.ExistingFinancingAmount, DeviationNote: f.DeviationNote, MitigationNote: f.MitigationNote, Notes: f.Notes}
+}
+
 type facilityRequestPageJSON struct {
-	Values       facilityRequestJSON `json:"values"`
-	ContractType string              `json:"contractType"`
-	ProductName  string              `json:"productName"`
-	DebtorName   string              `json:"debtorName"`
+	Values            facilityRequestJSON `json:"values"`
+	ContractType      string              `json:"contractType"`
+	ProductName       string              `json:"productName"`
+	ApplicantName     string              `json:"applicantName"`
+	FacilityRequested bool                `json:"facilityRequested"`
 	pageOptionsJSON
 	Editable bool `json:"editable"`
 }
 
 func toFacilityRequestPageJSON(p cases.FacilityRequestPage) facilityRequestPageJSON {
-	return facilityRequestPageJSON{Values: facilityRequestJSON(p.Values), ContractType: p.ContractType, ProductName: p.ProductName,
-		DebtorName: p.DebtorName, pageOptionsJSON: toPageOptionsJSON(p.PageOptions), Editable: p.Editable}
+	v := p.Values
+	return facilityRequestPageJSON{
+		Values: facilityRequestJSON{PurposeCode: v.PurposeCode, RequestedAmount: v.RequestedAmount, TenureMonths: v.TenureMonths,
+			ExistingFinancingAmount: v.ExistingFinancingAmount, MarginTypeCode: v.MarginTypeCode, MarginRate: v.MarginRate,
+			DeviationNote: v.DeviationNote, MitigationNote: v.MitigationNote, Notes: v.Notes},
+		ContractType: p.ContractType, ProductName: p.ProductName, ApplicantName: p.ApplicantName, FacilityRequested: p.FacilityRequested,
+		pageOptionsJSON: toPageOptionsJSON(p.PageOptions), Editable: p.Editable,
+	}
 }
 
 func (s *server) submitFacilityRequest(ep endpoint) http.HandlerFunc {
@@ -44,7 +58,7 @@ func (s *server) submitFacilityRequest(ep endpoint) http.HandlerFunc {
 		if err := dec.Decode(&f); err != nil {
 			return 0, badBody{err}
 		}
-		return s.cases.SubmitFacilityRequest(ctx, sess, caseID, id, to, cases.FacilityRequestForm(f))
+		return s.cases.SubmitFacilityRequest(ctx, sess, caseID, id, to, f.toForm())
 	})
 }
 

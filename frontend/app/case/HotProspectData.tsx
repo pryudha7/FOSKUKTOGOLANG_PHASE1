@@ -19,15 +19,18 @@ import {
 } from "./types";
 import styles from "./case.module.css";
 
-// The card of a Hot Prospect step (UI-030, UI-031): the assignment name as
-// title (agreed comment 6), the six-step tabbed flow, the banner, the body
-// and the buttons. A breadcrumb step saves and opens it (agreed comment 5).
+// The card of a Hot Prospect step (UI-030 to UI-032): the assignment name
+// as title (agreed comment 6), the six-step tabbed flow, the banner, the
+// body and the buttons. A breadcrumb step saves and opens it (agreed comment
+// 5); the steps after Data Permohonan Fasilitas only once its Next has
+// recorded the recommendation (ticket 19 review).
 export function HotProspectCard({
   title,
   step,
   flow,
   body,
   editable,
+  facilityRequested,
   failedOptions = [],
   children,
   buttons,
@@ -37,6 +40,7 @@ export function HotProspectCard({
   flow: ReturnType<typeof useMove>;
   body: () => unknown;
   editable: boolean;
+  facilityRequested: boolean;
   failedOptions?: string[];
   children: ReactNode;
   buttons: ReactNode;
@@ -47,13 +51,23 @@ export function HotProspectCard({
       <DropdownsFailedPopup failed={failedOptions} />
       <section className={styles.card}>
         <AssignmentHeader title={title} />
-        <Breadcrumb steps={hotProspectSteps} active={step} progress onSelect={(i) => editable && flow.move(hotProspectSteps[i], body())} />
+        <Breadcrumb
+          steps={hotProspectSteps}
+          active={step}
+          progress
+          reachable={facilityRequested ? hotProspectSteps.length - 1 : facilityRequestStep}
+          onSelect={(i) => editable && flow.move(hotProspectSteps[i], body())}
+        />
         {children}
         <footer className={styles.buttons}>{buttons}</footer>
       </section>
     </div>
   );
 }
+
+// Data Permohonan Fasilitas, the last step a breadcrumb reaches before its
+// recommendation.
+const facilityRequestStep = 2;
 
 // Close (or Back, in its place) returns to the Dashboard without saving
 // (agreed comment 4).
@@ -94,6 +108,7 @@ export function BusinessData({ page, assignment }: { page: BusinessDataPage; ass
       flow={flow}
       body={() => form}
       editable={page.editable}
+      facilityRequested={page.facilityRequested}
       failedOptions={page.failedOptions}
       buttons={
         <>
@@ -180,6 +195,7 @@ export function OtherFinancingData({ page, assignment }: { page: OtherFinancingP
       flow={flow}
       body={body}
       editable={page.editable}
+      facilityRequested={page.facilityRequested}
       buttons={
         <>
           <button type="button" className={styles.back} onClick={() => leave(assignment)}>

@@ -13,17 +13,20 @@ export const hotProspectSteps = ["Data Usaha Nasabah", "Data Pembiayaan Lain", "
 // UI-010 breadcrumb: steps joined by a line, the active one filled dark;
 // clicking another step asks to move there (validated by the server). With
 // progress (UI-026 to UI-028) the line is dark up to the active step and
-// the steps before it have dark rings.
+// the steps before it have dark rings. Steps after reachable cannot be
+// chosen (Hot Prospect before its Data Permohonan Fasilitas recommendation).
 export default function Breadcrumb({
   steps,
   active,
   onSelect,
   progress = false,
+  reachable = steps.length - 1,
 }: {
   steps: string[];
   active: number;
   onSelect: (index: number) => void;
   progress?: boolean;
+  reachable?: number;
 }) {
   const line = { "--edge": `${50 / steps.length}%`, "--done": progress ? active / (steps.length - 1) : 0 } as React.CSSProperties;
   return (
@@ -34,6 +37,7 @@ export default function Breadcrumb({
             type="button"
             className={styles.crumbButton}
             aria-current={i === active ? "step" : undefined}
+            disabled={i > reachable}
             onClick={() => i !== active && onSelect(i)}
           >
             <span className={styles.crumbLabel}>{label}</span>

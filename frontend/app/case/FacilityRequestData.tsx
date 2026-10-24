@@ -13,6 +13,9 @@ import styles from "./case.module.css";
 // recommendation (agreed comment 8).
 const next = "next";
 
+// Tipe Margin Flat (BMV MARGINTYPE, DEC-145): the typed margin is flat.
+const marginFlat = "FLAT";
+
 const noSimulation: FinancingSimulation = { ready: false, installmentFlat: "0", installmentEffective: "0", marginFlat: "0.00000", marginEffective: "0.00000" };
 
 // rupiah is "Rp100.000.000" (BR-UI-009); cents adds ",00" (FR-APP-018 rule 3).
@@ -42,13 +45,13 @@ function useFinancingSimulation(assignment: AssignmentRef, form: FacilityRequest
       })
         .then((res) => (res.ok ? (res.json() as Promise<FinancingSimulation>) : Promise.reject()))
         .catch(() => noSimulation)
-        .then((simulation) => live && setAnswer({ key: [requestedAmount, tenureMonths, marginTypeCode, marginRate].join("|"), simulation }));
+        .then((simulation) => live && setAnswer({ key, simulation }));
     }, 200);
     return () => {
       live = false;
       clearTimeout(timer);
     };
-  }, [endpointPath, caseId, assignmentId, requestedAmount, tenureMonths, marginTypeCode, marginRate]);
+  }, [endpointPath, caseId, assignmentId, key, requestedAmount, tenureMonths, marginTypeCode, marginRate]);
 
   return { simulation: answer.key === key ? answer.simulation : noSimulation, stale: answer.key !== key };
 }
@@ -67,7 +70,7 @@ function Computed({ label, value, bold = false }: { label: string; value: string
 
 // UI-032 Data Permohonan Fasilitas (Gambar 74-77, FR-APP-018): the request,
 // the existing obligor and the approval side follow the typed values at
-// once; Hitung Simulasi Angsuran opens the Credit Simulation. Back leaves as
+// once; Hitung Simulasi Angsuran opens the Financing Simulation. Back leaves as
 // Close does; Back to Previous Step saves and opens Data Pembiayaan Lain
 // (agreed comment 7).
 export default function FacilityRequestData({ page, assignment }: { page: FacilityRequestPage; assignment: AssignmentRef }) {
@@ -87,7 +90,7 @@ export default function FacilityRequestData({ page, assignment }: { page: Facili
   // FR-APP-018 Process 3-6: one request line, so the total is its amount;
   // the approval side follows the request.
   const totalObligor = (BigInt(form.existingFinancingAmount || "0") + BigInt(form.requestedAmount || "0")).toString();
-  const flat = form.marginTypeCode === "FLAT";
+  const flat = form.marginTypeCode === marginFlat;
   const installment = flat ? simulation.installmentFlat : simulation.installmentEffective;
   const contractType = page.contractType;
 
@@ -98,6 +101,7 @@ export default function FacilityRequestData({ page, assignment }: { page: Facili
       flow={flow}
       body={() => form}
       editable={page.editable}
+      facilityRequested={page.facilityRequested}
       failedOptions={page.failedOptions}
       buttons={
         <>
@@ -186,7 +190,7 @@ export default function FacilityRequestData({ page, assignment }: { page: Facili
             ["Produk Name", page.productName],
             ["Jenis Pembiayaan", opts.purpose.find((o) => o.code === form.purposeCode)?.description ?? ""],
             ["Periode (jangka waktu)", `${form.tenureMonths} Bulan`],
-            ["Nama Debitur", page.debtorName],
+            ["Nama Debitur", page.applicantName],
             ["Plafon Pembiayaan", rupiah(form.requestedAmount)],
             ["Satuan Kurs", "Rupiah ( Rp. )"],
             ["Rate Indikasi(Effektif) p.a. (%)", percent5(simulation.marginEffective)],
@@ -201,7 +205,8 @@ export default function FacilityRequestData({ page, assignment }: { page: Facili
   );
 }
 
-// The Credit Simulation modal (Gambar 77): two columns of label and value;
+// The Financing Simulation modal, titled "Credit Simulation" (Gambar 77):
+// two columns of label and value;
 // Home and X only close it (FR-APP-018 Process 7).
 function FinancingSimulationModal({ rows, onClose }: { rows: [string, string][]; onClose: () => void }) {
   return (

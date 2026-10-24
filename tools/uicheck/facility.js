@@ -86,6 +86,8 @@ async function uploadDoc(page, doc) {
   await settle();
   r.empty = [await value("Total Requested Amount"), await value("Total Obligor"), await value("Angsuran Per Bulan"), await simulate.isDisabled(),
     await input("Tipe Akad").isDisabled(), await input("Tipe Akad").inputValue()];
+  // The steps after this one before its recommendation (ticket 19 review).
+  r.crumbsPastDisabled = [await ao.getByRole("button", { name: "QCA Data" }).isDisabled(), await ao.getByRole("button", { name: "Data Pembiayaan Lain" }).isDisabled()];
   await ao.screenshot({ path: `${out}/facility-empty.png`, fullPage: true });
 
   // AC-02, AC-03.

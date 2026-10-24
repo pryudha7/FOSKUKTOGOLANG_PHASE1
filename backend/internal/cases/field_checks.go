@@ -180,8 +180,8 @@ func (c *fieldCheck) percent(key, label, v string) {
 
 // positive is a whole number from 1 to max (FR-APP-018: Pembiayaan yang di
 // ajukan, Jangka Waktu); 0 or over max is ERR-037.
-func (c *fieldCheck) positive(key, label, v string, max int64, mandatory bool) {
-	if !c.filled(key, label, v, mandatory) {
+func (c *fieldCheck) positive(key, label, v string, max int64) {
+	if !c.filled(key, label, v, true) {
 		return
 	}
 	n, err := strconv.ParseInt(v, 10, 64)
@@ -195,8 +195,8 @@ var marginPattern = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{1,5})?$`)
 
 // margin is a rate from 0 to 100 with at most five decimals (BR-UI-014,
 // Margin / Ujrah of Data Permohonan Fasilitas).
-func (c *fieldCheck) margin(key, label, v string, mandatory bool) {
-	if !c.filled(key, label, v, mandatory) {
+func (c *fieldCheck) margin(key, label, v string) {
+	if !c.filled(key, label, v, true) {
 		return
 	}
 	rate, err := strconv.ParseFloat(v, 64)

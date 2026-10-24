@@ -34,27 +34,36 @@ const (
 	maxFacilityNote    = 1000
 )
 
-// FacilityRequestForm is Data Permohonan Fasilitas: amounts and months as
-// digits, MarginRate with a dot and at most five decimals; the totals and
-// the simulation are always computed by the server (DB-RULE-119).
-type FacilityRequestForm struct {
-	PurposeCode, RequestedAmount, TenureMonths, ExistingFinancingAmount string
-	MarginTypeCode, MarginRate                                          string
-	DeviationNote, MitigationNote, Notes                                string
-}
-
-// SimulationInput are the four fields the Financing Simulation needs (DEC-146).
+// SimulationInput are the four fields the Financing Simulation needs
+// (DEC-146): amounts and months as digits, MarginRate with a dot and at
+// most five decimals.
 type SimulationInput struct {
 	RequestedAmount, TenureMonths, MarginTypeCode, MarginRate string
 }
 
+func (in SimulationInput) trimmed() SimulationInput {
+	t := strings.TrimSpace
+	return SimulationInput{t(in.RequestedAmount), t(in.TenureMonths), t(in.MarginTypeCode), t(in.MarginRate)}
+}
+
+// FacilityRequestForm is Data Permohonan Fasilitas: the simulation's inputs
+// with the purpose, the existing financing and the notes; the totals and
+// the simulation are always computed by the server (DB-RULE-119).
+type FacilityRequestForm struct {
+	PurposeCode string
+	SimulationInput
+	ExistingFinancingAmount              string
+	DeviationNote, MitigationNote, Notes string
+}
+
 // FacilityRequestPage is UI-032: the saved values, Tipe Akad and what the
-// Credit Simulation names (Produk Name, Nama Debitur).
+// Financing Simulation names (Produk Name, Nama Debitur), and whether the
+// steps after this one open by breadcrumb.
 type FacilityRequestPage struct {
-	Values                                FacilityRequestForm
-	ContractType, ProductName, DebtorName string
+	Values                                   FacilityRequestForm
+	ContractType, ProductName, ApplicantName string
 	PageOptions
-	Editable bool
+	FacilityRequested, Editable bool
 }
 
 // applicantName is the applicant's name, Nama Debitur on the simulation.
@@ -81,7 +90,10 @@ func (s *Service) facilityRequestPage(ctx context.Context, caseID string, editab
 	if err != nil {
 		return FacilityRequestPage{}, err
 	}
-	page.DebtorName = name
+	page.ApplicantName = name
+	if page.FacilityRequested, err = facilityRequested(ctx, s.db, caseID); err != nil {
+		return FacilityRequestPage{}, err
+	}
 	// One Tujuan Pembiayaan line on screen (DB-RULE-118); the margin typed
 	// is the side its type names (FR-APP-018 Process 6).
 	var purpose, amount, tenure, existing, deviation, mitigation, notes, marginType, margin *string
@@ -97,9 +109,9 @@ func (s *Service) facilityRequestPage(ctx context.Context, caseID string, editab
 	if err != nil {
 		return FacilityRequestPage{}, err
 	}
-	page.Values = FacilityRequestForm{PurposeCode: value(purpose), RequestedAmount: value(amount), TenureMonths: value(tenure),
-		ExistingFinancingAmount: value(existing), MarginTypeCode: value(marginType), MarginRate: value(margin), DeviationNote: value(deviation),
-		MitigationNote: value(mitigation), Notes: value(notes)}
+	page.Values = FacilityRequestForm{PurposeCode: value(purpose),
+		SimulationInput:         SimulationInput{value(amount), value(tenure), value(marginType), value(margin)},
+		ExistingFinancingAmount: value(existing), DeviationNote: value(deviation), MitigationNote: value(mitigation), Notes: value(notes)}
 	page.PageOptions = s.pageOptions(ctx, map[string]string{"purpose": "DPFHPDE", "marginType": "MARGINTYPE"})
 	return page, nil
 }
@@ -107,11 +119,11 @@ func (s *Service) facilityRequestPage(ctx context.Context, caseID string, editab
 // The four inputs of the simulation, in their screen order (FR-APP-018
 // Field 1 and 3).
 func (c *fieldCheck) requestedAmount(v string) {
-	c.positive("requestedAmount", "Pembiayaan yang di ajukan", v, maxRequestedAmount, true)
+	c.positive("requestedAmount", "Pembiayaan yang di ajukan", v, maxRequestedAmount)
 }
 
 func (c *fieldCheck) tenureMonths(v string) {
-	c.positive("tenureMonths", "Jangka Waktu (Bulan)", v, maxTenureMonths, true)
+	c.positive("tenureMonths", "Jangka Waktu (Bulan)", v, maxTenureMonths)
 }
 
 func (c *fieldCheck) marginType(v string) {
@@ -119,7 +131,7 @@ func (c *fieldCheck) marginType(v string) {
 }
 
 func (c *fieldCheck) marginRate(v string) {
-	c.margin("marginRate", "Margin / Ujrah (%)", v, true)
+	c.margin("marginRate", "Margin / Ujrah (%)", v)
 }
 
 // simulation is the simulation of checked inputs: noSimulation unless the
@@ -143,8 +155,7 @@ func (s *Service) Simulate(ctx context.Context, sess auth.Session, caseID string
 		return FinancingSimulation{}, err
 	}
 	defer tx.Rollback(ctx)
-	t := strings.TrimSpace
-	in = SimulationInput{t(in.RequestedAmount), t(in.TenureMonths), t(in.MarginTypeCode), t(in.MarginRate)}
+	in = in.trimmed()
 	c := &fieldCheck{ctx: ctx, tx: tx, section: SectionForm}
 	c.requestedAmount(in.RequestedAmount)
 	c.tenureMonths(in.TenureMonths)
@@ -159,8 +170,8 @@ func (s *Service) Simulate(ctx context.Context, sess auth.Session, caseID string
 	return in.simulation(), nil
 }
 
-// note is a note as typed, a CRLF counting as one character (DB-RULE-037).
-func note(v string) string {
+// normalizeNote trims a note and makes a CRLF one character (DB-RULE-037).
+func normalizeNote(v string) string {
 	return strings.TrimSpace(strings.ReplaceAll(v, "\r\n", "\n"))
 }
 
@@ -175,8 +186,10 @@ func (s *Service) SubmitFacilityRequest(ctx context.Context, sess auth.Session, 
 	}
 	return s.moveHotProspect(ctx, sess, caseID, id, AssignmentFacilityRequest, to, func(c *fieldCheck) error {
 		t := strings.TrimSpace
-		f = FacilityRequestForm{t(f.PurposeCode), t(f.RequestedAmount), t(f.TenureMonths), t(f.ExistingFinancingAmount), t(f.MarginTypeCode),
-			t(f.MarginRate), note(f.DeviationNote), note(f.MitigationNote), note(f.Notes)}
+		f = FacilityRequestForm{t(f.PurposeCode), f.SimulationInput.trimmed(), t(f.ExistingFinancingAmount), normalizeNote(f.DeviationNote),
+			normalizeNote(f.MitigationNote), normalizeNote(f.Notes)}
+		// In screen order: Jumlah Pembiayaan Eksisting comes between the
+		// simulation's inputs (FR-APP-018 Validation).
 		c.code("purposeCode", "Tujuan Pembiayaan", "DPFHPDE", f.PurposeCode, true)
 		c.requestedAmount(f.RequestedAmount)
 		c.tenureMonths(f.TenureMonths)
@@ -229,10 +242,12 @@ func (c *fieldCheck) productLimit(caseID, amount string) {
 
 // saveFacilityRequest writes §9.41-9.43, each only with its inputs complete
 // (agreed comment 6): the request line (DB-RULE-118), the totals computed
-// here from it (DB-RULE-119) and the simulation of the screen (DB-RULE-120).
+// here from it (DB-RULE-119) and the simulation of the screen (DB-RULE-120),
+// the last only with the line it simulates (ticket 19 review).
 func saveFacilityRequest(c *fieldCheck, caseID string, f FacilityRequestForm) error {
 	ctx, tx := c.ctx, c.tx
-	if f.PurposeCode != "" && f.RequestedAmount != "" && f.TenureMonths != "" {
+	request := f.PurposeCode != "" && f.RequestedAmount != "" && f.TenureMonths != ""
+	if request {
 		if _, err := tx.Exec(ctx, `DELETE FROM fos.case_financing_request WHERE case_id = $1`, caseID); err != nil {
 			return err
 		}
@@ -259,8 +274,8 @@ func saveFacilityRequest(c *fieldCheck, caseID string, f FacilityRequestForm) er
 		WHERE f.case_id = $1`, caseID); err != nil {
 		return err
 	}
-	sim := SimulationInput{f.RequestedAmount, f.TenureMonths, f.MarginTypeCode, f.MarginRate}.simulation()
-	if !sim.Ready || f.ExistingFinancingAmount == "" {
+	sim := f.SimulationInput.simulation()
+	if !sim.Ready || !request || f.ExistingFinancingAmount == "" {
 		return nil
 	}
 	_, err := tx.Exec(ctx, `
@@ -277,18 +292,18 @@ func saveFacilityRequest(c *fieldCheck, caseID string, f FacilityRequestForm) er
 	return err
 }
 
-// recommendFacilityRequest adds the AO's "Data Permohonan Fasilitas"
-// recommendation (FR-APP-018 Rekomendasi, DB-RULE-122): RECOMMEND,
+// recommendFacilityRequest adds the Branch Officer's "Data Permohonan
+// Fasilitas" recommendation (FR-APP-018 Rekomendasi, DB-RULE-122): RECOMMEND,
 // SESUAILMT, the diajukan group from the saved request and simulation, the
 // direkomendasi and disetujui groups 0, and its §9.44 simulation
 // (DB-RULE-121) with the applicant's name.
 func (s *Service) recommendFacilityRequest(c *fieldCheck, sess auth.Session, caseID string, f FacilityRequestForm) error {
-	debtor, err := applicantName(c.ctx, c.tx, caseID)
+	applicant, err := applicantName(c.ctx, c.tx, caseID)
 	if err != nil {
 		return err
 	}
 	var decisionID int64
-	// DB-RULE-117: the AO's role as it is now, kept as a snapshot.
+	// DB-RULE-117: the Branch Officer's role as it is now, kept as a snapshot.
 	err = c.tx.QueryRow(c.ctx, `
 		INSERT INTO fos.case_pre_screening_decision (case_id, recommendation_type, notes, decided_by, decided_by_role_code, decided_at,
 			recommendation_status, limit_action_code, total_obligor, requested_amount, recommended_amount, approved_amount,
@@ -308,6 +323,6 @@ func (s *Service) recommendFacilityRequest(c *fieldCheck, sess auth.Session, cas
 			tenure_months, margin_type_code, margin_flat, margin_effective, installment_flat, installment_effective)
 		SELECT $1, $3, $4, product_code, total_obligor, amount, tenure_months, margin_type_code, margin_flat, margin_effective,
 			installment_flat, installment_effective
-		FROM fos.case_credit_simulation WHERE case_id = $2`, decisionID, caseID, f.PurposeCode, debtor)
+		FROM fos.case_credit_simulation WHERE case_id = $2`, decisionID, caseID, f.PurposeCode, applicant)
 	return err
 }

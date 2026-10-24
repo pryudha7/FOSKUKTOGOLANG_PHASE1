@@ -29,8 +29,23 @@ const (
 )
 
 // hotProspectSteps is the tabbed flow, in order (FR-APP-015).
-var hotProspectSteps = []string{AssignmentBusinessData, AssignmentOtherFinancingData, "Data Permohonan Fasilitas", "QCA Data",
+var hotProspectSteps = []string{AssignmentBusinessData, AssignmentOtherFinancingData, AssignmentFacilityRequest, AssignmentQCAData,
 	"Collateral Data", "Document Upload"}
+
+// facilityRequested reports whether Next on Data Permohonan Fasilitas has
+// recorded its recommendation: only then do the steps after it open by
+// breadcrumb, so the product limit is never skipped (ticket 19 review).
+func facilityRequested(ctx context.Context, q rowQuerier, caseID string) (bool, error) {
+	var requested bool
+	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM fos.case_pre_screening_decision WHERE case_id = $1 AND recommendation_type = $2)`,
+		caseID, recommendationFacilityRequest).Scan(&requested)
+	return requested, err
+}
+
+// pastFacilityRequest is a step after Data Permohonan Fasilitas.
+func pastFacilityRequest(step string) bool {
+	return slices.Index(hotProspectSteps, step) > slices.Index(hotProspectSteps, AssignmentFacilityRequest)
+}
 
 // BusinessDataForm is Data Usaha Nasabah (FR-APP-016): the business and its
 // address; numbers come as digits.
@@ -51,7 +66,7 @@ func (f BusinessDataForm) address() Address {
 type BusinessDataPage struct {
 	Values BusinessDataForm
 	PageOptions
-	Editable bool
+	FacilityRequested, Editable bool
 }
 
 // OtherFinancing is one Data Pembiayaan Lain card (FR-APP-017): amounts and
@@ -65,9 +80,8 @@ func (o OtherFinancing) empty() bool { return o == OtherFinancing{} }
 // OtherFinancingPage is UI-031: the saved cards (one empty card when none)
 // and whether Isi Data dari SLIK shows.
 type OtherFinancingPage struct {
-	Cards         []OtherFinancing
-	SLIKAvailable bool
-	Editable      bool
+	Cards                                      []OtherFinancing
+	SLIKAvailable, FacilityRequested, Editable bool
 }
 
 // applicantParty is the customer_type of the case's applicant: Nasabah or
@@ -109,7 +123,8 @@ func (s *Service) businessDataPage(ctx context.Context, caseID string, editable 
 	page.PageOptions = s.pageOptions(ctx, map[string]string{
 		"businessCategory": "BUSINESSCATEGORY", "businessLocation": "BUSINESSLOCATION", "houseOwnership": "HOUSE_OWNERSHIP_STATUS", "province": "PROVINCE",
 	})
-	return page, nil
+	page.FacilityRequested, err = facilityRequested(ctx, s.db, caseID)
+	return page, err
 }
 
 // slikAvailable reports whether Isi Data dari SLIK shows: a Perorangan case
@@ -142,13 +157,17 @@ func (s *Service) otherFinancingPage(ctx context.Context, caseID string, editabl
 		cards = []OtherFinancing{{}}
 	}
 	page.Cards = cards
-	page.SLIKAvailable, err = slikAvailable(ctx, s.db, caseID)
+	if page.SLIKAvailable, err = slikAvailable(ctx, s.db, caseID); err != nil {
+		return OtherFinancingPage{}, err
+	}
+	page.FacilityRequested, err = facilityRequested(ctx, s.db, caseID)
 	return page, err
 }
 
 // moveHotProspect validates and saves form, then opens the step `to`
 // (FR-ASSIGN-001 rule 5), or with Save keeps the page (agreed comments 2, 3
-// and 5).
+// and 5). A step after Data Permohonan Fasilitas needs its recommendation,
+// which its Next records in the same transaction (ticket 19 review).
 func (s *Service) moveHotProspect(ctx context.Context, sess auth.Session, caseID string, id int64, form, to string, save func(c *fieldCheck) error) (int64, error) {
 	saving := to == HotProspectSave
 	if !saving && (to == form || !slices.Contains(hotProspectSteps, to)) {
@@ -160,6 +179,15 @@ func (s *Service) moveHotProspect(ctx context.Context, sess auth.Session, caseID
 	}, func(tx pgx.Tx, from int64) (int64, error) {
 		if saving {
 			return 0, nil
+		}
+		if pastFacilityRequest(to) {
+			requested, err := facilityRequested(ctx, tx, caseID)
+			if err != nil {
+				return 0, err
+			}
+			if !requested {
+				return 0, ErrUnsupported
+			}
 		}
 		next, err := s.moveTo(ctx, tx, sess, caseID, from, to)
 		if err != nil {

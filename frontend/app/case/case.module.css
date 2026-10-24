@@ -703,6 +703,12 @@
   cursor: pointer;
 }
 
+/* A step not yet reachable looks as the others (Gambar 74) but takes no click. */
+.crumbButton:disabled {
+  color: inherit;
+  cursor: default;
+}
+
 .buttonGroup {
   display: flex;
   gap: 8px;

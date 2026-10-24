@@ -175,7 +175,9 @@ export type BusinessDataForm = Region & {
   rw: string;
 };
 
-export type BusinessDataPage = { values: BusinessDataForm; options: Record<string, Option[]>; failedOptions: string[]; editable: boolean };
+// facilityRequested: Next on Data Permohonan Fasilitas has recorded its
+// recommendation, so the steps after it open by breadcrumb.
+export type BusinessDataPage = { values: BusinessDataForm; options: Record<string, Option[]>; failedOptions: string[]; facilityRequested: boolean; editable: boolean };
 
 // One Data Pembiayaan Lain card (FR-APP-017): amounts and counts as digits,
 // marginRate with a dot ("21.00").
@@ -190,7 +192,7 @@ export type OtherFinancingCard = {
   purpose: string;
 };
 
-export type OtherFinancingPage = { values: { otherFinancings: OtherFinancingCard[] }; slikAvailable: boolean; editable: boolean };
+export type OtherFinancingPage = { values: { otherFinancings: OtherFinancingCard[] }; slikAvailable: boolean; facilityRequested: boolean; editable: boolean };
 
 // Data Permohonan Fasilitas (FR-APP-018): amounts and months as digits,
 // marginRate with a dot ("12.00000"); the totals are the server's.
@@ -206,12 +208,14 @@ export type FacilityRequestForm = {
   notes: string;
 };
 
-// UI-032 with Tipe Akad and what the Credit Simulation names.
+// UI-032 with Tipe Akad, what the Financing Simulation names, and whether
+// the steps after it open by breadcrumb.
 export type FacilityRequestPage = {
   values: FacilityRequestForm;
   contractType: string;
   productName: string;
-  debtorName: string;
+  applicantName: string;
+  facilityRequested: boolean;
   options: Record<string, Option[]>;
   failedOptions: string[];
   editable: boolean;

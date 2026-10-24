@@ -52,3 +52,4 @@ Review fixes (2026-10-24, approved by the user):
 - Kept as they are, noted: other_financing_case_id_idx is an index §9.31 does not list (lookups by case; no column or constraint added); a failed load of the SLIK modal shows unavailableMessage until TBD-053 names a message; a SLIK margin over 100 fills the card but is refused on Next with ERR-037 (BR-UI-013); manual SLIK never creates a slik_report, so the button does not show for it.
 - Mutation "no title from the code" added; all 15 mutations fail a test. UI checks hotprospect.js, business.js and prospect.js rerun and pass.
 
+Note from ticket 19 review (2026-10-24, agreed with the user): agreed comment 5 now stops at Data Permohonan Fasilitas: the steps after it open by breadcrumb only once its Next has recorded the recommendation (the product limit is never skipped).

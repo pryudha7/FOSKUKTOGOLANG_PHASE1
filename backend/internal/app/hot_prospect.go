@@ -29,7 +29,8 @@ type businessDataJSON struct {
 type businessDataPageJSON struct {
 	Values businessDataJSON `json:"values"`
 	pageOptionsJSON
-	Editable bool `json:"editable"`
+	FacilityRequested bool `json:"facilityRequested"`
+	Editable          bool `json:"editable"`
 }
 
 func toBusinessDataPageJSON(p cases.BusinessDataPage) businessDataPageJSON {
@@ -38,7 +39,7 @@ func toBusinessDataPageJSON(p cases.BusinessDataPage) businessDataPageJSON {
 		Values: businessDataJSON{BusinessField: v.BusinessField, BusinessCategoryCode: v.BusinessCategoryCode, BusinessAgeMonths: v.BusinessAgeMonths,
 			EmployeeCount: v.EmployeeCount, BusinessLocationCode: v.BusinessLocationCode, Address: v.Address, HouseOwnershipCode: v.HouseOwnershipCode,
 			YearsOfStay: v.YearsOfStay, MonthsOfStay: v.MonthsOfStay, Phone: v.Phone, RT: v.RT, RW: v.RW, regionJSON: regionJSON(v.Region)},
-		pageOptionsJSON: toPageOptionsJSON(p.PageOptions), Editable: p.Editable,
+		pageOptionsJSON: toPageOptionsJSON(p.PageOptions), FacilityRequested: p.FacilityRequested, Editable: p.Editable,
 	}
 }
 
@@ -59,12 +60,13 @@ type otherFinancingPageJSON struct {
 	Values struct {
 		OtherFinancings []otherFinancingJSON `json:"otherFinancings"`
 	} `json:"values"`
-	SLIKAvailable bool `json:"slikAvailable"`
-	Editable      bool `json:"editable"`
+	SLIKAvailable     bool `json:"slikAvailable"`
+	FacilityRequested bool `json:"facilityRequested"`
+	Editable          bool `json:"editable"`
 }
 
 func toOtherFinancingPageJSON(p cases.OtherFinancingPage) otherFinancingPageJSON {
-	out := otherFinancingPageJSON{SLIKAvailable: p.SLIKAvailable, Editable: p.Editable}
+	out := otherFinancingPageJSON{SLIKAvailable: p.SLIKAvailable, FacilityRequested: p.FacilityRequested, Editable: p.Editable}
 	out.Values.OtherFinancings = make([]otherFinancingJSON, 0, len(p.Cards))
 	for _, c := range p.Cards {
 		out.Values.OtherFinancings = append(out.Values.OtherFinancings, otherFinancingJSON(c))

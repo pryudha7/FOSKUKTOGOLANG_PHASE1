@@ -330,8 +330,9 @@ func TestDataPembiayaanLainNoCardsAndSave(t *testing.T) {
 }
 
 // Agreed comments 3 and 5: Back to Previous Step saves and reopens Data Usaha
-// Nasabah filled; the breadcrumb reaches any step; a step is no target of
-// itself; only these forms' fields are accepted.
+// Nasabah filled; the breadcrumb reaches Data Permohonan Fasilitas, not the
+// steps after it before its recommendation (ticket 19 review); a step is no
+// target of itself; only these forms' fields are accepted.
 func TestHotProspectMoves(t *testing.T) {
 	h, c, caseID, id := hotProspect(t, false)
 	if r := submitBusinessData(t, c, caseID, id, "Data Usaha Nasabah", validBusinessDataForm()); r.Status != http.StatusBadRequest {
@@ -348,9 +349,15 @@ func TestHotProspectMoves(t *testing.T) {
 	if got := otherFinancingRows(t, h, caseID); len(got) != 1 {
 		t.Fatalf("back did not save: %v", got)
 	}
-	movedTo(t, h, caseID, submitBusinessData(t, c, caseID, bid, "QCA Data", validBusinessDataForm()), "QCA Data")
-	if !processStarted(t, h, caseID, "QCA Data") {
-		t.Fatal("process QCA Data not started")
+	if p := pipelinePage(t, c, caseID, bid); p["facilityRequested"] != false {
+		t.Fatalf("facilityRequested = %v", p["facilityRequested"])
+	}
+	if r := submitBusinessData(t, c, caseID, bid, "QCA Data", validBusinessDataForm()); r.Status != http.StatusBadRequest {
+		t.Fatalf("past Data Permohonan Fasilitas = %d %s", r.Status, r.Raw)
+	}
+	movedTo(t, h, caseID, submitBusinessData(t, c, caseID, bid, "Data Permohonan Fasilitas", validBusinessDataForm()), "Data Permohonan Fasilitas")
+	if !processStarted(t, h, caseID, "Data Permohonan Fasilitas") {
+		t.Fatal("process Data Permohonan Fasilitas not started")
 	}
 }
 

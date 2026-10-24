@@ -116,9 +116,10 @@ func flatInstallment(m *big.Float, n int, p *big.Float) *big.Int {
 }
 
 // rate is RATE(n, -A, P): the monthly rate whose annuity of n months on P
-// is A, found by bisection (the installment grows with the rate).
+// is A, found by bisection (the installment grows with the rate); never
+// below 0, as a computed margin is never negative (BR-UI-014).
 func rate(n int, a, p *big.Float) *big.Float {
-	lo, hi := decimal("-0.99"), decimal("1")
+	lo, hi := decimal("0"), decimal("1")
 	for payment(hi, n, p).Cmp(a) < 0 {
 		hi.Mul(hi, decimal("2"))
 	}
@@ -148,6 +149,10 @@ func simulate(amount string, months int, marginType, margin string) FinancingSim
 		pn := num().Mul(p, decimal(strconv.Itoa(months)))
 		extra := num().Sub(num().Mul(fromInt(a), decimal(strconv.Itoa(months))), p)
 		flat = marginUnits(num().Mul(num().Quo(extra, pn), decimal("1200")))
+		// A rounded down below P/n would make it negative (BR-UI-014).
+		if flat.Sign() < 0 {
+			flat = new(big.Int)
+		}
 		effective = typed
 		out.InstallmentEffective = a.String()
 		out.InstallmentFlat = flatInstallment(marginFromUnits(flat), months, p).String()

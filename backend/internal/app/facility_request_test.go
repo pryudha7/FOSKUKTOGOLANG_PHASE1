@@ -78,7 +78,7 @@ func TestDataPermohonanFasilitasPage(t *testing.T) {
 		"marginTypeCode": "", "marginRate": "", "deviationNote": "", "mitigationNote": "", "notes": ""}) {
 		t.Fatalf("values = %v", p["values"])
 	}
-	if p["editable"] != true || p["contractType"] != "Qardh" || p["productName"] != "testing_mikro_aira_qardh" || p["debtorName"] != "Budi Santoso" {
+	if p["editable"] != true || p["contractType"] != "Qardh" || p["productName"] != "testing_mikro_aira_qardh" || p["applicantName"] != "Budi Santoso" {
 		t.Fatalf("page = %v", p)
 	}
 	opts := p["options"].(map[string]any)
@@ -110,6 +110,9 @@ func TestDataPermohonanFasilitasSimulation(t *testing.T) {
 		{"largest flat", simulationInput{"999999999999999", "360", "FLAT", "100"}, "yes|86111108333344|86111111111111|103.33333|100.00000"},
 		{"odd flat", simulationInput{"123456789", "37", "FLAT", "7.12345"}, "yes|4069535|4069535|13.02990|7.12345"},
 		{"odd effective", simulationInput{"123456789", "37", "EFFECTIVE", "7.12345"}, "yes|3726360|3726360|7.12345|3.78779"},
+		// BR-UI-014: a computed margin is never negative (ticket 19 review).
+		{"flat installment rounded to 0", simulationInput{"1", "9999", "FLAT", "0.00001"}, "yes|0|0|0.00000|0.00001"},
+		{"effective installment rounded down", simulationInput{"100", "3", "EFFECTIVE", "0.00001"}, "yes|33|33|0.00001|0.00000"},
 		{"AC-18 no margin", simulationInput{"100000000", "12", "EFFECTIVE", ""}, "no|0|0|0.00000|0.00000"},
 		{"AC-18 no type", simulationInput{"100000000", "12", "", "12"}, "no|0|0|0.00000|0.00000"},
 		{"AC-18 no tenure", simulationInput{"100000000", "", "FLAT", "12"}, "no|0|0|0.00000|0.00000"},
@@ -333,6 +336,11 @@ func TestDataPermohonanFasilitasSave(t *testing.T) {
 	if request, financing, sim := facilityRows(t, h, caseID); request != "" || financing != "" || sim != "" {
 		t.Fatalf("incomplete save stored %q %q %q", request, financing, sim)
 	}
+	// §9.43 follows §9.41: none without Tujuan Pembiayaan (ticket 19 review).
+	save(facilityRequestForm{RequestedAmount: "100000000", TenureMonths: "12", ExistingFinancingAmount: "0", MarginTypeCode: "FLAT", MarginRate: "6.61855"})
+	if request, _, sim := facilityRows(t, h, caseID); request != "" || sim != "" {
+		t.Fatalf("simulation without a request line %q %q", request, sim)
+	}
 	save(facilityRequestForm{PurposeCode: "MK", RequestedAmount: "3000000000", TenureMonths: "24", ExistingFinancingAmount: "1000", Notes: "catatan"})
 	request, financing, sim := facilityRows(t, h, caseID)
 	if request != "1|MK|3000000000|24" || financing != "3000000000|1000|3000001000|-|-|catatan" || sim != "" {
@@ -358,7 +366,8 @@ func TestDataPermohonanFasilitasSave(t *testing.T) {
 
 // Agreed comment 7: Back to Previous Step and the breadcrumb validate every
 // field and save, without the product limit or a recommendation; a step is
-// no target of itself.
+// no target of itself. The steps after this one open by breadcrumb only
+// once Next has recorded the recommendation (ticket 19 review).
 func TestDataPermohonanFasilitasMoves(t *testing.T) {
 	h, c, caseID, id := facilityRequest(t)
 	if r := submitFacilityRequest(t, c, caseID, id, "Data Permohonan Fasilitas", validFacilityRequestForm()); r.Status != http.StatusBadRequest {
@@ -375,8 +384,19 @@ func TestDataPermohonanFasilitasMoves(t *testing.T) {
 		t.Fatalf("back stored %q %q %q", request, financing, sim)
 	}
 	fid := movedTo(t, h, caseID, submitOtherFinancing(t, c, caseID, oid, "Data Permohonan Fasilitas"), "Data Permohonan Fasilitas")
-	movedTo(t, h, caseID, submitFacilityRequest(t, c, caseID, fid, "Collateral Data", f), "Collateral Data")
-	if facilityRecommendations(t, h, caseID) != 0 {
+	if r := submitFacilityRequest(t, c, caseID, fid, "Collateral Data", validFacilityRequestForm()); r.Status != http.StatusBadRequest {
+		t.Fatalf("past this step before Next = %d %s", r.Status, r.Raw)
+	}
+	if p := pipelinePage(t, c, caseID, fid); p["facilityRequested"] != false {
+		t.Fatalf("facilityRequested = %v", p["facilityRequested"])
+	}
+	movedTo(t, h, caseID, submitFacilityRequest(t, c, caseID, fid, "next", validFacilityRequestForm()), "QCA Data")
+	exec(t, h, `UPDATE fos.assignments SET assignment_status = 'sudah dibuka', completed_at = NULL WHERE assignment_id = $1`, fid)
+	if p := pipelinePage(t, c, caseID, fid); p["facilityRequested"] != true {
+		t.Fatalf("facilityRequested after Next = %v", p["facilityRequested"])
+	}
+	movedTo(t, h, caseID, submitFacilityRequest(t, c, caseID, fid, "Collateral Data", validFacilityRequestForm()), "Collateral Data")
+	if facilityRecommendations(t, h, caseID) != 1 {
 		t.Fatal("breadcrumb recommended")
 	}
 }

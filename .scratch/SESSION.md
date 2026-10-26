@@ -54,8 +54,7 @@ Next recommended: **22** (Hot Prospect: Document Upload, the assignment ticket 2
 - Every config key is required, no defaults (ENV-006). On Windows start servers from PowerShell: Git Bash rewrites `/PRWebDB1`-style values into paths.
 - Smoke runs: Postgres in Docker on 55432, backend on 18080, `next start` on 13000; seed operators with `go run ./cmd/hashpw`. Uploads need `tools/uicheck/fakegcs.js` and `STORAGE_EMULATOR_HOST` (see `tools/uicheck/README.md`).
 - The backend runs the Pre-Screening Check executor in-process (`app.New` returns an `*App`; call `Close`). Each outbound API (Dukcapil, DHN) needs `api/<api>/baseurl` in the database and its API key in the environment variable named by `secret/<api>/apikey_ref`.
-- When editing files with Python on Windows, write with `newline="
-"`: text mode writes CRLF otherwise.
+- When editing files with Python on Windows, write with `newline="\n"`: text mode writes CRLF otherwise.
 - Mutation checks are small Python scripts that swap one exact string in the code, run the ticket's tests and expect a failure; write them with the Write tool (Bash heredocs mangle backslashes and quotes) and keep the patterns in step with gofmt's alignment.
 - UI checks share one smoke database; a check that relies on master data another check also seeds must set it (upsert, reactivate), not assume it.
 - Local demo (demo only, not part of the repo or the SoT): `C:\Users\ASUS\fos-demo\README.md` (start-demo.ps1, stop-demo.ps1, account `demo` that is its own Team Lead, simulated APIs, a SLIK RPA watcher). Its database is the container `fos-demo-pg` on the same port 55432 as the smoke database: stop the demo before a smoke run and never remove that container.

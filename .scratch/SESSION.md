@@ -36,7 +36,7 @@ Each ticket file in `.scratch/fos-kuk-phase1/issues/` has a **Comments** section
 
 ## Next
 
-Next recommended: **22** (Hot Prospect: Document Upload, the assignment ticket 21 opens), **31** (Pre-Screening Submission Badan Usaha; Pengurus rules already in cases/business.go), **37** (Problem Flow; TBD-043 questions first). Follow-up: BR-UI-012 for saved BMV codes no longer Active on the other dropdowns (tickets 15, 17). Also unblocked: **31** Badan Usaha form (now includes the Badan Usaha Document Underlying Upload variant), **32** Case View mode Case + To do, **06** assignment lock, **27** Dashboard. Ticket **29** (operator/master-data management) waits on TBD-003/018. Open domain questions for the SoT owner: `.scratch/fos-kuk-glossary/issues/01-open-domain-questions.md`.
+Next recommended: **22** (Hot Prospect: Document Upload, the last ticket the user asked to run for now; started 2026-10-26: SoT read and 13 decisions proposed in the ticket's Comments, NOT yet answered by the user, so ask again before coding), then **31** (Pre-Screening Submission Badan Usaha; Pengurus rules already in cases/business.go), **37** (Problem Flow; TBD-043 questions first). Follow-up: BR-UI-012 for saved BMV codes no longer Active on the other dropdowns (tickets 15, 17). Also unblocked: **31** Badan Usaha form (now includes the Badan Usaha Document Underlying Upload variant), **32** Case View mode Case + To do, **06** assignment lock, **27** Dashboard. Ticket **29** (operator/master-data management) waits on TBD-003/018. Open domain questions for the SoT owner: `.scratch/fos-kuk-glossary/issues/01-open-domain-questions.md`.
 
 ## How each ticket was worked
 

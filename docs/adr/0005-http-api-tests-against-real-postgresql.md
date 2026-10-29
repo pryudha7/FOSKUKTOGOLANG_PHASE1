@@ -1,0 +1,3 @@
+# Tests run at the HTTP API against a real PostgreSQL, with external systems faked at the network
+
+Every ticket is verified through the backend's HTTP API against a real PostgreSQL started by testcontainers (`internal/apptest`), while external systems (LDAP, Dukcapil, DHN, SLIK, Pefindo, GCS) are replaced by fakes that answer over the network. We chose this over unit tests with mocked repositories because much of the SoT's behaviour lives in the database itself: DB-RULE- constraints, partial unique indexes, row locks and single-transaction replacements, which a mocked store would not exercise. The cost is that the test suite needs Docker, and frontend behaviour outside the API is checked separately in a browser with `tools/uicheck/`.
